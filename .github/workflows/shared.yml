@@ -1,0 +1,92 @@
+# =============================================================================
+# Shared microservice — build and validate
+# =============================================================================
+# Owned by the whole team. Builds and tests the shared frontend, backend and
+# database microservices, and validates the integrated Docker Compose file.
+#
+# This workflow deliberately has NO path filter. Required status checks are
+# matched by job name, and a workflow that never runs never reports a result,
+# which would leave pull requests waiting forever.
+# =============================================================================
+
+name: shared
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shared-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  # The job name below is what you add to the branch ruleset as a required check.
+  shared-build-and-test:
+    name: shared-build-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', '**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: |
+          dotnet restore shared/database/LanguageWise.Shared.Db/LanguageWise.Shared.Db.csproj
+          dotnet restore shared/backend/LanguageWise.Shared.Api/LanguageWise.Shared.Api.csproj
+          dotnet restore shared/tests/LanguageWise.Shared.Api.Tests/LanguageWise.Shared.Api.Tests.csproj
+
+      - name: Build
+        run: |
+          dotnet build shared/database/LanguageWise.Shared.Db/LanguageWise.Shared.Db.csproj -c Release --no-restore
+          dotnet build shared/backend/LanguageWise.Shared.Api/LanguageWise.Shared.Api.csproj -c Release --no-restore
+          dotnet build shared/tests/LanguageWise.Shared.Api.Tests/LanguageWise.Shared.Api.Tests.csproj -c Release --no-restore
+
+      - name: Run NUnit tests
+        run: >
+          dotnet test shared/tests/LanguageWise.Shared.Api.Tests/LanguageWise.Shared.Api.Tests.csproj
+          -c Release --no-build
+          --logger "trx;LogFileName=shared.trx"
+          --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-test-results
+          path: TestResults/
+          if-no-files-found: warn
+
+      - name: Build the database image
+        run: docker build -f shared/database/Dockerfile -t languagewise/shared-db:ci .
+
+      - name: Build the backend image
+        run: docker build -f shared/backend/Dockerfile -t languagewise/shared-backend:ci .
+
+      - name: Build the frontend image
+        run: docker build -f shared/frontend/Dockerfile -t languagewise/shared-frontend:ci .
+
+      - name: Validate docker-compose.yml
+        run: docker compose config --quiet

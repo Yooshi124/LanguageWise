@@ -1,0 +1,22 @@
+# Normalise line endings so the repository behaves the same on Windows, macOS and Linux.
+* text=auto eol=lf
+
+# Scripts that only ever run on Windows.
+*.ps1 text eol=crlf
+*.psm1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Visual Studio insists on CRLF here.
+*.sln text eol=crlf
+
+# Shell scripts must be LF or they will not run inside containers.
+*.sh text eol=lf
+
+# Binary assets.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.db binary

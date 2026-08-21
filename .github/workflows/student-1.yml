@@ -1,0 +1,91 @@
+# =============================================================================
+# Student 1 microservices — build and validate
+# =============================================================================
+# Feature: Mini Games (Kyan)
+#
+# Builds and tests the student 1 frontend, backend/API and database
+# microservices (specification section 7.3).
+#
+# This workflow deliberately has NO path filter. Required status checks are
+# matched by job name, and a workflow that never runs never reports a result,
+# which would leave pull requests waiting forever.
+# =============================================================================
+
+name: student-1
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: student-1-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  # The job name below is what you add to the branch ruleset as a required check.
+  student-1-build-and-test:
+    name: student-1-build-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', '**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: |
+          dotnet restore student-1/database/LanguageWise.Student1.Db/LanguageWise.Student1.Db.csproj
+          dotnet restore student-1/backend/LanguageWise.Student1.Api/LanguageWise.Student1.Api.csproj
+          dotnet restore student-1/tests/LanguageWise.Student1.Api.Tests/LanguageWise.Student1.Api.Tests.csproj
+
+      - name: Build
+        run: |
+          dotnet build student-1/database/LanguageWise.Student1.Db/LanguageWise.Student1.Db.csproj -c Release --no-restore
+          dotnet build student-1/backend/LanguageWise.Student1.Api/LanguageWise.Student1.Api.csproj -c Release --no-restore
+          dotnet build student-1/tests/LanguageWise.Student1.Api.Tests/LanguageWise.Student1.Api.Tests.csproj -c Release --no-restore
+
+      - name: Run NUnit tests
+        run: >
+          dotnet test student-1/tests/LanguageWise.Student1.Api.Tests/LanguageWise.Student1.Api.Tests.csproj
+          -c Release --no-build
+          --logger "trx;LogFileName=student-1.trx"
+          --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: student-1-test-results
+          path: TestResults/
+          if-no-files-found: warn
+
+      - name: Build the database image
+        run: docker build -f student-1/database/Dockerfile -t languagewise/student-1-db:ci .
+
+      - name: Build the backend image
+        run: docker build -f student-1/backend/Dockerfile -t languagewise/student-1-backend:ci .
+
+      - name: Build the frontend image
+        run: docker build -f student-1/frontend/Dockerfile -t languagewise/student-1-frontend:ci .
