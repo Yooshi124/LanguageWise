@@ -1,4 +1,19 @@
-# Python
+# ---- .NET ----
+bin/
+obj/
+*.user
+*.suo
+TestResults/
+artifacts/
+
+# ---- SQLite ----
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# ---- Python ----
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -6,15 +21,21 @@ __pycache__/
 .venv/
 venv/
 
-# Secrets — never commit
+# ---- Secrets — never commit ----
 .env
 *.pem
 *.key
 
-# Agentic Loop generated artefacts
-Tools/AgenticLoop/Sessions/*.md
-Tools/AgenticLoop/Plans/*.md
+# ---- Agentic Loop generated artefacts ----
+tools/agentic-loop/Sessions/*.md
+tools/agentic-loop/Plans/*.md
+tools/agentic-loop/output/
 
-# IDE
+# ---- IDE ----
 .vs/
 .idea/
+.vscode/
+
+# ---- OS ----
+Thumbs.db
+.DS_Store
