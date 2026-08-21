@@ -36,6 +36,15 @@ tools/agentic-loop/output/
 .idea/
 .vscode/
 
+# .NET build output
+[Bb]in/
+[Oo]bj/
+
+# Node and Vue build output
+node_modules/
+dist/
+*.tsbuildinfo
+
 # ---- OS ----
 Thumbs.db
 .DS_Store
