@@ -36,7 +36,7 @@ version keeps the discipline and moves every variable part into configuration:
 | **1. PLAN** | `core/orchestrator.py` | Your prompt is captured verbatim and written to the log. Nothing is inferred or rewritten. |
 | **2. ACT** | `collectors/repo_scanner.py`, `agents/file_selector.py`, `collectors/file_reader.py` | The scope is walked, a manifest is built, the model picks the relevant files, and those files are read within budget. |
 | **3. OBSERVE** | `collectors/repo_observer.py` | Deterministic facts are computed locally: file and line counts, file types, test files, git branch and commit, and every skip or truncation warning. No model involved. |
-| **4. AGENT** | `agents/analyst.py`, `agents/critic.py` | The implementation agent proposes findings; the review agent challenges them. Only survivors are shown. |
+| **4. AGENT** | `agents/analyst.py`, `agents/critic.py` | The implementation agent (Gemini) proposes findings; the review agent (local Gemma via Ollama, mandatory) challenges them. Only survivors are shown. |
 | **5. HUMAN REVIEW** | `agents/decision_parser.py` | Your free-text reply is turned into accepted indices. Your exact words are recorded. |
 | **6. ADAPT** | `agents/planner.py`, `output/plan_writer.py` | Accepted findings become a detailed implementation plan on disk; the decision and outcome are logged. |
 
@@ -60,6 +60,7 @@ main.py                     CLI entry point, REPL, slash commands
 │   ├── orchestrator.py     runs a round: stage banners + log headings, error handling
 │   ├── models.py           pydantic schemas, doubling as the model's JSON schemas
 │   ├── gemini_client.py    google-genai wrapper: structured output, retries, usage
+│   ├── ollama_client.py    local Ollama wrapper for the mandatory Review Agent
 │   ├── prompt_registry.py  loads prompts/*.md, strict {{PLACEHOLDER}} rendering
 │   ├── session.py          session and round identity, timing, running totals
 │   └── console.py          rich rendering, stage banners, findings list
@@ -113,18 +114,23 @@ Shortcuts and safety nets:
 ## Why two agents
 
 A single model asked to review code will pad its answer. The critic pass exists
-to shorten the list, not lengthen it:
+to shorten the list, not lengthen it — and it runs on a genuinely different,
+locally-hosted model so it cannot simply agree with itself:
 
-- **Implementation agent** (`GEMINI_MODEL`) reads the code and the observations and
-  proposes findings, each with a problem, a specific fix, a severity, file paths
-  and the evidence that supports it.
-- **Review agent** (`GEMINI_REVIEW_MODEL`) sees the same code plus those findings and
-  must drop anything unsupported, amend anything vague, and keep only what is
-  actionable. It returns a verdict for every original finding.
+- **Implementation agent** (`GEMINI_MODEL`, Google Gemini) reads the code and the
+  observations and proposes findings, each with a problem, a specific fix, a
+  severity, file paths and the evidence that supports it.
+- **Review agent** (`OLLAMA_REVIEW_MODEL`, a local Gemma model served by Ollama)
+  sees the same code plus those findings and must drop anything unsupported,
+  amend anything vague, and keep only what is actionable. It returns a verdict
+  for every original finding.
 
 Both the original findings and the critic's verdicts are recorded, so the log
-shows what was filtered and why. Set `ENABLE_REVIEW_AGENT=false` to skip the pass
-when speed matters more than precision.
+shows what was filtered and why. **The review pass is mandatory and cannot be
+disabled.** If the local model is unreachable, not pulled, or returns
+unusable output, the round aborts with a clear error rather than silently
+showing the human unreviewed findings — the whole point is that nothing
+reaches a human without a second, independent model having checked it first.
 
 ---
 
@@ -132,7 +138,8 @@ when speed matters more than precision.
 
 Every model call returns JSON validated against a pydantic schema from
 `core/models.py` — `FileSelection`, `FindingSet`, `CritiqueResult`,
-`ImplementationPlan`, `Decision`. The schema is sent with the request:
+`ImplementationPlan`, `Decision`. The schema is sent with the request. Gemini
+calls (`core/gemini_client.py`) use the Gen AI SDK's `response_format`:
 
 ```python
 response_format={
@@ -141,6 +148,12 @@ response_format={
     "schema": inline_schema_refs(FindingSet.model_json_schema()),
 }
 ```
+
+The Review Agent (`core/ollama_client.py`) uses the identical schema through
+Ollama's own structured-output support instead — a `format` field on the
+`/api/chat` request carrying the same `inline_schema_refs`-flattened JSON
+schema. Both clients hand their raw JSON reply to the same pydantic model for
+validation, so `agents/critic.py` cannot tell which backend produced it.
 
 Nothing is scraped out of prose, so a formatting wobble cannot corrupt a finding.
 `inline_schema_refs` flattens pydantic's `$defs`/`$ref` into a self-contained
@@ -156,9 +169,12 @@ schema-only hints via `json_schema_extra`, so an over-long reply still validates
 locally rather than failing the round.
 
 `MAX_OUTPUT_TOKENS` and `THINKING_LEVEL` are sent as `generation_config` on every
-call. That budget covers the model's internal thinking as well as the reply, so
-setting it too low produces truncated JSON; the client detects that case and says
-so explicitly instead of reporting a schema mismatch.
+**Gemini** call (selection, analysis, planning). That budget covers the model's
+internal thinking as well as the reply, so setting it too low produces truncated
+JSON; the client detects that case and says so explicitly instead of reporting a
+schema mismatch. The local Ollama review agent has its own timeout
+(`OLLAMA_REQUEST_TIMEOUT_SECONDS`) instead, since it runs on your hardware rather
+than a metered API.
 
 ---
 
@@ -226,23 +242,26 @@ Run `/config` in the REPL to see which templates were found on disk.
 
 ## Cost and tokens
 
-A full round makes up to four calls:
+A full round makes up to four model calls — three billed against your Gemini
+quota, one free and local:
 
 | Call | When it happens | Model |
 | --- | --- | --- |
-| File selection | Only when the scope exceeds `MAX_FILES_IN_CONTEXT` | `GEMINI_SELECTION_MODEL` |
-| Analysis | Always | `GEMINI_MODEL` |
-| Critique | When `ENABLE_REVIEW_AGENT=true` and findings exist | `GEMINI_REVIEW_MODEL` |
-| Planning | Only when you accept at least one finding | `GEMINI_MODEL` |
+| File selection | Only when the scope exceeds `MAX_FILES_IN_CONTEXT` | `GEMINI_SELECTION_MODEL` (Gemini, metered) |
+| Analysis | Always | `GEMINI_MODEL` (Gemini, metered) |
+| Critique | Always, when findings exist — mandatory, cannot be disabled | `OLLAMA_REVIEW_MODEL` (local via Ollama, free) |
+| Planning | Only when you accept at least one finding | `GEMINI_MODEL` (Gemini, metered) |
 
 Interpreting your acceptance reply normally costs nothing — common phrasings are
 parsed locally, and the model is consulted only for genuinely unusual wording.
 
 Levers, cheapest first: narrow the scope, lower `MAX_FILES_IN_CONTEXT`, point
-`GEMINI_SELECTION_MODEL` at a lighter model, set `ENABLE_REVIEW_AGENT=false`.
+`GEMINI_SELECTION_MODEL` at a lighter model. The critique pass is local and free,
+so there is no reason to skip it — and no setting to do so.
 
 Token usage for every call is recorded in the evidence log and totalled in the
-session footer.
+session footer. The Review Agent's usage (`prompt_eval_count`/`eval_count` from
+Ollama) is recorded the same way, even though it costs nothing.
 
 ---
 
@@ -259,8 +278,10 @@ session footer.
 - **Key redaction.** The API key is masked in every log line, error and `/config` view.
 - **Symlinks skipped.** The scanner does not follow them, so it cannot escape the scope.
 
-**Privacy note:** the contents of selected files are sent to Google's Gemini API.
-Only point the tool at code you are permitted to share.
+**Privacy note:** the contents of selected files are sent to Google's Gemini API
+for selection, analysis and planning. Only point the tool at code you are
+permitted to share. The Review Agent's pass (source code + findings) stays on
+your machine via the local Ollama daemon.
 
 ---
 
@@ -271,11 +292,11 @@ Only point the tool at code you are permitted to share.
 | Empty scope | Round stops in ACT with an actionable message; remaining stages logged as not reached. |
 | Selection call fails | Local keyword fallback; the round continues and the log says the fallback was used. |
 | Analysis call fails | Round stops in AGENT; the failure is written to the log. |
-| Critique call fails | The unreviewed findings are shown, with a warning, and the reason is logged. |
+| Critique call fails | Round stops in AGENT; the failure is written to the log. The Review Agent is mandatory, so findings are never shown unreviewed. |
 | Planning call fails | Round stops in ADAPT; the accepted findings are preserved in the log. |
 | Ctrl+C mid-round | Remaining stages are marked interrupted; the log is complete up to that point; the REPL survives. |
 | Input closed (Ctrl+Z, or piped stdin ending) at a question | Same as Ctrl+C: the round ends, every stage heading is still recorded. |
-| Transient API error (429, 5xx, timeout) | Retried up to `MAX_RETRIES` with exponential backoff before surfacing. |
+| Transient Gemini API error (429, 5xx, timeout) | Retried up to `MAX_RETRIES` with exponential backoff before surfacing. Ollama calls (the Review Agent) are not retried — a connection failure there is reported immediately with setup instructions instead. |
 
 ---
 

@@ -15,6 +15,8 @@ from dotenv import load_dotenv
 TOOL_ROOT = Path(__file__).resolve().parent.parent
 
 DEFAULT_MODEL = "gemini-3.7-flash"
+DEFAULT_OLLAMA_HOST = "http://localhost:11434"
+DEFAULT_OLLAMA_REVIEW_MODEL = "gemma4:e2b"
 
 DEFAULT_IGNORE_DIRS = (
     ".git,node_modules,.venv,venv,env,__pycache__,bin,obj,dist,build,out,target,"
@@ -134,8 +136,9 @@ class Settings:
     api_key: str
     model: str
     selection_model: str
-    review_model: str
-    enable_review_agent: bool
+    ollama_host: str
+    ollama_review_model: str
+    ollama_request_timeout_seconds: int
     repo_root: Path
     targeted_directory: Path | None
     ignore_dirs: frozenset[str]
@@ -183,8 +186,9 @@ class Settings:
         return {
             "Model": self.model,
             "Selection model": self.selection_model,
-            "Review model": self.review_model,
-            "Review agent enabled": str(self.enable_review_agent),
+            "Review agent (mandatory, local)": (
+                f"{self.ollama_review_model} via Ollama at {self.ollama_host}"
+            ),
             "Repo root": str(self.repo_root),
             "Scope": str(self.scope),
             "Scope mode": "TARGETED_DIRECTORY" if self.scope_is_targeted else "whole repository",
@@ -246,7 +250,11 @@ def load_settings(
 
     model = get("GEMINI_MODEL") or DEFAULT_MODEL
     selection_model = get("GEMINI_SELECTION_MODEL") or model
-    review_model = get("GEMINI_REVIEW_MODEL") or model
+    ollama_host = get("OLLAMA_HOST") or DEFAULT_OLLAMA_HOST
+    ollama_review_model = get("OLLAMA_REVIEW_MODEL") or DEFAULT_OLLAMA_REVIEW_MODEL
+    ollama_request_timeout_seconds = _int(
+        "OLLAMA_REQUEST_TIMEOUT_SECONDS", get("OLLAMA_REQUEST_TIMEOUT_SECONDS"), 600
+    )
 
     repo_root_raw = get("REPO_ROOT")
     if repo_root_raw:
@@ -308,8 +316,9 @@ def load_settings(
         api_key=api_key,
         model=model,
         selection_model=selection_model,
-        review_model=review_model,
-        enable_review_agent=_bool(get("ENABLE_REVIEW_AGENT"), True),
+        ollama_host=ollama_host,
+        ollama_review_model=ollama_review_model,
+        ollama_request_timeout_seconds=ollama_request_timeout_seconds,
         repo_root=repo_root,
         targeted_directory=targeted,
         ignore_dirs=frozenset(_csv(get("IGNORE_DIRS"), DEFAULT_IGNORE_DIRS)),

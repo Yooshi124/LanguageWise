@@ -1,7 +1,10 @@
 """AGENT stage 4b: the Review Agent (critic).
 
-Challenges the implementation agent's findings against the same evidence, so the
-human only sees suggestions that survive scrutiny.
+Runs on a separate, local model (Ollama + Gemma) so the human only sees
+suggestions that survive scrutiny by a genuinely independent second model. This
+pass is mandatory and cannot be disabled: if the local model is unreachable or
+misbehaves, `OllamaError` propagates so the caller aborts the round rather than
+silently showing unreviewed findings.
 """
 
 from __future__ import annotations
@@ -11,8 +14,9 @@ from dataclasses import dataclass
 from collectors.file_reader import CodeBundle
 from collectors.repo_observer import Observation
 from config.settings import Settings
-from core.gemini_client import GeminiClient, ModelResponse, dump_json
+from core.gemini_client import ModelResponse, dump_json
 from core.models import CritiqueResult, FindingSet
+from core.ollama_client import OllamaClient
 from core.prompt_registry import PromptRegistry
 
 
@@ -35,15 +39,8 @@ def critique(
     observation: Observation,
     settings: Settings,
     prompts: PromptRegistry,
-    client: GeminiClient,
+    client: OllamaClient,
 ) -> CritiqueOutcome:
-    if not settings.enable_review_agent:
-        return CritiqueOutcome(
-            result=CritiqueResult(findings=proposed.findings, summary=proposed.summary),
-            response=None,
-            skipped_reason="Disabled via ENABLE_REVIEW_AGENT=false.",
-        )
-
     if not proposed.findings:
         return CritiqueOutcome(
             result=CritiqueResult(findings=[], summary=proposed.summary),
@@ -65,6 +62,6 @@ def critique(
         prompt=task,
         schema=CritiqueResult,
         system_instruction=system,
-        model=settings.review_model,
+        model=settings.ollama_review_model,
     )
     return CritiqueOutcome(result=result, response=response)
