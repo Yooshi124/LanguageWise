@@ -11,6 +11,7 @@ Everything you need to get the Agentic Loop running against this repository.
 | Python 3.10 or newer | `python --version`. Developed and verified on 3.14. |
 | pip | Ships with Python. `python -m pip --version` |
 | A Google AI Studio API key | Free tier is enough to start. See step 3. |
+| [Ollama](https://ollama.com), running locally | Hosts the mandatory Review Agent. See step 3b. |
 | Git (optional) | Only used to record the branch and commit in the evidence log. |
 
 The tool is pure Python. There is nothing to build and no Docker involved — it is
@@ -44,6 +45,7 @@ Dependencies installed:
 - `python-dotenv` — loads `.env`
 - `pydantic` — validates the model's structured JSON replies
 - `rich` — console rendering
+- `requests` — talks to the local Ollama review agent
 
 ---
 
@@ -55,6 +57,37 @@ Dependencies installed:
 
 The free tier has low rate limits. If you hit `429` errors during large reviews,
 either lower `MAX_FILES_IN_CONTEXT` or set up billing in AI Studio.
+
+---
+
+## 3b. Set up the Review Agent (Ollama + Gemma, local, mandatory)
+
+The Review Agent is not optional — every finding from the implementation agent
+(Gemini) is independently checked by a second, locally-hosted model before it
+reaches you. It never leaves your machine and needs no API key.
+
+1. Install Ollama: <https://ollama.com> (Windows, macOS, Linux).
+2. Make sure the Ollama service is running (it starts automatically after
+   install, or run `ollama serve`).
+3. Pull the review model:
+
+   ```powershell
+   ollama pull gemma4:e2b
+   ```
+
+   `gemma4:e2b` is a small, fast Gemma 4 build ("effective 2B" parameters) —
+   enough to sanity-check findings without slowing the loop down. A larger
+   variant (e.g. `gemma4:12b`) can be used instead by setting
+   `OLLAMA_REVIEW_MODEL` if you have the hardware and want sharper critiques.
+4. Verify it responds:
+
+   ```powershell
+   ollama run gemma4:e2b "reply with the word ready"
+   ```
+
+If Ollama is not running or the model is not pulled, the loop still starts, but
+any review round will stop with a clear error explaining what to install/pull —
+it will never silently show you unreviewed findings.
 
 ---
 
@@ -91,8 +124,18 @@ key is never committed.
 | --- | --- | --- | --- |
 | `GEMINI_MODEL` | `gemini-3.7-flash` | Model used for analysis and planning. | `gemini-3.7-flash` |
 | `GEMINI_SELECTION_MODEL` | falls back to `GEMINI_MODEL` | Model used to pick which files to read. A cheaper model is fine here. | `gemini-3.5-flash-lite` |
-| `GEMINI_REVIEW_MODEL` | falls back to `GEMINI_MODEL` | Model used by the critic pass. A stronger model gives sharper critiques. | `gemini-3.7-flash` |
-| `ENABLE_REVIEW_AGENT` | `true` | Set to `false` to skip the critic pass — roughly one third fewer tokens per round. | `false` |
+
+### Review Agent (local, mandatory)
+
+| Variable | Default | Meaning | Example |
+| --- | --- | --- | --- |
+| `OLLAMA_HOST` | `http://localhost:11434` | Where the local Ollama daemon is listening. | `http://localhost:11434` |
+| `OLLAMA_REVIEW_MODEL` | `gemma4:e2b` | Ollama model tag used by the Review Agent. Must be pulled first (`ollama pull <tag>`). A bigger tag gives sharper critiques at the cost of speed. | `gemma4:12b` |
+| `OLLAMA_REQUEST_TIMEOUT_SECONDS` | `600` | Per-request timeout against Ollama. Local models can be slow, especially loading into memory on first use — 10 minutes gives it plenty of room. | `900` |
+
+There is no setting to disable the Review Agent — it always runs. If it cannot
+be reached, the round aborts with an explanation instead of silently showing
+unreviewed findings.
 
 ### Review scope
 
@@ -222,8 +265,13 @@ round, your prompt verbatim, and an ACCEPTED/REJECTED table.
 
 ## 8. Privacy and safety
 
-- The contents of the files selected for a round are **sent to Google's Gemini API**.
-  Do not point the tool at a repository you are not permitted to share.
+- The contents of the files selected for a round are **sent to Google's Gemini API**
+  for the implementation, planning and file-selection steps. Do not point the
+  tool at a repository you are not permitted to share.
+- The Review Agent runs entirely on your machine via Ollama — the same source
+  code and findings the implementation agent already saw are sent to it too,
+  but only ever to the local Ollama daemon; nothing leaves your machine for
+  that pass and no API key is involved.
 - Files that look like secrets are never read or uploaded:
   `.env`, `*.env`, `.env.*`, `*.pem`, `*.key`, `*.pfx`, `*.p12`, `id_rsa*`,
   `secrets.*`, `credentials*`, `*.keystore`, `*.jks`.
@@ -246,7 +294,10 @@ round, your prompt verbatim, and an ACCEPTED/REJECTED table.
 | `Gemini returned an empty response` | Usually an invalid `GEMINI_MODEL`. Check the model name against <https://ai.google.dev/gemini-api/docs/models>. |
 | `ran out of output budget and returned a partial reply` | The reply was cut off. Raise `MAX_OUTPUT_TOKENS`, lower `THINKING_LEVEL`, or narrow the scope. |
 | Zero findings on a prompt that should find something | Same cause: the model spent its budget thinking. Lower `THINKING_LEVEL`, raise `MAX_OUTPUT_TOKENS`, or scope the review to one service or folder so there is less code to reason about. |
-| `Gemini request failed: ... 429 ...` | Rate limited. Lower `MAX_FILES_IN_CONTEXT`, set `ENABLE_REVIEW_AGENT=false`, or enable billing. |
+| `Gemini request failed: ... 429 ...` | Rate limited. Lower `MAX_FILES_IN_CONTEXT`, or enable billing. |
+| `Could not reach the local review agent at http://localhost:11434 ...` | Ollama is not running. Install it from <https://ollama.com>, start it (`ollama serve`), and pull the model: `ollama pull gemma4:e2b`. The review agent cannot be disabled, so this stops the round until Ollama is reachable. |
+| `Ollama model '...' was not found` | The tag in `OLLAMA_REVIEW_MODEL` has not been pulled yet. Run `ollama pull <tag>`. |
+| `The local review agent (...) returned JSON that does not match CritiqueResult` | The local model produced malformed structured output — rare, but small models occasionally do this. Retry, or switch `OLLAMA_REVIEW_MODEL` to a slightly larger tag (e.g. `gemma4:12b`). |
 | `MAX_TOTAL_CONTEXT_BYTES ... must be at least MAX_FILE_BYTES` | The two budgets contradict each other. Raise the total or lower the per-file cap. |
 | `Missing prompt template '...'` | A file was deleted from `prompts/`. Restore it from git. |
 | `Prompt '...' expects values for: X` | You added a `{{X}}` placeholder the code does not supply. See [HOW_IT_WORKS.md](HOW_IT_WORKS.md#customising-prompts). |
