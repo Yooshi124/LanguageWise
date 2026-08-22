@@ -1,32 +1,31 @@
 #!/usr/bin/env bash
-# Builds and starts the whole integrated application with Docker Compose.
+# Builds and starts the whole application with Docker Compose.
 #
-# Usage: ./scripts/up.sh [--no-build]
+# Usage: ./scripts/up.sh [--detach]
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "${REPO_ROOT}"
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-ARGS=(compose up --detach)
-if [[ "${1:-}" != "--no-build" ]]; then
-    ARGS+=(--build)
+# Ollama also runs natively on some machines and would collide on 11434.
+if [[ -z "${OLLAMA_PORT:-}" ]] && (command -v ss >/dev/null && ss -ltn 2>/dev/null | grep -q ':11434 '); then
+    export OLLAMA_PORT=11435
+    echo "Port 11434 is already in use, publishing Ollama on ${OLLAMA_PORT} instead."
 fi
 
-echo "Starting LanguageWise..."
-docker "${ARGS[@]}"
+if [[ "${1:-}" == "--detach" || "${1:-}" == "-d" ]]; then
+    docker compose up --build --detach
+    cat <<'EOF'
 
-echo
-echo "Waiting for services to report healthy..."
-sleep 10
-docker compose ps
+LanguageWise is running:
+  Home                                  http://localhost:3000
+  Mini Games                (Kyan)      http://localhost:3001
+  Discussion Forum          (Lachlan)   http://localhost:3002
+  Quizzes and Courses       (Justin)    http://localhost:3003
+  Quests and Achievements   (Amber)     http://localhost:3004
+  Leaderboard and Analytics (Roan)      http://localhost:3005
 
-cat <<'EOF'
-
-Open the application:
-  Home (shared)                       http://localhost:3000
-  Student 1  Mini Games               http://localhost:3001
-  Student 2  Discussion Forum         http://localhost:3002
-  Student 3  Quizzes and Courses      http://localhost:3003
-  Student 4  Quests and Achievements  http://localhost:3004
-  Student 5  Leaderboard              http://localhost:3005
+  Backends 5000-5005 and database services 6000-6005 expose /health.
 EOF
+else
+    docker compose up --build
+fi

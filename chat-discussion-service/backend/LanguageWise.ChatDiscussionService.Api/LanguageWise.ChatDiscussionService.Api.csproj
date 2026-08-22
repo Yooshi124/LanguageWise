@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>    <RootNamespace>LanguageWise.ChatDiscussionService.Api</RootNamespace>
+    <AssemblyName>LanguageWise.ChatDiscussionService.Api</AssemblyName>
+    <!--
+      CS8618 is suppressed because the un-wired feature models in Feature/Models/
+      declare non-nullable reference properties without initialising them. Those
+      files are kept exactly as their author wrote them. Remove this suppression
+      once the models are wired up and the properties are made required or nullable.
+    -->
+    <NoWarn>$(NoWarn);CS8618</NoWarn>
+  </PropertyGroup>
+
+</Project>

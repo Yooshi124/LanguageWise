@@ -1,0 +1,22 @@
+<Solution>
+  <Folder Name="/backend/">
+    <Project Path="backend/LanguageWise.MiniGamesService.Api/LanguageWise.MiniGamesService.Api.csproj" />
+  </Folder>
+  <Folder Name="/database/">
+    <Project Path="database/LanguageWise.MiniGamesService.Db/LanguageWise.MiniGamesService.Db.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/LanguageWise.MiniGamesService.Api.Tests/LanguageWise.MiniGamesService.Api.Tests.csproj" />
+  </Folder>
+  <Folder Name="/frontend/">
+    <File Path="frontend/index.html" />
+    <File Path="frontend/nginx.conf" />
+    <File Path="frontend/package.json" />
+    <File Path="frontend/public/css/theme.css" />
+    <File Path="frontend/src/GamePage.vue" />
+    <File Path="frontend/src/main.js" />
+    <File Path="frontend/src/skeleton/SampleItems.vue" />
+    <File Path="frontend/src/VocabVoyage.vue" />
+    <File Path="frontend/vite.config.js" />
+  </Folder>
+</Solution>

@@ -1,7 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <RootNamespace>LanguageWise.Shared.Api</RootNamespace>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>    <RootNamespace>LanguageWise.Shared.Api</RootNamespace>
     <AssemblyName>LanguageWise.Shared.Api</AssemblyName>
   </PropertyGroup>
 
