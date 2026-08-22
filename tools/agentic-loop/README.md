@@ -35,6 +35,11 @@ This tool never edits your source. The only files it writes are its own:
 cd Tools\AgenticLoop
 pip install -r requirements.txt
 copy .env.example .env      # then paste your Gemini API key into it
+
+# The review agent runs locally and is mandatory — install Ollama and pull its model:
+#   https://ollama.com
+ollama pull gemma4:e2b
+
 python main.py
 ```
 
@@ -50,7 +55,9 @@ python main.py
 
 - **Model:** Google Gemini via the `google-genai` SDK, default `gemini-3.7-flash`, set in `.env`
 - **Scope:** the whole repository by default, or one directory via `TARGETED_DIRECTORY`
-- **Two agents:** an implementation agent proposes findings, a review agent critiques them
+- **Two agents, two models:** an implementation agent (Gemini) proposes findings; a
+  mandatory, local review agent (Gemma via Ollama) independently critiques them — it
+  cannot be disabled
 - **Prompts:** every prompt lives in `prompts/` as markdown — change behaviour without touching Python
 - **Privacy:** `.env` files, keys, certificates and binaries are never sent to the API
 
