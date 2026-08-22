@@ -1,0 +1,131 @@
+# =============================================================================
+# Leaderboard and Analytics — build and validate
+# =============================================================================
+# Owned by Roan. Builds and tests `leaderboard-analytics-service` on its own: the
+# microservice has no dependency on any other folder in this repository, so a
+# failure here can only be caused by this service.
+#
+# This workflow deliberately has NO path filter. Required status checks are
+# matched by job name, and a workflow that never runs never reports a result,
+# which would leave pull requests waiting for a check that can never arrive.
+# =============================================================================
+
+name: leaderboard-analytics-service
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: leaderboard-analytics-service-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  SOLUTION: leaderboard-analytics-service/LanguageWise.LeaderboardAnalyticsService.BE.slnx
+
+jobs:
+  # The job name below is what you add to the branch ruleset as a required check.
+  leaderboard-analytics-service-build-and-test:
+    name: leaderboard-analytics-service-build-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      # Guards against files that exist locally but were never committed — for
+      # example because a .gitignore rule swallowed them. Without this the build
+      # fails later with a bare 'MSB1009: Project file does not exist'.
+      - name: Verify the service layout is complete
+        shell: bash
+        run: |
+          missing=0
+          for path in \
+            "leaderboard-analytics-service/LanguageWise.LeaderboardAnalyticsService.BE.slnx" \
+            "leaderboard-analytics-service/backend/LanguageWise.LeaderboardAnalyticsService.Api/LanguageWise.LeaderboardAnalyticsService.Api.csproj" \
+            "leaderboard-analytics-service/database/LanguageWise.LeaderboardAnalyticsService.Db/LanguageWise.LeaderboardAnalyticsService.Db.csproj" \
+            "leaderboard-analytics-service/tests/LanguageWise.LeaderboardAnalyticsService.Api.Tests/LanguageWise.LeaderboardAnalyticsService.Api.Tests.csproj" \
+            "leaderboard-analytics-service/backend/Dockerfile" \
+            "leaderboard-analytics-service/database/Dockerfile" \
+            "leaderboard-analytics-service/frontend/Dockerfile" ; do
+            if [ ! -f "$path" ]; then
+              echo "::error file=$path::Missing from the repository. It may exist locally but be untracked — check .gitignore."
+              missing=1
+            fi
+          done
+          exit $missing
+
+      # This repository has no Directory.Build.props or Directory.Packages.props:
+      # every microservice pins its own versions. A PackageReference without a
+      # Version therefore cannot resolve, and NuGet reports it only as the very
+      # unhelpful 'MSB4181: RestoreTask returned false but did not log an error'.
+      - name: Verify every project is self-contained
+        shell: bash
+        run: |
+          bad=0
+          for proj in $(find "leaderboard-analytics-service" -name '*.csproj' -not -path '*/bin/*' -not -path '*/obj/*'); do
+            if ! grep -q '<TargetFramework>' "$proj"; then
+              echo "::error file=$proj::No <TargetFramework>. It must not rely on a repository-root Directory.Build.props."
+              bad=1
+            fi
+            if grep -E '<PackageReference' "$proj" | grep -qv 'Version='; then
+              echo "::error file=$proj::A PackageReference has no Version attribute. There is no central package management in this repository."
+              bad=1
+            fi
+          done
+          exit $bad
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-leaderboard-analytics-service-${{ hashFiles('leaderboard-analytics-service/**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-leaderboard-analytics-service-
+            nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore "${{ env.SOLUTION }}"
+
+      - name: Build
+        run: dotnet build "${{ env.SOLUTION }}" -c Release --no-restore
+
+      - name: Run NUnit tests
+        run: >
+          dotnet test "${{ env.SOLUTION }}"
+          -c Release --no-build
+          --logger "trx;LogFileName=leaderboard-analytics-service.trx"
+          --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: leaderboard-analytics-service-test-results
+          path: TestResults/
+          if-no-files-found: warn
+
+      # Each tier builds from its own folder as the context, which proves the
+      # image does not reach outside the microservice.
+      - name: Build the database image
+        run: docker build -t languagewise/leaderboard-analytics-service-db:ci ./leaderboard-analytics-service/database
+
+      - name: Build the backend image
+        run: docker build -t languagewise/leaderboard-analytics-service-backend:ci ./leaderboard-analytics-service/backend
+
+      - name: Build the frontend image
+        run: docker build -t languagewise/leaderboard-analytics-service-frontend:ci ./leaderboard-analytics-service/frontend

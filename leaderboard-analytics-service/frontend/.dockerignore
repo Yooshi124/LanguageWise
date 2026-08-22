@@ -1,0 +1,7 @@
+# Build context is this frontend folder only.
+**/.vs
+**/.vscode
+**/.idea
+**/node_modules
+**/dist
+**/*.log

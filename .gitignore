@@ -1,17 +1,32 @@
+# =============================================================================
+# LanguageWise — version control exclusions
+# =============================================================================
+
 # ---- .NET ----
-bin/
-obj/
+[Bb]in/
+[Oo]bj/
 *.user
 *.suo
 TestResults/
 artifacts/
 
 # ---- SQLite ----
+# WARNING: git sets core.ignorecase=true on Windows and macOS, which makes these
+# patterns match case-insensitively. Without the negation below, "*.db" also
+# matches project DIRECTORIES such as LanguageWise.Shared.Db, silently excluding
+# every database microservice from the repository and breaking CI with
+# "MSB1009: Project file does not exist". Do not remove the negation.
 *.db
 *.db-shm
 *.db-wal
 *.sqlite
 *.sqlite3
+!*.Db/
+
+# ---- Node ----
+node_modules/
+dist/
+*.tsbuildinfo
 
 # ---- Python ----
 __pycache__/
@@ -35,15 +50,6 @@ tools/agentic-loop/output/
 .vs/
 .idea/
 .vscode/
-
-# .NET build output
-[Bb]in/
-[Oo]bj/
-
-# Node and Vue build output
-node_modules/
-dist/
-*.tsbuildinfo
 
 # ---- OS ----
 Thumbs.db

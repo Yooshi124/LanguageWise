@@ -1,33 +1,35 @@
 <#
 .SYNOPSIS
-    Stops the integrated application.
-.DESCRIPTION
-    By default the SQLite named volumes are kept, so your data survives a restart.
-    Pass -Clean to delete them and force a fresh re-seed on the next start.
+    Stops the application.
+
+.PARAMETER Clean
+    Also delete the named volumes, wiping every SQLite database. The next start
+    re-seeds from scratch.
+
 .EXAMPLE
     .\scripts\down.ps1
     .\scripts\down.ps1 -Clean
 #>
 [CmdletBinding()]
 param(
-    [switch]$Clean
+    [switch] $Clean
 )
 
 $ErrorActionPreference = 'Stop'
-$repoRoot = Split-Path -Parent $PSScriptRoot
-Push-Location $repoRoot
+Push-Location (Split-Path -Parent $PSScriptRoot)
 
 try {
-    $arguments = @('compose', 'down')
+    $composeArgs = @('compose', 'down')
     if ($Clean) {
-        Write-Warning 'Removing named volumes — every database will be re-seeded on the next start.'
-        $arguments += '--volumes'
+        $composeArgs += '--volumes'
+        Write-Host 'Stopping and wiping all databases...' -ForegroundColor Yellow
+    }
+    else {
+        Write-Host 'Stopping (databases are kept)...' -ForegroundColor Cyan
     }
 
-    & docker @arguments
-    if ($LASTEXITCODE -ne 0) { throw "docker compose down failed with exit code $LASTEXITCODE." }
-
-    Write-Host 'LanguageWise stopped.' -ForegroundColor Green
+    docker @composeArgs
+    exit $LASTEXITCODE
 }
 finally {
     Pop-Location

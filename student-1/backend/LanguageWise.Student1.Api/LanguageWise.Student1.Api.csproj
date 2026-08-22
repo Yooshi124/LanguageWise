@@ -1,8 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
-
-  <PropertyGroup>
-    <RootNamespace>LanguageWise.Student1.Api</RootNamespace>
-    <AssemblyName>LanguageWise.Student1.Api</AssemblyName>
-  </PropertyGroup>
-
-</Project>
