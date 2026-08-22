@@ -4,7 +4,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <InvariantGlobalization>true</InvariantGlobalization>    <RootNamespace>LanguageWise.ChatDiscussionService.Api.Tests</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <RootNamespace>LanguageWise.ChatDiscussionService.Api.Tests</RootNamespace>
     <AssemblyName>LanguageWise.ChatDiscussionService.Api.Tests</AssemblyName>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>

@@ -4,7 +4,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <InvariantGlobalization>true</InvariantGlobalization>    <RootNamespace>LanguageWise.MiniGamesService.Db</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <RootNamespace>LanguageWise.MiniGamesService.Db</RootNamespace>
     <AssemblyName>LanguageWise.MiniGamesService.Db</AssemblyName>
   </PropertyGroup>
 

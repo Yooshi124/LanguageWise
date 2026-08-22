@@ -1,7 +1,8 @@
-# Normalise line endings so the repository behaves the same on Windows, macOS and Linux.
-* text=auto eol=lf
+# Git stores every text file with LF. Working trees use the platform's native
+# endings, so Windows checkouts are CRLF and Linux/macOS checkouts are LF.
+* text=auto
 
-# Scripts that only ever run on Windows.
+# Windows-only scripts are CRLF everywhere, including on CI.
 *.ps1 text eol=crlf
 *.psm1 text eol=crlf
 *.cmd text eol=crlf
@@ -10,8 +11,12 @@
 # Visual Studio insists on CRLF here.
 *.sln text eol=crlf
 
-# Shell scripts must be LF or they will not run inside containers.
+# Anything Linux containers execute or parse must stay LF, on every platform.
 *.sh text eol=lf
+Dockerfile text eol=lf
+*.dockerfile text eol=lf
+.dockerignore text eol=lf
+*.conf text eol=lf
 
 # Binary assets.
 *.png binary
