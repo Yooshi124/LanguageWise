@@ -22,6 +22,7 @@ from config.settings import Settings
 from core import console, stages
 from core.gemini_client import GeminiClient, GeminiError
 from core.models import Finding
+from core.ollama_client import OllamaClient, OllamaError
 from core.prompt_registry import PromptRegistry
 from core.session import RoundState, SessionState, format_timestamp
 from output.plan_writer import write_plan
@@ -60,6 +61,7 @@ class Orchestrator:
         settings: Settings,
         prompts: PromptRegistry,
         client: GeminiClient,
+        review_client: OllamaClient,
         session: SessionState,
         writer: SessionWriter,
         input_fn: InputFn | None = None,
@@ -69,6 +71,7 @@ class Orchestrator:
         self._initial_settings = settings
         self.prompts = prompts
         self.client = client
+        self.review_client = review_client
         self.session = session
         self.writer = writer
         self.input_fn = input_fn or console.ask
@@ -256,8 +259,11 @@ class Orchestrator:
         proposed = analysis.findings
 
         console.print_info(f"Implementation agent proposed {len(proposed.findings)} finding(s).")
-        if self.settings.enable_review_agent and proposed.findings:
-            console.print_info(f"Review agent critiquing with {self.settings.review_model}...")
+        if proposed.findings:
+            console.print_info(
+                f"Review agent critiquing with {self.settings.ollama_review_model} "
+                "(local, via Ollama)..."
+            )
 
         try:
             outcome = critic.critique(
@@ -267,17 +273,11 @@ class Orchestrator:
                 observation=observation,
                 settings=self.settings,
                 prompts=self.prompts,
-                client=self.client,
+                client=self.review_client,
             )
-        except GeminiError as exc:
-            console.print_warning(f"Review agent failed ({exc}); using unreviewed findings.")
-            outcome = critic.CritiqueOutcome(
-                result=critic.CritiqueResult(
-                    findings=proposed.findings, summary=proposed.summary
-                ),
-                response=None,
-                skipped_reason=f"Review agent call failed: {exc}",
-            )
+        except OllamaError as exc:
+            self.writer.write_agent_stage(f"**Review agent failed:** {exc}")
+            raise RoundAborted(stages.AGENT, f"review agent failed: {exc}") from exc
 
         if outcome.response:
             round_state.tokens += outcome.response.total_tokens
