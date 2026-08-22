@@ -1,24 +1,53 @@
 <#
 .SYNOPSIS
-    Builds every .NET microservice in the LanguageWise solution.
+    Builds every microservice, or just one of them.
+
+.DESCRIPTION
+    Each microservice owns a .slnx solution and has no dependency on the others, so
+    this simply builds each solution in turn. A failure names the service that broke.
+
+.PARAMETER Service
+    Which microservice to build. Defaults to all of them.
+
+.PARAMETER Configuration
+    Debug or Release. Defaults to Debug.
+
 .EXAMPLE
     .\scripts\build.ps1
-    .\scripts\build.ps1 -Configuration Debug
+    .\scripts\build.ps1 -Service quizzes-courses-service -Configuration Release
 #>
 [CmdletBinding()]
 param(
+    [ValidateSet('all', 'shared', 'mini-games-service', 'chat-discussion-service',
+                 'quizzes-courses-service', 'quests-achievements-notifications-service',
+                 'leaderboard-analytics-service')]
+    [string] $Service = 'all',
+
     [ValidateSet('Debug', 'Release')]
-    [string]$Configuration = 'Release'
+    [string] $Configuration = 'Debug'
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
-Write-Host "Building LanguageWise.sln ($Configuration)..." -ForegroundColor Cyan
-dotnet build (Join-Path $repoRoot 'LanguageWise.sln') --configuration $Configuration --nologo
+$solutions = Get-ChildItem -Path $repoRoot -Recurse -Filter '*.slnx' -File |
+    Where-Object { $Service -eq 'all' -or $_.Directory.Name -eq $Service } |
+    Sort-Object FullName
 
-if ($LASTEXITCODE -ne 0) {
-    throw "Build failed with exit code $LASTEXITCODE."
+if (-not $solutions) {
+    Write-Error "No solution found for '$Service'."
 }
 
-Write-Host 'Build succeeded.' -ForegroundColor Green
+$failed = @()
+foreach ($solution in $solutions) {
+    Write-Host "`nBuilding $($solution.Directory.Name) ($Configuration)..." -ForegroundColor Cyan
+    dotnet build $solution.FullName --configuration $Configuration --nologo
+    if ($LASTEXITCODE -ne 0) { $failed += $solution.Directory.Name }
+}
+
+if ($failed) {
+    Write-Host "`nBuild FAILED: $($failed -join ', ')" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "`nBuild succeeded ($($solutions.Count) microservice(s))." -ForegroundColor Green

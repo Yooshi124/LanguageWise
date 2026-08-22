@@ -1,40 +1,48 @@
 <#
 .SYNOPSIS
-    Builds and starts the whole integrated application with Docker Compose.
+    Builds and starts the whole application with Docker Compose, then prints every URL.
+
+.PARAMETER Detach
+    Return to the prompt once the containers are healthy instead of streaming logs.
+
 .EXAMPLE
-    .\scripts\up.ps1
-    .\scripts\up.ps1 -NoBuild
+    .\scripts\up.ps1 -Detach
 #>
 [CmdletBinding()]
 param(
-    [switch]$NoBuild
+    [switch] $Detach
 )
 
 $ErrorActionPreference = 'Stop'
-$repoRoot = Split-Path -Parent $PSScriptRoot
-Push-Location $repoRoot
+Push-Location (Split-Path -Parent $PSScriptRoot)
 
 try {
-    $arguments = @('compose', 'up', '--detach')
-    if (-not $NoBuild) { $arguments += '--build' }
+    # Ollama also runs natively on some machines and would collide on 11434.
+    if (-not $env:OLLAMA_PORT -and (Get-NetTCPConnection -LocalPort 11434 -State Listen -ErrorAction SilentlyContinue)) {
+        $env:OLLAMA_PORT = '11435'
+        Write-Host "Port 11434 is already in use, publishing Ollama on $env:OLLAMA_PORT instead." -ForegroundColor Yellow
+    }
 
-    Write-Host 'Starting LanguageWise...' -ForegroundColor Cyan
-    & docker @arguments
-    if ($LASTEXITCODE -ne 0) { throw "docker compose up failed with exit code $LASTEXITCODE." }
+    $composeArgs = @('compose', 'up', '--build')
+    if ($Detach) { $composeArgs += '--detach' }
 
-    Write-Host "`nWaiting for services to report healthy..." -ForegroundColor Cyan
-    Start-Sleep -Seconds 10
-    & docker compose ps
+    docker @composeArgs
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-    Write-Host "`nOpen the application:" -ForegroundColor Green
-    @(
-        'Home (shared)                     http://localhost:3000',
-        'Student 1  Mini Games             http://localhost:3001',
-        'Student 2  Discussion Forum       http://localhost:3002',
-        'Student 3  Quizzes and Courses    http://localhost:3003',
-        'Student 4  Quests and Achievements http://localhost:3004',
-        'Student 5  Leaderboard            http://localhost:3005'
-    ) | ForEach-Object { Write-Host "  $_" }
+    if ($Detach) {
+        Write-Host ''
+        Write-Host 'LanguageWise is running:' -ForegroundColor Green
+        @(
+            'Home                                  http://localhost:3000',
+            'Mini Games              (Kyan)        http://localhost:3001',
+            'Discussion Forum        (Lachlan)     http://localhost:3002',
+            'Quizzes and Courses     (Justin)      http://localhost:3003',
+            'Quests and Achievements (Amber)       http://localhost:3004',
+            'Leaderboard and Analytics (Roan)      http://localhost:3005'
+        ) | ForEach-Object { Write-Host "  $_" }
+        Write-Host ''
+        Write-Host '  Backends 5000-5005 and database services 6000-6005 expose /health.'
+    }
 }
 finally {
     Pop-Location

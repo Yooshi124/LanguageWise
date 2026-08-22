@@ -1,26 +1,36 @@
 #!/usr/bin/env bash
-# Runs the NUnit test suite.
+# Runs the NUnit tests for every microservice, or just one of them.
 #
-# Usage: ./scripts/test.sh [all|shared|student-1..student-5] [Debug|Release]
+# Usage: ./scripts/test.sh [all|<service>] [Debug|Release]
 set -euo pipefail
 
 SERVICE="${1:-all}"
-CONFIGURATION="${2:-Release}"
+CONFIGURATION="${2:-Debug}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-if [[ "${SERVICE}" == "all" ]]; then
-    TARGET="${REPO_ROOT}/LanguageWise.sln"
-elif [[ "${SERVICE}" == "shared" ]]; then
-    TARGET="${REPO_ROOT}/shared/tests/LanguageWise.Shared.Api.Tests/LanguageWise.Shared.Api.Tests.csproj"
-elif [[ "${SERVICE}" =~ ^student-([1-5])$ ]]; then
-    PASCAL="Student${BASH_REMATCH[1]}"
-    TARGET="${REPO_ROOT}/${SERVICE}/tests/LanguageWise.${PASCAL}.Api.Tests/LanguageWise.${PASCAL}.Api.Tests.csproj"
-else
-    echo "Unknown service '${SERVICE}'. Use all, shared, or student-1..student-5." >&2
+mapfile -t SOLUTIONS < <(find "${REPO_ROOT}" -name '*.slnx' -type f | sort)
+
+failed=()
+for solution in "${SOLUTIONS[@]}"; do
+    name="$(basename "$(dirname "${solution}")")"
+    [[ "${SERVICE}" != "all" && "${SERVICE}" != "${name}" ]] && continue
+
+    echo ""
+    echo "Testing ${name} (${CONFIGURATION})..."
+    dotnet test "${solution}" --configuration "${CONFIGURATION}" --nologo || failed+=("${name}")
+    found=1
+done
+
+if [[ -z "${found:-}" ]]; then
+    echo "No solution found for '${SERVICE}'." >&2
     exit 1
 fi
 
-echo "Testing ${SERVICE} (${CONFIGURATION})..."
-dotnet test "${TARGET}" --configuration "${CONFIGURATION}" --nologo
+if [[ ${#failed[@]} -gt 0 ]]; then
+    echo ""
+    echo "Tests FAILED: ${failed[*]}" >&2
+    exit 1
+fi
 
+echo ""
 echo "All tests passed."
