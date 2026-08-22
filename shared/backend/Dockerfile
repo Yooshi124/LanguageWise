@@ -1,16 +1,14 @@
-# Backend/API microservice for the shared service.
+# Backend/API container for shared.
 #
-# ASP.NET Core minimal API. It never touches SQLite directly — it calls the
-# database microservice over HTTP on the internal Docker network.
+# ASP.NET Core minimal API. It never opens SQLite directly; it calls this
+# service's database container over HTTP.
 #
-# NOTE: the build context is the repository root so that Directory.Build.props
-#       and Directory.Packages.props can be restored.
+# Build context is this folder, so the image cannot reach other microservices.
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
-ARG PROJECT=shared/backend/LanguageWise.Shared.Api
+ARG PROJECT=LanguageWise.Shared.Api
 WORKDIR /src
 
-COPY Directory.Build.props Directory.Packages.props ./
 COPY ${PROJECT}/*.csproj ${PROJECT}/
 RUN dotnet restore ${PROJECT}
 
@@ -33,6 +31,6 @@ USER app
 EXPOSE 8080
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=6 \
-    CMD curl --fail --silent http://localhost:8080/health || exit 1
+    CMD curl --fail --silent http://127.0.0.1:8080/health || exit 1
 
 ENTRYPOINT ["dotnet", "LanguageWise.Shared.Api.dll"]

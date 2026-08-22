@@ -1,0 +1,111 @@
+# =============================================================================
+# Quests, Achievements and Notifications — build and validate
+# =============================================================================
+# Owned by Amber. Builds and tests `quests-achievements-notifications-service` on its own: the
+# microservice has no dependency on any other folder in this repository, so a
+# failure here can only be caused by this service.
+#
+# This workflow deliberately has NO path filter. Required status checks are
+# matched by job name, and a workflow that never runs never reports a result,
+# which would leave pull requests waiting for a check that can never arrive.
+# =============================================================================
+
+name: quests-achievements-notifications-service
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quests-achievements-notifications-service-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  SOLUTION: quests-achievements-notifications-service/LanguageWise.QuestsAchievementsNotificationsService.BE.slnx
+
+jobs:
+  # The job name below is what you add to the branch ruleset as a required check.
+  quests-achievements-notifications-service-build-and-test:
+    name: quests-achievements-notifications-service-build-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      # Guards against files that exist locally but were never committed — for
+      # example because a .gitignore rule swallowed them. Without this the build
+      # fails later with a bare 'MSB1009: Project file does not exist'.
+      - name: Verify the service layout is complete
+        shell: bash
+        run: |
+          missing=0
+          for path in \
+            "quests-achievements-notifications-service/LanguageWise.QuestsAchievementsNotificationsService.BE.slnx" \
+            "quests-achievements-notifications-service/backend/LanguageWise.QuestsAchievementsNotificationsService.Api/LanguageWise.QuestsAchievementsNotificationsService.Api.csproj" \
+            "quests-achievements-notifications-service/database/LanguageWise.QuestsAchievementsNotificationsService.Db/LanguageWise.QuestsAchievementsNotificationsService.Db.csproj" \
+            "quests-achievements-notifications-service/tests/LanguageWise.QuestsAchievementsNotificationsService.Api.Tests/LanguageWise.QuestsAchievementsNotificationsService.Api.Tests.csproj" \
+            "quests-achievements-notifications-service/backend/Dockerfile" \
+            "quests-achievements-notifications-service/database/Dockerfile" \
+            "quests-achievements-notifications-service/frontend/Dockerfile" ; do
+            if [ ! -f "$path" ]; then
+              echo "::error file=$path::Missing from the repository. It may exist locally but be untracked — check .gitignore."
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-quests-achievements-notifications-service-${{ hashFiles('quests-achievements-notifications-service/**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-quests-achievements-notifications-service-
+            nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore "${{ env.SOLUTION }}"
+
+      - name: Build
+        run: dotnet build "${{ env.SOLUTION }}" -c Release --no-restore
+
+      - name: Run NUnit tests
+        run: >
+          dotnet test "${{ env.SOLUTION }}"
+          -c Release --no-build
+          --logger "trx;LogFileName=quests-achievements-notifications-service.trx"
+          --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quests-achievements-notifications-service-test-results
+          path: TestResults/
+          if-no-files-found: warn
+
+      # Each tier builds from its own folder as the context, which proves the
+      # image does not reach outside the microservice.
+      - name: Build the database image
+        run: docker build -t languagewise/quests-achievements-notifications-service-db:ci ./quests-achievements-notifications-service/database
+
+      - name: Build the backend image
+        run: docker build -t languagewise/quests-achievements-notifications-service-backend:ci ./quests-achievements-notifications-service/backend
+
+      - name: Build the frontend image
+        run: docker build -t languagewise/quests-achievements-notifications-service-frontend:ci ./quests-achievements-notifications-service/frontend

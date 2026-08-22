@@ -1,13 +1,36 @@
 #!/usr/bin/env bash
-# Builds every .NET microservice in the LanguageWise solution.
+# Builds every microservice, or just one of them.
 #
-# Usage: ./scripts/build.sh [Debug|Release]
+# Usage: ./scripts/build.sh [all|<service>] [Debug|Release]
 set -euo pipefail
 
-CONFIGURATION="${1:-Release}"
+SERVICE="${1:-all}"
+CONFIGURATION="${2:-Debug}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-echo "Building LanguageWise.sln (${CONFIGURATION})..."
-dotnet build "${REPO_ROOT}/LanguageWise.sln" --configuration "${CONFIGURATION}" --nologo
+mapfile -t SOLUTIONS < <(find "${REPO_ROOT}" -name '*.slnx' -type f | sort)
 
+failed=()
+for solution in "${SOLUTIONS[@]}"; do
+    name="$(basename "$(dirname "${solution}")")"
+    [[ "${SERVICE}" != "all" && "${SERVICE}" != "${name}" ]] && continue
+
+    echo ""
+    echo "Building ${name} (${CONFIGURATION})..."
+    dotnet build "${solution}" --configuration "${CONFIGURATION}" --nologo || failed+=("${name}")
+    found=1
+done
+
+if [[ -z "${found:-}" ]]; then
+    echo "No solution found for '${SERVICE}'." >&2
+    exit 1
+fi
+
+if [[ ${#failed[@]} -gt 0 ]]; then
+    echo ""
+    echo "Build FAILED: ${failed[*]}" >&2
+    exit 1
+fi
+
+echo ""
 echo "Build succeeded."
