@@ -4,7 +4,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <InvariantGlobalization>true</InvariantGlobalization>    <RootNamespace>LanguageWise.QuestsAchievementsNotificationsService.Api</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <RootNamespace>LanguageWise.QuestsAchievementsNotificationsService.Api</RootNamespace>
     <AssemblyName>LanguageWise.QuestsAchievementsNotificationsService.Api</AssemblyName>
   </PropertyGroup>
 

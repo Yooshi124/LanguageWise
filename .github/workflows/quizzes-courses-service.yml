@@ -64,6 +64,26 @@ jobs:
           done
           exit $missing
 
+      # This repository has no Directory.Build.props or Directory.Packages.props:
+      # every microservice pins its own versions. A PackageReference without a
+      # Version therefore cannot resolve, and NuGet reports it only as the very
+      # unhelpful 'MSB4181: RestoreTask returned false but did not log an error'.
+      - name: Verify every project is self-contained
+        shell: bash
+        run: |
+          bad=0
+          for proj in $(find "quizzes-courses-service" -name '*.csproj' -not -path '*/bin/*' -not -path '*/obj/*'); do
+            if ! grep -q '<TargetFramework>' "$proj"; then
+              echo "::error file=$proj::No <TargetFramework>. It must not rely on a repository-root Directory.Build.props."
+              bad=1
+            fi
+            if grep -E '<PackageReference' "$proj" | grep -qv 'Version='; then
+              echo "::error file=$proj::A PackageReference has no Version attribute. There is no central package management in this repository."
+              bad=1
+            fi
+          done
+          exit $bad
+
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v4
         with:
