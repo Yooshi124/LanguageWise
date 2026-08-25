@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/backend/">
+    <Project Path="backend/LanguageWise.Shared.Api/LanguageWise.Shared.Api.csproj" />
+  </Folder>
+  <Folder Name="/database/">
+    <Project Path="database/LanguageWise.Shared.Db/LanguageWise.Shared.Db.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/LanguageWise.Shared.Api.Tests/LanguageWise.Shared.Api.Tests.csproj" />
+  </Folder>
+  <Folder Name="/frontend/">
+    <File Path="frontend/css/theme.css" />
+    <File Path="frontend/index.html" />
+    <File Path="frontend/js/app.js" />
+    <File Path="frontend/nginx.conf" />
+  </Folder>
+</Solution>
