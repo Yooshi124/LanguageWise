@@ -62,6 +62,18 @@ services:
     networks: [languagewise]
     restart: unless-stopped
 
+  quizzes-courses-service-frontend:
+    container_name: quizzes-courses-service-frontend
+    build:
+      context: ./quizzes-courses-service/frontend
+    ports:
+      - "127.0.0.1:3003:80"
+    networks: [languagewise]
+    depends_on:
+      quizzes-courses-service-backend:
+        condition: service_healthy
+    restart: unless-stopped
+
   quizzes-courses-service-backend:
     container_name: quizzes-courses-service-backend
     build:
@@ -76,15 +88,18 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  quizzes-courses-service-frontend:
-    container_name: quizzes-courses-service-frontend
-    build:
-      context: ./quizzes-courses-service/frontend
+  quests-achievements-notifications-service-db-api:
+    container_name: quests-achievements-notifications-service-db-api
+    image: postgrest/postgrest:v12.2.3
+    environment:
+      PGRST_DB_URI: postgres://languagewise:languagewise@quests-achievements-notifications-service-db:5432/quests_achievements_notifications
+      PGRST_DB_SCHEMA: api
+      PGRST_DB_ANON_ROLE: web_anon
     ports:
-      - "127.0.0.1:3003:80"
+      - "6004:3000"
     networks: [languagewise]
     depends_on:
-      quizzes-courses-service-backend:
+      quests-achievements-notifications-service-db:
         condition: service_healthy
     restart: unless-stopped
 
@@ -93,11 +108,11 @@ services:
     build:
       context: ./quests-achievements-notifications-service/database
     environment:
-      Database__Path: /data/quests-achievements-notifications-service.db
+      POSTGRES_DB: quests_achievements_notifications
+      POSTGRES_USER: languagewise
+      POSTGRES_PASSWORD: languagewise
     volumes:
-      - quests-achievements-notifications-service-db-data:/data
-    ports:
-      - "6004:8080"
+      - quests-achievements-notifications-service-db-data:/var/lib/postgresql
     networks: [languagewise]
     restart: unless-stopped
 
@@ -106,13 +121,13 @@ services:
     build:
       context: ./quests-achievements-notifications-service/backend
     environment:
-      Services__Database: http://quests-achievements-notifications-service-db:8080
+      Services__Database: http://quests-achievements-notifications-service-db-api:3000
     ports:
       - "5004:8080"
     networks: [languagewise]
     depends_on:
-      quests-achievements-notifications-service-db:
-        condition: service_healthy
+      quests-achievements-notifications-service-db-api:
+        condition: service_started
     restart: unless-stopped
 
   quests-achievements-notifications-service-frontend:

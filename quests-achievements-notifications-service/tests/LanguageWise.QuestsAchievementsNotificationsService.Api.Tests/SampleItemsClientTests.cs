@@ -18,7 +18,7 @@ public class SampleItemsClientTests
     public async Task GetAllAsync_DeserialisesEveryItemReturnedByTheDatabaseService()
     {
         using var handler = new StubHttpMessageHandler(HttpStatusCode.OK, ItemsJson);
-        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quests-achievements-notifications-service-db:8080/") };
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quests-achievements-notifications-service-db-api:3000/") };
         var client = new SampleItemsClient(httpClient);
 
         var items = await client.GetAllAsync();
@@ -36,19 +36,19 @@ public class SampleItemsClientTests
     public async Task GetAllAsync_RequestsTheItemsEndpointOnTheDatabaseService()
     {
         using var handler = new StubHttpMessageHandler(HttpStatusCode.OK, "[]");
-        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quests-achievements-notifications-service-db:8080/") };
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quests-achievements-notifications-service-db-api:3000/") };
         var client = new SampleItemsClient(httpClient);
 
         await client.GetAllAsync();
 
-        Assert.That(handler.LastRequestUri, Is.EqualTo(new Uri("http://quests-achievements-notifications-service-db:8080/api/items")));
+        Assert.That(handler.LastRequestUri, Is.EqualTo(new Uri("http://quests-achievements-notifications-service-db-api:3000/sample_items?order=id")));
     }
 
     [Test]
     public async Task GetAllAsync_ReturnsAnEmptyListWhenTheDatabaseHasNoRows()
     {
         using var handler = new StubHttpMessageHandler(HttpStatusCode.OK, "[]");
-        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quests-achievements-notifications-service-db:8080/") };
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quests-achievements-notifications-service-db-api:3000/") };
         var client = new SampleItemsClient(httpClient);
 
         var items = await client.GetAllAsync();
@@ -60,7 +60,7 @@ public class SampleItemsClientTests
     public void GetAllAsync_ThrowsWhenTheDatabaseServiceFails()
     {
         using var handler = new StubHttpMessageHandler(HttpStatusCode.ServiceUnavailable, "{}");
-        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quests-achievements-notifications-service-db:8080/") };
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quests-achievements-notifications-service-db-api:3000/") };
         var client = new SampleItemsClient(httpClient);
 
         Assert.ThrowsAsync<HttpRequestException>(async () => await client.GetAllAsync());
