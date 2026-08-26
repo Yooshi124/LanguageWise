@@ -25,7 +25,7 @@ RUN apt-get update \
 COPY --from=build /app/publish ./
 
 ENV ASPNETCORE_HTTP_PORTS=8080 \
-    Services__Database=http://quests-achievements-notifications-service-db:8080
+    Services__Database=http://quests-achievements-notifications-service-db-api:3000
 
 USER app
 EXPOSE 8080

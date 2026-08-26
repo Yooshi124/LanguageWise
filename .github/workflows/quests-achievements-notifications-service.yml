@@ -52,10 +52,11 @@ jobs:
           for path in \
             "quests-achievements-notifications-service/LanguageWise.QuestsAchievementsNotificationsService.BE.slnx" \
             "quests-achievements-notifications-service/backend/LanguageWise.QuestsAchievementsNotificationsService.Api/LanguageWise.QuestsAchievementsNotificationsService.Api.csproj" \
-            "quests-achievements-notifications-service/database/LanguageWise.QuestsAchievementsNotificationsService.Db/LanguageWise.QuestsAchievementsNotificationsService.Db.csproj" \
             "quests-achievements-notifications-service/tests/LanguageWise.QuestsAchievementsNotificationsService.Api.Tests/LanguageWise.QuestsAchievementsNotificationsService.Api.Tests.csproj" \
             "quests-achievements-notifications-service/backend/Dockerfile" \
             "quests-achievements-notifications-service/database/Dockerfile" \
+            "quests-achievements-notifications-service/database/sql/schema.sql" \
+            "quests-achievements-notifications-service/database/sql/seed.sql" \
             "quests-achievements-notifications-service/frontend/Dockerfile" ; do
             if [ ! -f "$path" ]; then
               echo "::error file=$path::Missing from the repository. It may exist locally but be untracked — check .gitignore."

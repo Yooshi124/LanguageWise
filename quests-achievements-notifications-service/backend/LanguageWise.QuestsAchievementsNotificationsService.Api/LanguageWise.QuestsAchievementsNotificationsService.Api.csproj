@@ -9,4 +9,8 @@
     <AssemblyName>LanguageWise.QuestsAchievementsNotificationsService.Api</AssemblyName>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Supabase.Postgrest" Version="4.4.0" />
+  </ItemGroup>
+
 </Project>
