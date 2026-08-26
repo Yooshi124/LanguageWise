@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LanguageWise &mdash; Login</title>
+    <link rel="stylesheet" href="/css/theme.css">
+    <style>
+        .lw-login {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: calc(100vh - 4rem);
+            padding: var(--lw-space);
+        }
+        .lw-login__form {
+            width: 100%;
+            max-width: 380px;
+        }
+        .lw-login__field {
+            margin-bottom: var(--lw-space);
+        }
+        .lw-login__label {
+            display: block;
+            margin-bottom: 0.3rem;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        .lw-login__input {
+            width: 100%;
+            padding: 0.6rem 0.75rem;
+            border: 1px solid var(--lw-colour-border);
+            border-radius: var(--lw-radius-sm);
+            font-family: var(--lw-font);
+            font-size: 1rem;
+            background: var(--lw-colour-surface);
+            color: var(--lw-colour-ink);
+        }
+        .lw-login__input:focus {
+            outline: 2px solid var(--lw-colour-primary);
+            outline-offset: 1px;
+        }
+        .lw-login__btn {
+            width: 100%;
+            padding: 0.7rem;
+            background: var(--lw-colour-primary);
+            color: #fff;
+            border: none;
+            border-radius: var(--lw-radius-sm);
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 120ms ease;
+        }
+        .lw-login__btn:hover {
+            background: var(--lw-colour-primary-dark);
+        }
+        .lw-login__error {
+            display: none;
+            margin-bottom: var(--lw-space);
+            padding: 0.6rem 0.75rem;
+            background: rgba(179, 38, 30, 0.08);
+            border: 1px solid var(--lw-colour-danger);
+            border-radius: var(--lw-radius-sm);
+            color: var(--lw-colour-danger);
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+
+<main class="lw-login">
+    <div class="lw-card lw-login__form">
+        <h1 class="lw-card__title" style="text-align:center;margin-bottom:1.5rem;">Sign in to LanguageWise</h1>
+
+        <div class="lw-login__error" id="login-error"></div>
+
+        <form id="login-form">
+            <div class="lw-login__field">
+                <label class="lw-login__label" for="username">Username</label>
+                <input class="lw-login__input" id="username" name="username" type="text" required autofocus>
+            </div>
+            <div class="lw-login__field">
+                <label class="lw-login__label" for="password">Password</label>
+                <input class="lw-login__input" id="password" name="password" type="password" required>
+            </div>
+            <button class="lw-login__btn" type="submit">Sign in</button>
+        </form>
+    </div>
+</main>
+
+<script>
+    document.getElementById('login-form').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const errorEl = document.getElementById('login-error');
+        errorEl.style.display = 'none';
+
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+
+        try {
+            const res = await fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+
+            if (res.ok) {
+                window.location.href = '/index.html';
+            } else {
+                errorEl.textContent = 'Invalid username or password. Please try again.';
+                errorEl.style.display = 'block';
+            }
+        } catch {
+            errorEl.textContent = 'Unable to reach the server. Please try again later.';
+            errorEl.style.display = 'block';
+        }
+    });
+</script>
+
+</body>
+</html>
