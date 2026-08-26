@@ -1,5 +1,7 @@
 using LanguageWise.QuestsAchievementsNotificationsService.Api.Clients;
 using LanguageWise.QuestsAchievementsNotificationsService.Api.Rendering;
+using Supabase.Postgrest;
+using Supabase.Postgrest.Interfaces;
 
 const string ServiceName = "quests-achievements-notifications-service-backend";
 
@@ -8,11 +10,10 @@ var builder = WebApplication.CreateBuilder(args);
 // Inside Docker this resolves to the database service by container name.
 var databaseServiceUrl = builder.Configuration["Services:Database"] ?? "http://localhost:6004";
 
-builder.Services.AddHttpClient<SampleItemsClient>(client =>
-{
-    client.BaseAddress = new Uri(databaseServiceUrl.TrimEnd('/') + "/");
-    client.Timeout = TimeSpan.FromSeconds(10);
-});
+builder.Services.AddSingleton<IPostgrestClient>(new Client(
+    databaseServiceUrl.TrimEnd('/'),
+    new ClientOptions { Schema = "api" }));
+builder.Services.AddSingleton<SampleItemsClient>();
 
 var app = builder.Build();
 

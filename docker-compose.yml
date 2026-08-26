@@ -62,18 +62,6 @@ services:
     networks: [languagewise]
     restart: unless-stopped
 
-  quizzes-courses-service-frontend:
-    container_name: quizzes-courses-service-frontend
-    build:
-      context: ./quizzes-courses-service/frontend
-    ports:
-      - "127.0.0.1:3003:80"
-    networks: [languagewise]
-    depends_on:
-      quizzes-courses-service-backend:
-        condition: service_healthy
-    restart: unless-stopped
-
   quizzes-courses-service-backend:
     container_name: quizzes-courses-service-backend
     build:
@@ -88,18 +76,15 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  quests-achievements-notifications-service-db-api:
-    container_name: quests-achievements-notifications-service-db-api
-    image: postgrest/postgrest:v12.2.3
-    environment:
-      PGRST_DB_URI: postgres://languagewise:languagewise@quests-achievements-notifications-service-db:5432/quests_achievements_notifications
-      PGRST_DB_SCHEMA: api
-      PGRST_DB_ANON_ROLE: web_anon
+  quizzes-courses-service-frontend:
+    container_name: quizzes-courses-service-frontend
+    build:
+      context: ./quizzes-courses-service/frontend
     ports:
-      - "6004:3000"
+      - "127.0.0.1:3003:80"
     networks: [languagewise]
     depends_on:
-      quests-achievements-notifications-service-db:
+      quizzes-courses-service-backend:
         condition: service_healthy
     restart: unless-stopped
 
@@ -114,6 +99,19 @@ services:
     volumes:
       - quests-achievements-notifications-service-db-data:/var/lib/postgresql
     networks: [languagewise]
+    restart: unless-stopped
+
+  quests-achievements-notifications-service-db-api:
+    container_name: quests-achievements-notifications-service-db-api
+    image: postgrest/postgrest:v12.2.3
+    environment:
+      PGRST_DB_URI: postgres://languagewise:languagewise@quests-achievements-notifications-service-db:5432/quests_achievements_notifications
+      PGRST_DB_SCHEMA: api
+      PGRST_DB_ANON_ROLE: web_anon
+    networks: [languagewise]
+    depends_on:
+      quests-achievements-notifications-service-db:
+        condition: service_healthy
     restart: unless-stopped
 
   quests-achievements-notifications-service-backend:

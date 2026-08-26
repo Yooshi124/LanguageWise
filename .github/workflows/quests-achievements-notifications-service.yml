@@ -52,7 +52,6 @@ jobs:
           for path in \
             "quests-achievements-notifications-service/LanguageWise.QuestsAchievementsNotificationsService.BE.slnx" \
             "quests-achievements-notifications-service/backend/LanguageWise.QuestsAchievementsNotificationsService.Api/LanguageWise.QuestsAchievementsNotificationsService.Api.csproj" \
-            "quests-achievements-notifications-service/database/LanguageWise.QuestsAchievementsNotificationsService.Db/LanguageWise.QuestsAchievementsNotificationsService.Db.csproj" \
             "quests-achievements-notifications-service/tests/LanguageWise.QuestsAchievementsNotificationsService.Api.Tests/LanguageWise.QuestsAchievementsNotificationsService.Api.Tests.csproj" \
             "quests-achievements-notifications-service/backend/Dockerfile" \
             "quests-achievements-notifications-service/database/Dockerfile" \
