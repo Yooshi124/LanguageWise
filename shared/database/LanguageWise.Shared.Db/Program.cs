@@ -13,6 +13,7 @@ var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
 }.ToString();
 
 builder.Services.AddSingleton(new SampleItemRepository(connectionString));
+builder.Services.AddSingleton(new UserRepository(connectionString));
 builder.Services.AddSingleton(serviceProvider => new DatabaseInitializer(
     connectionString,
     Path.Combine(AppContext.BaseDirectory, "sql"),
@@ -67,6 +68,17 @@ app.MapPut("/api/items/{id:int}", (int id, SampleItemInput input, SampleItemRepo
 app.MapDelete("/api/items/{id:int}", (int id, SampleItemRepository repository) =>
     repository.Delete(id) ? Results.NoContent() : Results.NotFound());
 
+app.MapPost("/api/users/verify", (LoginInput input, UserRepository users) =>
+{
+    if (string.IsNullOrEmpty(input.Username) || string.IsNullOrEmpty(input.Password))
+        return Results.Unauthorized();
+
+    var userId = users.Verify(input.Username, input.Password);
+    return userId is not null
+        ? Results.Ok(new { authenticated = true, userId })
+        : Results.Unauthorized();
+});
+
 app.Run();
 
 static IResult? Validate(SampleItemInput input) =>
@@ -76,3 +88,5 @@ static IResult? Validate(SampleItemInput input) =>
             ["name"] = ["Name is required."]
         })
         : null;
+
+internal sealed record LoginInput(string Username, string Password);
