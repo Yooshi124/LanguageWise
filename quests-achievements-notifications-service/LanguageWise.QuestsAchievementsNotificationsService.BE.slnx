@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/backend/">
+    <Project Path="backend/LanguageWise.QuestsAchievementsNotificationsService.Api/LanguageWise.QuestsAchievementsNotificationsService.Api.csproj" />
+  </Folder>
+  <Folder Name="/database/">
+    <Project Path="database/LanguageWise.QuestsAchievementsNotificationsService.Db/LanguageWise.QuestsAchievementsNotificationsService.Db.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/LanguageWise.QuestsAchievementsNotificationsService.Api.Tests/LanguageWise.QuestsAchievementsNotificationsService.Api.Tests.csproj" />
+  </Folder>
+  <Folder Name="/frontend/">
+    <File Path="frontend/css/theme.css" />
+    <File Path="frontend/index.html" />
+    <File Path="frontend/nginx.conf" />
+  </Folder>
+</Solution>
