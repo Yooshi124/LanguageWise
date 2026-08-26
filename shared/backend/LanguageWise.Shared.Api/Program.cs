@@ -74,7 +74,16 @@ app.MapPost("/api/login", async (HttpContext ctx, UsersClient usersClient) =>
 
 app.MapPost("/api/check-login", async (HttpContext ctx) =>
 {
-    var request = await ctx.Request.ReadFromJsonAsync<CheckLoginRequest>();
+    CheckLoginRequest? request = null;
+    if (ctx.Request.ContentType == "application/json")
+    {
+        request = await ctx.Request.ReadFromJsonAsync<CheckLoginRequest>();
+    }
+    else
+    {
+        request = new CheckLoginRequest(ctx.Request.Cookies["token"] ?? "");
+    }
+
     var token = request?.token;
     if (string.IsNullOrEmpty(token))
     {
@@ -92,8 +101,8 @@ app.MapPost("/api/check-login", async (HttpContext ctx) =>
 
     try
     {
-        tokenHandler.ValidateToken(token, validationParams, out _);
-        return Results.Ok();
+        var claims = tokenHandler.ValidateToken(token, validationParams, out _);
+        return Results.Ok(claims.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Name)?.Value);
     }
     catch
     {

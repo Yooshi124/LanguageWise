@@ -3,6 +3,24 @@
 (function () {
     "use strict";
 
+    function checkLogin() {
+        fetch("/api/check-login", { method: "POST", credentials: "same-origin" })
+            .then(function (res) {
+                if (!res.ok) throw new Error("not logged in");
+                return res.json();
+            })
+            .then(function (name) {
+                var status = document.getElementById("user-status");
+                var signIn = document.getElementById("sign-in-link");
+                if (status) status.textContent = "Logged in as " + name;
+                if (signIn) signIn.style.display = "none";
+            })
+            .catch(function () {
+                var signIn = document.getElementById("sign-in-link");
+                if (signIn) signIn.style.display = "";
+            });
+    }
+
     var SERVICES = [
         { name: "Home", owner: "Team", frontend: 3000, backend: 5000, database: 6000, available: true },
         { name: "Mini Games", owner: "Kyan", frontend: 3001, backend: 5001, database: 6001, available: false },
@@ -42,6 +60,8 @@
     }
 
     document.addEventListener("DOMContentLoaded", function () {
+        checkLogin();
+
         var body = document.getElementById("lw-endpoints");
         if (!body) {
             return;
