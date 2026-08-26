@@ -7,6 +7,7 @@ networks:
 volumes:
   shared-db-data:
   quizzes-courses-service-db-data:
+  quests-achievements-notifications-service-db-data:
 
 services:
   shared-db:
@@ -84,5 +85,44 @@ services:
     networks: [languagewise]
     depends_on:
       quizzes-courses-service-backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  quests-achievements-notifications-service-db:
+    container_name: quests-achievements-notifications-service-db
+    build:
+      context: ./quests-achievements-notifications-service/database
+    environment:
+      Database__Path: /data/quests-achievements-notifications-service.db
+    volumes:
+      - quests-achievements-notifications-service-db-data:/data
+    ports:
+      - "6004:8080"
+    networks: [languagewise]
+    restart: unless-stopped
+
+  quests-achievements-notifications-service-backend:
+    container_name: quests-achievements-notifications-service-backend
+    build:
+      context: ./quests-achievements-notifications-service/backend
+    environment:
+      Services__Database: http://quests-achievements-notifications-service-db:8080
+    ports:
+      - "5004:8080"
+    networks: [languagewise]
+    depends_on:
+      quests-achievements-notifications-service-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  quests-achievements-notifications-service-frontend:
+    container_name: quests-achievements-notifications-service-frontend
+    build:
+      context: ./quests-achievements-notifications-service/frontend
+    ports:
+      - "3004:80"
+    networks: [languagewise]
+    depends_on:
+      quests-achievements-notifications-service-backend:
         condition: service_healthy
     restart: unless-stopped
