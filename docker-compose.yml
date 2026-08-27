@@ -9,6 +9,11 @@ volumes:
   quizzes-courses-service-db-data:
   quests-achievements-notifications-service-db-data:
 
+# Generate using gen-signing-key.ps1
+secrets:
+  signing_key:
+    file: ./signing_key.pem
+
 services:
   shared-db:
     container_name: shared-db
@@ -29,6 +34,9 @@ services:
       context: ./shared/backend
     environment:
       Services__Database: http://shared-db:8080
+      Auth__SigningKeyPath: /run/secrets/signing_key
+    secrets:
+      - signing_key
     ports:
       - "127.0.0.1:5000:8080"
     networks: [languagewise]

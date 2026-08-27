@@ -13,3 +13,10 @@ INSERT INTO SampleItems (Name, Description, CreatedAt) VALUES
     ('Shared CSS theme',         'A consistent look and feel across every frontend.',    '2026-01-12T10:45:00Z'),
     ('Docker Compose',           'One command brings the whole application up.',         '2026-01-13T11:00:00Z'),
     ('GitHub Actions',           'Every pull request is built and tested before merge.', '2026-01-14T11:15:00Z');
+
+INSERT INTO Users (Username, Password) VALUES
+    ('amber',   'test'),
+    ('lachlan', 'password'),
+    ('roan',    'password'),
+    ('justin',  'password'),
+    ('kyan',    'password');

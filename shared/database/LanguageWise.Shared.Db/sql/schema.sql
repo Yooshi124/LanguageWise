@@ -7,3 +7,9 @@ CREATE TABLE IF NOT EXISTS SampleItems (
     Description TEXT NOT NULL DEFAULT '',
     CreatedAt   TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS Users (
+    Id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    Username TEXT NOT NULL UNIQUE,
+    Password TEXT NOT NULL
+);
