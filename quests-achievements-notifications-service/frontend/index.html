@@ -5,14 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>LanguageWise &mdash; Quests &amp; Achievements</title>
     <link rel="stylesheet" href="/css/theme.css">
+    <link rel="stylesheet" href="/css/app.css">
     <script src="/js/htmx.min.js" defer></script>
+    <script src="/js/app.js" defer></script>
 </head>
 <body>
 
 <header class="lw-header">
     <div class="lw-header__inner">
         <h1 class="lw-header__title">Quests &amp; Achievements</h1>
-        <p class="lw-header__subtitle">Amber &mdash; Goals, streaks and the nudges that keep learners coming back.</p>
+        <p class="lw-header__subtitle">Track your progress and choose the moments worth hearing about.</p>
     </div>
 </header>
 
@@ -47,37 +49,95 @@
         </ul>
     </nav>
 
-    <section class="lw-card">
-        <h2 class="lw-card__title">
-            Skeleton demo <span class="lw-badge">SampleItems</span>
-        </h2>
-        <p class="lw-card__hint">
-            Loaded by HTMX from <code>/api/sample-items/fragment</code>, which nginx proxies to
-            <code>quests-achievements-notifications-service-backend</code>, which in turn calls <code>quests-achievements-notifications-service-db-api</code>.
-            <span class="lw-indicator" id="loading">Loading&hellip;</span>
-        </p>
+    <div hx-get="/api/profile"
+         hx-trigger="load"
+         hx-swap="none"
+         hx-indicator="#profile-loading"></div>
 
-        <div class="lw-table-wrap">
-            <table class="lw-table">
-                <thead>
-                    <tr>
-                        <th scope="col">Id</th>
-                        <th scope="col">Name</th>
-                        <th scope="col">Description</th>
-                        <th scope="col">Created</th>
-                    </tr>
-                </thead>
-                <tbody hx-get="/api/sample-items/fragment"
-                       hx-trigger="load"
-                       hx-swap="innerHTML"
-                       hx-indicator="#loading">
-                    <tr>
-                        <td class="lw-table__empty" colspan="4">Loading sample items&hellip;</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
+    <div id="profile-loading" class="lw-loading htmx-indicator" role="status">Loading your progress&hellip;</div>
+
+    <section id="signed-out" class="lw-card lw-state" hidden>
+        <h2 class="lw-card__title">Sign in required</h2>
+        <p>Your achievements and preferences are linked to your LanguageWise account.</p>
+        <a class="lw-command" href="http://localhost:3000/login.html">Sign in</a>
     </section>
+
+    <div id="dashboard" hidden>
+        <section class="lw-profile-band" aria-labelledby="profile-name">
+            <div>
+                <p class="lw-eyebrow">Learner profile</p>
+                <h2 id="profile-name"></h2>
+            </div>
+            <p id="achievement-summary" class="lw-profile-band__summary"></p>
+        </section>
+
+        <div class="lw-dashboard-grid">
+            <section class="lw-card lw-preferences" aria-labelledby="preferences-title">
+                <h2 class="lw-card__title" id="preferences-title">Email notifications</h2>
+                <p class="lw-card__hint">Choose what arrives in your inbox.</p>
+
+                <form hx-put="/api/preferences" hx-swap="none" hx-indicator="#save-indicator">
+                    <label class="lw-field" for="email">
+                        <span>Email address</span>
+                        <input id="email" name="email" type="email" autocomplete="email" required>
+                    </label>
+
+                    <label class="lw-master-toggle">
+                        <span><strong>All notifications</strong><small>Pause or resume every email at once</small></span>
+                        <input id="notify-all" name="notifyAll" type="checkbox">
+                    </label>
+
+                    <fieldset id="notification-types">
+                        <legend>Notification types</legend>
+                        <label><input name="notifyPostEngagement" type="checkbox"> Post engagement</label>
+                        <label><input name="notifyCourseCompletion" type="checkbox"> Course completion</label>
+                        <label><input name="notifyQuizResults" type="checkbox"> Quiz results</label>
+                        <label><input name="notifyStreaks" type="checkbox"> Learning streaks</label>
+                        <label><input name="notifyAchievements" type="checkbox"> New achievements</label>
+                    </fieldset>
+
+                    <div class="lw-form-actions">
+                        <button class="lw-command" type="submit">Save preferences</button>
+                        <span id="save-indicator" class="lw-indicator">Saving&hellip;</span>
+                        <output id="save-status" aria-live="polite"></output>
+                    </div>
+                </form>
+            </section>
+
+            <section class="lw-achievements" aria-labelledby="achievements-title">
+                <div class="lw-section-heading">
+                    <div>
+                        <p class="lw-eyebrow">Your collection</p>
+                        <h2 id="achievements-title">Achievements</h2>
+                    </div>
+                    <span id="completed-count" class="lw-badge"></span>
+                </div>
+                <div id="achievement-grid" class="lw-achievement-grid"></div>
+            </section>
+        </div>
+    </div>
+
+    <section id="service-error" class="lw-card lw-state lw-state--error" hidden>
+        <h2 class="lw-card__title">Unable to load your profile</h2>
+        <p>Please refresh the page and try again.</p>
+    </section>
+
+    <template id="achievement-template">
+        <article class="lw-achievement">
+            <div class="lw-achievement__image-wrap">
+                <img class="lw-achievement__image" alt="">
+                <span class="lw-achievement__fallback" aria-hidden="true"></span>
+            </div>
+            <div class="lw-achievement__body">
+                <div class="lw-achievement__heading">
+                    <h3></h3>
+                    <span class="lw-achievement__state"></span>
+                </div>
+                <progress></progress>
+                <p class="lw-achievement__progress"></p>
+            </div>
+        </article>
+    </template>
 
 </main>
 

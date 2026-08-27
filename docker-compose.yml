@@ -8,13 +8,42 @@ volumes:
   shared-db-data:
   quizzes-courses-service-db-data:
   quests-achievements-notifications-service-db-data:
+  ollama-data:
 
-# Generate using gen-signing-key.ps1
+# Generate using tools/gen-signing-key/gen-signing-key.ps1
 secrets:
-  signing_key:
-    file: ./signing_key.pem
+  signing_private_key:
+    file: ./signing_private_key.pem
+  signing_public_key:
+    file: ./signing_public_key.pem
 
 services:
+  ollama:
+    container_name: ollama
+    image: ollama/ollama:0.33.1
+    volumes:
+      - ollama-data:/root/.ollama
+    networks: [languagewise]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  ollama-model-init:
+    container_name: ollama-model-init
+    image: ollama/ollama:0.33.1
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["ollama pull gemma4:12b"]
+    networks: [languagewise]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
   shared-db:
     container_name: shared-db
     build:
@@ -34,9 +63,9 @@ services:
       context: ./shared/backend
     environment:
       Services__Database: http://shared-db:8080
-      Auth__SigningKeyPath: /run/secrets/signing_key
+      Auth__SigningKeyPath: /run/secrets/signing_private_key
     secrets:
-      - signing_key
+      - signing_private_key
     ports:
       - "127.0.0.1:5000:8080"
     networks: [languagewise]
@@ -126,14 +155,26 @@ services:
     container_name: quests-achievements-notifications-service-backend
     build:
       context: ./quests-achievements-notifications-service/backend
+    env_file:
+      - path: ./quests-achievements-notifications-service/backend/.env
+        required: false
     environment:
       Services__Database: http://quests-achievements-notifications-service-db-api:3000
+      Services__Ollama: http://ollama:11434
+      Ollama__Model: gemma4:12b
+      Auth__VerificationKeyPath: /run/secrets/signing_public_key
+      Smtp__Host: smtp.gmail.com
+      Smtp__Port: 587
+    secrets:
+      - signing_public_key
     ports:
       - "5004:8080"
     networks: [languagewise]
     depends_on:
       quests-achievements-notifications-service-db-api:
         condition: service_started
+      ollama-model-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   quests-achievements-notifications-service-frontend:

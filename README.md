@@ -92,3 +92,22 @@ chore: init
 ## Contributing
 
 Please don't commit API keys and `.env` files...thx 🙂
+
+## Notification email configuration
+
+The quests, achievements, and notifications service uses Ollama with
+`gemma4:12b` to compose notification emails. Docker Compose downloads the model
+into the persistent `ollama-data` volume on its first start.
+
+Create `quests-achievements-notifications-service/backend/.env` with these
+values to enable Gmail SMTP for that backend only:
+
+```text
+SMTP_USERNAME=your-google-account@example.com
+SMTP_PASSWORD=your-google-app-password
+SMTP_FROM_NAME=LanguageWise
+```
+
+Use a Google app password rather than the account password. When these values
+are absent, events and achievement progress still work but email is skipped.
+The authenticated SMTP username is always used as the sender address.

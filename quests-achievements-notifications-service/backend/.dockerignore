@@ -8,6 +8,7 @@
 **/.vscode
 **/.idea
 **/*.user
+**/.env
 **/*.db
 **/*.db-shm
 **/*.db-wal

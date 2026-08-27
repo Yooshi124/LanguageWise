@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title">
+  <title id="title">Achievement medal</title>
+  <path fill="#1f6feb" d="M25 8h18l10 27-17 7z"/>
+  <path fill="#10897a" d="M71 8H53L43 35l17 7z"/>
+  <circle cx="48" cy="58" r="27" fill="#fff" stroke="#10897a" stroke-width="6"/>
+  <path fill="#10897a" d="m48 40 5.4 10.9 12 1.7-8.7 8.5 2.1 11.9L48 67.4 37.2 73l2.1-11.9-8.7-8.5 12-1.7z"/>
+</svg>
