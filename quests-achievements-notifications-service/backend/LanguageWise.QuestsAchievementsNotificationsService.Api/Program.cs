@@ -1,8 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
-using System.Net.Mail;
-using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json;
+using LanguageWise.QuestsAchievementsNotificationsService.Api;
 using LanguageWise.QuestsAchievementsNotificationsService.Api.Clients;
 using LanguageWise.QuestsAchievementsNotificationsService.Api.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -36,6 +35,7 @@ builder.Services.AddHttpClient<IEmailContentGenerator, OllamaEmailGenerator>(cli
     client.BaseAddress = new Uri(ollamaServiceUrl.TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(90);
 });
+builder.Services.AddSingleton<ISmtpTransport, MailKitSmtpTransport>();
 builder.Services.AddSingleton<IEmailSender, GmailEmailSender>();
 
 var signingKeyPath = builder.Configuration["Auth:VerificationKeyPath"] ?? "/run/secrets/signing_public_key";
@@ -89,7 +89,7 @@ app.MapGet("/api/profile", async (
     AppDataClient client,
     CancellationToken cancellationToken) =>
 {
-    var userId = GetUserId(context.User);
+    var userId = NotificationRules.GetUserId(context.User);
     if (userId is null)
     {
         return Results.Unauthorized();
@@ -112,7 +112,16 @@ app.MapGet("/api/profile", async (
         return Results.Ok(new
         {
             username = context.User.Identity?.Name ?? string.Empty,
-            preferences,
+            preferences = new
+            {
+                preferences.Email,
+                preferences.NotifyAll,
+                preferences.NotifyPostEngagement,
+                preferences.NotifyCourseCompletion,
+                preferences.NotifyQuizResults,
+                preferences.NotifyStreaks,
+                preferences.NotifyAchievements
+            },
             achievements = view
         });
     }
@@ -130,14 +139,34 @@ app.MapPut("/api/preferences", async (
     AppDataClient client,
     CancellationToken cancellationToken) =>
 {
-    var userId = GetUserId(context.User);
+    var userId = NotificationRules.GetUserId(context.User);
     if (userId is null)
     {
         return Results.Unauthorized();
     }
 
-    var request = await ReadPreferencesAsync(context.Request, cancellationToken);
-    if (request is null || !MailAddress.TryCreate(request.Email, out _))
+    PreferenceUpdateRequest? request;
+    try
+    {
+        request = await ReadPreferencesAsync(context.Request, cancellationToken);
+    }
+    catch (JsonException)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["email"] = ["A valid notification email is required."]
+        });
+    }
+
+    if (request is null)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["email"] = ["A valid notification email is required."]
+        });
+    }
+
+    if (!NotificationRules.IsValidEmail(request.Email))
     {
         return Results.ValidationProblem(new Dictionary<string, string[]>
         {
@@ -176,13 +205,13 @@ app.MapPost("/api/events", async (
     IEmailSender emailSender,
     CancellationToken cancellationToken) =>
 {
-    var actorUserId = GetUserId(context.User);
+    var actorUserId = NotificationRules.GetUserId(context.User);
     if (actorUserId is null)
     {
         return Results.Unauthorized();
     }
 
-    var validationErrors = ValidateEvent(request);
+    var validationErrors = NotificationRules.ValidateEvent(request);
     if (validationErrors.Count > 0)
     {
         return Results.ValidationProblem(validationErrors);
@@ -210,8 +239,12 @@ app.MapPost("/api/events", async (
         var current = (await client.GetUserAchievementsAsync(request.RecipientUserId, cancellationToken))
             .SingleOrDefault(item => item.AchievementId == request.AchievementId);
         var oldProgress = current?.Progress ?? 0;
-        var newProgress = Math.Min(oldProgress + request.Value, achievement.ProgressNeeded);
-        var newlyAttained = oldProgress < achievement.ProgressNeeded && newProgress >= achievement.ProgressNeeded;
+        var progressUpdate = NotificationRules.CalculateProgress(
+            oldProgress,
+            request.Value,
+            achievement.ProgressNeeded);
+        var newProgress = progressUpdate.Progress;
+        var newlyAttained = progressUpdate.NewlyAttained;
 
         var created = await client.CreateNotificationAsync(new NotificationInput(
             request.EventId.Trim(),
@@ -229,7 +262,7 @@ app.MapPost("/api/events", async (
             request.AchievementId,
             newProgress), cancellationToken);
 
-        var shouldNotify = ShouldNotify(preferences, request.EventType, newlyAttained);
+        var shouldNotify = NotificationRules.ShouldNotify(preferences, request.EventType, newlyAttained);
         var emailSent = false;
         var usedFallback = false;
         string? emailError = null;
@@ -291,9 +324,6 @@ app.MapPost("/api/events", async (
 
 app.Run();
 
-static int? GetUserId(ClaimsPrincipal user) =>
-    int.TryParse(user.FindFirstValue(JwtRegisteredClaimNames.Sub), out var userId) ? userId : null;
-
 static UserPreferences DefaultPreferences(int userId) =>
     new(userId, null, true, true, true, true, true, true);
 
@@ -322,68 +352,5 @@ static async Task<PreferenceUpdateRequest?> ReadPreferencesAsync(
         form.ContainsKey("notifyAchievements"));
 }
 
-static Dictionary<string, string[]> ValidateEvent(EventRequest request)
-{
-    var errors = new Dictionary<string, string[]>();
+    public partial class Program;
 
-    if (string.IsNullOrWhiteSpace(request.EventId))
-    {
-        errors["eventId"] = ["Event ID is required."];
-    }
-
-    if (request.EventType is not ("post-engagement" or "course-completion" or "quiz-result" or "streak"))
-    {
-        errors["eventType"] = ["Event type is not supported."];
-    }
-
-    if (string.IsNullOrWhiteSpace(request.SubjectId))
-    {
-        errors["subjectId"] = ["Subject ID is required."];
-    }
-
-    if (request.RecipientUserId <= 0)
-    {
-        errors["recipientUserId"] = ["Recipient user ID must be positive."];
-    }
-
-    if (request.AchievementId <= 0)
-    {
-        errors["achievementId"] = ["Achievement ID must be positive."];
-    }
-
-    if (request.OccurredAt == default)
-    {
-        errors["occurredAt"] = ["Occurrence time is required."];
-    }
-
-    if (request.Value <= 0)
-    {
-        errors["value"] = ["Value must be positive."];
-    }
-
-    if (request.Metadata is { ValueKind: not JsonValueKind.Object })
-    {
-        errors["metadata"] = ["Metadata must be a JSON object."];
-    }
-
-    return errors;
-}
-
-static bool ShouldNotify(UserPreferences preferences, string eventType, bool newlyAttained)
-{
-    if (!preferences.NotifyAll)
-    {
-        return false;
-    }
-
-    var eventEnabled = eventType switch
-    {
-        "post-engagement" => preferences.NotifyPostEngagement,
-        "course-completion" => preferences.NotifyCourseCompletion,
-        "quiz-result" => preferences.NotifyQuizResults,
-        "streak" => preferences.NotifyStreaks,
-        _ => false
-    };
-
-    return eventEnabled || (newlyAttained && preferences.NotifyAchievements);
-}

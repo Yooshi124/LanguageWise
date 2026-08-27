@@ -14,4 +14,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="LanguageWise.QuestsAchievementsNotificationsService.Api.Tests" />
+  </ItemGroup>
+
 </Project>

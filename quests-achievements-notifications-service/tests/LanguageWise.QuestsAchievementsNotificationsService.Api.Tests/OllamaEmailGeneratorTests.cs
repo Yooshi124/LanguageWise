@@ -49,6 +49,29 @@ public sealed class OllamaEmailGeneratorTests
         });
     }
 
+    [Test]
+    public async Task GenerateAsync_DisablesThinkingAndBoundsGeneratedTokens()
+    {
+        const string response = """
+            {"message":{"content":"{\"subject\":\"Progress\",\"body\":\"Keep going.\"}"}}
+            """;
+        var handler = new StubHttpMessageHandler(HttpStatusCode.OK, response);
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://ollama/") };
+        var generator = new OllamaEmailGenerator(
+            httpClient,
+            Options.Create(new OllamaOptions()),
+            NullLogger<OllamaEmailGenerator>.Instance);
+
+        await generator.GenerateAsync(Context);
+
+        using var request = System.Text.Json.JsonDocument.Parse(handler.LastRequestBody!);
+        Assert.Multiple(() =>
+        {
+            Assert.That(request.RootElement.GetProperty("think").GetBoolean(), Is.False);
+            Assert.That(request.RootElement.GetProperty("options").GetProperty("num_predict").GetInt32(), Is.EqualTo(192));
+        });
+    }
+
     private static OllamaEmailGenerator CreateGenerator(HttpStatusCode statusCode, string responseBody)
     {
         var httpClient = new HttpClient(new StubHttpMessageHandler(statusCode, responseBody))

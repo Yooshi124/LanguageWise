@@ -12,7 +12,36 @@ public interface IEmailSender
     Task SendAsync(string recipient, EmailContent content, CancellationToken cancellationToken = default);
 }
 
-public sealed class GmailEmailSender(IOptions<SmtpOptions> options) : IEmailSender
+public interface ISmtpTransport
+{
+    Task SendAsync(
+        MimeMessage message,
+        SmtpOptions options,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class MailKitSmtpTransport : ISmtpTransport
+{
+    public async Task SendAsync(
+        MimeMessage message,
+        SmtpOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        using var client = new SmtpClient();
+        await client.ConnectAsync(
+            options.Host,
+            options.Port,
+            SecureSocketOptions.StartTls,
+            cancellationToken);
+        await client.AuthenticateAsync(options.Username, options.Password, cancellationToken);
+        await client.SendAsync(message, cancellationToken);
+        await client.DisconnectAsync(true, cancellationToken);
+    }
+}
+
+public sealed class GmailEmailSender(
+    IOptions<SmtpOptions> options,
+    ISmtpTransport smtpTransport) : IEmailSender
 {
     private readonly SmtpOptions smtpOptions = options.Value;
 
@@ -31,14 +60,6 @@ public sealed class GmailEmailSender(IOptions<SmtpOptions> options) : IEmailSend
         message.Subject = content.Subject;
         message.Body = new TextPart("plain") { Text = content.Body };
 
-        using var client = new SmtpClient();
-        await client.ConnectAsync(
-            smtpOptions.Host,
-            smtpOptions.Port,
-            SecureSocketOptions.StartTls,
-            cancellationToken);
-        await client.AuthenticateAsync(smtpOptions.Username, smtpOptions.Password, cancellationToken);
-        await client.SendAsync(message, cancellationToken);
-        await client.DisconnectAsync(true, cancellationToken);
+        await smtpTransport.SendAsync(message, smtpOptions, cancellationToken);
     }
 }

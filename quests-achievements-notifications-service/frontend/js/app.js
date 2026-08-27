@@ -4,7 +4,6 @@
     var dashboard = document.getElementById("dashboard");
     var signedOut = document.getElementById("signed-out");
     var serviceError = document.getElementById("service-error");
-    var notificationTypes = document.getElementById("notification-types");
     var saveStatus = document.getElementById("save-status");
 
     document.body.addEventListener("htmx:afterRequest", function (event) {
@@ -14,10 +13,6 @@
         } else if (path === "/api/preferences") {
             handlePreferences(event.detail.xhr);
         }
-    });
-
-    document.getElementById("notify-all").addEventListener("change", function (event) {
-        notificationTypes.disabled = !event.target.checked;
     });
 
     function handleProfile(xhr) {
@@ -51,7 +46,6 @@
         setChecked("notifyQuizResults", preferences.notifyQuizResults);
         setChecked("notifyStreaks", preferences.notifyStreaks);
         setChecked("notifyAchievements", preferences.notifyAchievements);
-        notificationTypes.disabled = !preferences.notifyAll;
 
         var grid = document.getElementById("achievement-grid");
         grid.replaceChildren();
