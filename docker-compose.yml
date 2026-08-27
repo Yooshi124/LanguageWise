@@ -8,6 +8,7 @@ volumes:
   shared-db-data:
   quizzes-courses-service-db-data:
 
+# Generate using gen-signing-key.ps1
 secrets:
   signing_key:
     file: ./signing_key.pem
