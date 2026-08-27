@@ -1,5 +1,10 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Cryptography;
 using LanguageWise.QuestsAchievementsNotificationsService.Api.Clients;
 using LanguageWise.QuestsAchievementsNotificationsService.Api.Rendering;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.IdentityModel.Tokens;
 using Supabase.Postgrest;
 using Supabase.Postgrest.Interfaces;
 
@@ -15,9 +20,51 @@ builder.Services.AddSingleton<IPostgrestClient>(new Client(
     new ClientOptions { Schema = "api" }));
 builder.Services.AddSingleton<SampleItemsClient>();
 
+var signingKeyPath = builder.Configuration["Auth:VerificationKeyPath"] ?? "/run/secrets/signing_public_key";
+var rsa = RSA.Create();
+rsa.ImportFromPem(File.ReadAllText(signingKeyPath));
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new RsaSecurityKey(rsa),
+            ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
+            NameClaimType = JwtRegisteredClaimNames.Name
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                if (string.IsNullOrEmpty(context.Token))
+                {
+                    context.Token = context.Request.Cookies["token"];
+                }
+
+                return Task.CompletedTask;
+            }
+        };
+    });
+
+builder.Services.AddAuthorizationBuilder()
+    .SetFallbackPolicy(new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build());
+
 var app = builder.Build();
 
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = ServiceName }));
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = ServiceName }))
+    .AllowAnonymous();
 
 app.MapGet("/api/sample-items", async (SampleItemsClient client, CancellationToken cancellationToken) =>
 {

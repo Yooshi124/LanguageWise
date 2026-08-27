@@ -9,10 +9,12 @@ volumes:
   quizzes-courses-service-db-data:
   quests-achievements-notifications-service-db-data:
 
-# Generate using gen-signing-key.ps1
+# Generate using tools/gen-signing-key/gen-signing-key.ps1
 secrets:
-  signing_key:
-    file: ./signing_key.pem
+  signing_private_key:
+    file: ./signing_private_key.pem
+  signing_public_key:
+    file: ./signing_public_key.pem
 
 services:
   shared-db:
@@ -34,9 +36,9 @@ services:
       context: ./shared/backend
     environment:
       Services__Database: http://shared-db:8080
-      Auth__SigningKeyPath: /run/secrets/signing_key
+      Auth__SigningKeyPath: /run/secrets/signing_private_key
     secrets:
-      - signing_key
+      - signing_private_key
     ports:
       - "127.0.0.1:5000:8080"
     networks: [languagewise]
@@ -128,6 +130,9 @@ services:
       context: ./quests-achievements-notifications-service/backend
     environment:
       Services__Database: http://quests-achievements-notifications-service-db-api:3000
+      Auth__VerificationKeyPath: /run/secrets/signing_public_key
+    secrets:
+      - signing_public_key
     ports:
       - "5004:8080"
     networks: [languagewise]
