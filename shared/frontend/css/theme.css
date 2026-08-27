@@ -249,3 +249,11 @@ a {
 .htmx-request.lw-indicator {
     display: inline;
 }
+
+/* ---------------------------------------------------------- auth status -- */
+
+.lw-auth-status {
+    margin-left: auto;
+    font-size: 0.9rem;
+    font-weight: 600;
+}

@@ -14,8 +14,11 @@
     <div class="lw-header__inner">
         <h1 class="lw-header__title">Home</h1>
         <p class="lw-header__subtitle">Team &mdash; The unified home page for the LanguageWise team project.</p>
-        <span id="user-status" style="margin-left:auto;font-size:0.9rem;font-weight:600;"></span>
-        <a id="sign-in-link" href="/login.html" style="margin-left:auto;font-size:0.9rem;font-weight:600;display:none;">Sign in</a>
+        <span id="auth-status"
+              class="lw-auth-status"
+              hx-post="/api/check-login/fragment"
+              hx-trigger="load"
+              hx-swap="innerHTML"></span>
     </div>
 </header>
 

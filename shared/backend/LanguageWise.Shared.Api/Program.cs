@@ -30,6 +30,28 @@ var rsa = RSA.Create();
 rsa.ImportFromPem(File.ReadAllText(signingKeyPath));
 var signingKey = new RsaSecurityKey(rsa);
 
+string? ValidateToken(string token)
+{
+    var tokenHandler = new JwtSecurityTokenHandler();
+    var validationParams = new TokenValidationParameters
+    {
+        ValidateIssuer = false,
+        ValidateAudience = false,
+        ValidateLifetime = true,
+        IssuerSigningKey = signingKey
+    };
+
+    try
+    {
+        var claims = tokenHandler.ValidateToken(token, validationParams, out _);
+        return claims.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Name)?.Value;
+    }
+    catch
+    {
+        return null;
+    }
+}
+
 var app = builder.Build();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = ServiceName }));
@@ -90,24 +112,22 @@ app.MapPost("/api/check-login", async (HttpContext ctx) =>
         return Results.Unauthorized();
     }
 
-    var tokenHandler = new JwtSecurityTokenHandler();
-    var validationParams = new TokenValidationParameters
-    {
-        ValidateIssuer = false,
-        ValidateAudience = false,
-        ValidateLifetime = true,
-        IssuerSigningKey = signingKey
-    };
+    var name = ValidateToken(token);
+    return name is not null ? Results.Ok(name) : Results.Unauthorized();
+});
 
-    try
-    {
-        var claims = tokenHandler.ValidateToken(token, validationParams, out _);
-        return Results.Ok(claims.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Name)?.Value);
-    }
-    catch
-    {
-        return Results.Unauthorized();
-    }
+app.MapPost("/api/check-login/fragment", (HttpContext ctx) =>
+{
+    var token = ctx.Request.Cookies["token"] ?? "";
+    var name = ValidateToken(token);
+
+    return name is not null
+        ? Results.Content(
+            $"""<span>Logged in as {System.Net.WebUtility.HtmlEncode(name)}</span>""",
+            "text/html")
+        : Results.Content(
+            """<a href="/login.html">Sign in</a>""",
+            "text/html");
 });
 
 app.MapGet("/api/sample-items", async (SampleItemsClient client, CancellationToken cancellationToken) =>
