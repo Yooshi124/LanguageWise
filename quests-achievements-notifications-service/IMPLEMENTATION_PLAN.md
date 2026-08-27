@@ -13,7 +13,7 @@
 
 ## Agreed Decisions
 
-- The AI model is Gemma 4 12B Q4_0, released July 2026. The exact Ollama model tag must be confirmed when the container is implemented.
+- The official Ollama model tag is `gemma4:12b`; Ollama manages the packaged model artifact.
 - Email will be sent using MailKit and Gmail SMTP. Credentials will be supplied through environment variables or Docker secrets and will not be committed.
 - Event requests will use the triggering user's JWT. The actor user ID will always be derived from the token's `sub` claim rather than accepted from the request body.
 - An event may identify a different recipient user, such as user A liking user B's post and notifying user B.
@@ -23,7 +23,7 @@
 
 ## Implementation Steps
 
-### 1. Database
+### 1. Database (Complete)
 
 - Replace the sample schema with the following entities:
   - `Achievements`: name, image, event type, and progress needed.
@@ -35,7 +35,7 @@
 - Seed representative achievements and default preferences suitable for local demonstrations.
 - Retain PostgREST as the database API used by the backend.
 
-### 2. Authentication and Event Trust
+### 2. Authentication and Event Trust (Complete)
 
 - Configure JWT bearer authentication in the backend using the existing RSA public/signing key material.
 - Read the actor user ID from `sub` and username from `name`.
@@ -48,7 +48,7 @@
 
 User JWT authentication proves who triggered the request but does not independently prove the claimed domain event occurred. Initially, owning services will call the event endpoint while forwarding the user's JWT. Service-to-service authentication can be added later if stronger event provenance becomes necessary.
 
-### 3. Backend API
+### 3. Backend API (Complete)
 
 - Add `GET /api/profile/fragment` to render the authenticated user's identity, notification preferences, and achievement progress for HTMX.
 - Add `PUT /api/preferences` to validate and update the user's email and category preferences, returning an HTMX status fragment.
@@ -57,27 +57,27 @@ User JWT authentication proves who triggered the request but does not independen
 - Add structured validation and appropriate `400`, `401`, `404`, `409`, and `503` responses.
 - HTML-encode all values rendered into fragments.
 
-### 4. Ollama and Email
+### 4. Ollama and Email (Complete)
 
-- Add an Ollama client that calls `/api/chat` using Gemma 4 12B Q4_0.
+- Add an Ollama client that calls `/api/chat` using `gemma4:12b`.
 - Give the model a constrained prompt containing the event, recipient name, and newly attained achievement details.
 - Treat model output as untrusted content and constrain the generated subject and body lengths.
 - Add a deterministic email template fallback so event processing and notification delivery can continue if Ollama is unavailable.
 - Send generated messages through Gmail SMTP using MailKit with TLS.
 - Configure SMTP host, port, username, password/app password, sender address, and sender name externally.
 - Send only when the recipient has enabled the matching notification category.
-- Record generated content, attempts, delivery status, timestamp, and errors in `Notifications`.
+- Return delivery status in the event response while keeping the agreed minimal notification schema.
 
-### 5. Docker Compose
+### 5. Docker Compose (Complete)
 
 - Add an Ollama service and a persistent model volume.
-- Add a model initialization container or startup command that pulls the confirmed Gemma 4 12B Q4_0 Ollama tag.
+- Add a model initialization container that pulls `gemma4:12b`.
 - Add Ollama health checks and backend dependency wiring.
 - Configure backend URLs for PostgREST and Ollama.
 - Configure JWT key mounting and Gmail SMTP settings without committing credentials.
 - Preserve the existing PostgreSQL, PostgREST, backend, and frontend service boundaries.
 
-### 6. Frontend
+### 6. Frontend (Complete)
 
 - Replace the sample-items page with an HTMX dashboard.
 - Display the username from the authenticated JWT.

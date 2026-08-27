@@ -22,6 +22,22 @@ builder.Services.AddHttpClient<AppDataClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(10);
 });
 
+var ollamaServiceUrl = builder.Configuration["Services:Ollama"] ?? "http://localhost:11434";
+builder.Services.Configure<OllamaOptions>(builder.Configuration.GetSection("Ollama"));
+builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection("Smtp"));
+builder.Services.PostConfigure<SmtpOptions>(options =>
+{
+    options.Username = builder.Configuration["SMTP_USERNAME"] ?? options.Username;
+    options.Password = builder.Configuration["SMTP_PASSWORD"] ?? options.Password;
+    options.FromName = builder.Configuration["SMTP_FROM_NAME"] ?? options.FromName;
+});
+builder.Services.AddHttpClient<IEmailContentGenerator, OllamaEmailGenerator>(client =>
+{
+    client.BaseAddress = new Uri(ollamaServiceUrl.TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromSeconds(90);
+});
+builder.Services.AddSingleton<IEmailSender, GmailEmailSender>();
+
 var signingKeyPath = builder.Configuration["Auth:VerificationKeyPath"] ?? "/run/secrets/signing_public_key";
 var rsa = RSA.Create();
 rsa.ImportFromPem(File.ReadAllText(signingKeyPath));
@@ -156,6 +172,8 @@ app.MapPost("/api/events", async (
     HttpContext context,
     EventRequest request,
     AppDataClient client,
+    IEmailContentGenerator emailGenerator,
+    IEmailSender emailSender,
     CancellationToken cancellationToken) =>
 {
     var actorUserId = GetUserId(context.User);
@@ -211,6 +229,33 @@ app.MapPost("/api/events", async (
             request.AchievementId,
             newProgress), cancellationToken);
 
+        var shouldNotify = ShouldNotify(preferences, request.EventType, newlyAttained);
+        var emailSent = false;
+        var usedFallback = false;
+        string? emailError = null;
+
+        if (shouldNotify && emailSender.IsConfigured)
+        {
+            try
+            {
+                var email = await emailGenerator.GenerateAsync(new EmailContext(
+                    request.EventType,
+                    request.SubjectId,
+                    achievement.Name,
+                    newProgress,
+                    achievement.ProgressNeeded,
+                    newlyAttained), cancellationToken);
+                usedFallback = email.UsedFallback;
+                await emailSender.SendAsync(preferences.Email, email, cancellationToken);
+                emailSent = true;
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                app.Logger.LogError(exception, "Failed to send notification email for event {EventId}.", request.EventId);
+                emailError = "Email delivery failed.";
+            }
+        }
+
         return Results.Ok(new
         {
             eventId = request.EventId,
@@ -224,7 +269,14 @@ app.MapPost("/api/events", async (
                 achievement.ProgressNeeded,
                 newlyAttained
             },
-            shouldNotify = ShouldNotify(preferences, request.EventType, newlyAttained)
+            shouldNotify,
+            email = new
+            {
+                sent = emailSent,
+                configured = emailSender.IsConfigured,
+                usedFallback,
+                error = emailError
+            }
         });
     }
     catch (Exception exception)

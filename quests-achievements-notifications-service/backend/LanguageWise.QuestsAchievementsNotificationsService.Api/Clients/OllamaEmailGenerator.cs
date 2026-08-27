@@ -1,0 +1,107 @@
+using System.Net.Http.Json;
+using System.Text.Json;
+using LanguageWise.QuestsAchievementsNotificationsService.Api.Models;
+using Microsoft.Extensions.Options;
+
+namespace LanguageWise.QuestsAchievementsNotificationsService.Api.Clients;
+
+public interface IEmailContentGenerator
+{
+    Task<EmailContent> GenerateAsync(EmailContext context, CancellationToken cancellationToken = default);
+}
+
+public sealed class OllamaEmailGenerator(
+    HttpClient httpClient,
+    IOptions<OllamaOptions> options,
+    ILogger<OllamaEmailGenerator> logger) : IEmailContentGenerator
+{
+    private const int MaximumSubjectLength = 120;
+    private const int MaximumBodyLength = 4000;
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    public async Task<EmailContent> GenerateAsync(
+        EmailContext context,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var request = new
+            {
+                model = options.Value.Model,
+                stream = false,
+                think = false,
+                messages = new object[]
+                {
+                    new
+                    {
+                        role = "system",
+                        content = "Write a warm, concise LanguageWise notification email. Return only JSON matching the supplied schema. Do not include markdown, links, or claims not present in the event."
+                    },
+                    new
+                    {
+                        role = "user",
+                        content = $"Event: {context.EventType}\nSubject: {context.SubjectId}\nAchievement: {context.AchievementName}\nProgress: {context.Progress}/{context.ProgressNeeded}\nNewly attained: {context.NewlyAttained}"
+                    }
+                },
+                format = new
+                {
+                    type = "object",
+                    properties = new
+                    {
+                        subject = new { type = "string" },
+                        body = new { type = "string" }
+                    },
+                    required = new[] { "subject", "body" }
+                },
+                options = new
+                {
+                    temperature = 1.0,
+                    top_p = 0.95,
+                    top_k = 64,
+                    num_predict = 192
+                }
+            };
+
+            using var response = await httpClient.PostAsJsonAsync("api/chat", request, cancellationToken);
+            response.EnsureSuccessStatusCode();
+            var payload = await response.Content.ReadFromJsonAsync<OllamaChatResponse>(cancellationToken);
+            var generated = JsonSerializer.Deserialize<GeneratedEmail>(payload?.Message.Content ?? string.Empty, JsonOptions);
+
+            if (string.IsNullOrWhiteSpace(generated?.Subject) || string.IsNullOrWhiteSpace(generated.Body))
+            {
+                throw new JsonException("Ollama returned an incomplete email.");
+            }
+
+            return new EmailContent(
+                Truncate(generated.Subject.ReplaceLineEndings(" ").Trim(), MaximumSubjectLength),
+                Truncate(generated.Body.Trim(), MaximumBodyLength),
+                false);
+        }
+        catch (Exception exception) when (
+            !cancellationToken.IsCancellationRequested
+            && exception is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            logger.LogWarning(exception, "Ollama email generation failed; using the fallback template.");
+            return Fallback(context);
+        }
+    }
+
+    private static EmailContent Fallback(EmailContext context)
+    {
+        var subject = context.NewlyAttained
+            ? $"Achievement unlocked: {context.AchievementName}"
+            : $"Your {context.AchievementName} progress";
+        var body = context.NewlyAttained
+            ? $"You unlocked {context.AchievementName}. Congratulations on reaching {context.Progress} of {context.ProgressNeeded}!"
+            : $"You made progress toward {context.AchievementName}: {context.Progress} of {context.ProgressNeeded}. Keep going!";
+
+        return new EmailContent(subject, body, true);
+    }
+
+    private static string Truncate(string value, int maximumLength) =>
+        value.Length <= maximumLength ? value : value[..maximumLength];
+
+    private sealed record OllamaChatResponse(OllamaMessage Message);
+    private sealed record OllamaMessage(string Content);
+    private sealed record GeneratedEmail(string Subject, string Body);
+}
