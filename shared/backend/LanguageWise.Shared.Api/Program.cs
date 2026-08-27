@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Net;
 using LanguageWise.Shared.Api.Clients;
 using LanguageWise.Shared.Api.Rendering;
 using Microsoft.IdentityModel.Tokens;
@@ -116,6 +117,12 @@ app.MapPost("/api/check-login", async (HttpContext ctx) =>
     return name is not null ? Results.Ok(name) : Results.Unauthorized();
 });
 
+app.MapPost("/api/logout", (HttpContext ctx) =>
+{
+    ctx.Response.Cookies.Delete("token");
+    return Results.Ok();
+});
+
 app.MapPost("/api/check-login/fragment", (HttpContext ctx) =>
 {
     var token = ctx.Request.Cookies["token"] ?? "";
@@ -123,7 +130,7 @@ app.MapPost("/api/check-login/fragment", (HttpContext ctx) =>
 
     return name is not null
         ? Results.Content(
-            $"""<span>Logged in as {System.Net.WebUtility.HtmlEncode(name)}</span>""",
+            $"""<span>Logged in as {WebUtility.HtmlEncode(name)}</span> <button hx-post="/api/logout" hx-on::after-request="window.location.reload()">Log out</button>""",
             "text/html")
         : Results.Content(
             """<a href="/login.html">Sign in</a>""",
