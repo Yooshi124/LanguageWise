@@ -5,7 +5,6 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using LanguageWise.QuestsAchievementsNotificationsService.Api.Clients;
 using LanguageWise.QuestsAchievementsNotificationsService.Api.Models;
-using LanguageWise.QuestsAchievementsNotificationsService.Api.Rendering;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
@@ -69,7 +68,7 @@ app.UseAuthorization();
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = ServiceName }))
     .AllowAnonymous();
 
-app.MapGet("/api/profile/fragment", async (
+app.MapGet("/api/profile", async (
     HttpContext context,
     AppDataClient client,
     CancellationToken cancellationToken) =>
@@ -94,9 +93,12 @@ app.MapGet("/api/profile/fragment", async (
             progress.GetValueOrDefault(achievement.AchievementId),
             achievement.ProgressNeeded)).ToList();
 
-        return Results.Content(
-            ProfileHtmlRenderer.Render(context.User.Identity?.Name ?? string.Empty, preferences, view),
-            "text/html");
+        return Results.Ok(new
+        {
+            username = context.User.Identity?.Name ?? string.Empty,
+            preferences,
+            achievements = view
+        });
     }
     catch (Exception exception)
     {
@@ -139,7 +141,7 @@ app.MapPut("/api/preferences", async (
             request.NotifyStreaks,
             request.NotifyAchievements), cancellationToken);
 
-        return Results.Content(ProfileHtmlRenderer.RenderSaved(), "text/html");
+        return Results.Ok(new { message = "Notification preferences saved." });
     }
     catch (Exception exception)
     {
