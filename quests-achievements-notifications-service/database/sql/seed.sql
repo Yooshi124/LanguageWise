@@ -1,20 +1,43 @@
-INSERT INTO api.sample_items (id, name, description, "createdAt") VALUES
-    (1,  'First Steps',        'Awarded for completing your very first lesson.',  '2026-02-02T09:00:00Z'),
-    (2,  'Five Course Streak', 'Complete five courses to earn a silver medal.',   '2026-02-03T09:15:00Z'),
-    (3,  'Perfect Quiz',       'Score full marks on any quiz.',                   '2026-02-04T09:30:00Z'),
-    (4,  'Seven Day Streak',   'Study every day for a week.',                     '2026-02-05T09:45:00Z'),
-    (5,  'Helpful Voice',      'Reply to ten posts on the discussion forum.',     '2026-02-06T10:00:00Z'),
-    (6,  'Night Owl',          'Finish an activity after midnight.',              '2026-02-07T10:15:00Z'),
-    (7,  'Early Bird',         'Finish an activity before seven in the morning.', '2026-02-08T10:30:00Z'),
-    (8,  'Polyglot',           'Reach level two in three different languages.',   '2026-02-09T10:45:00Z'),
-    (9,  'Course Certificate', 'A generated certificate emailed on completion.',  '2026-02-10T11:00:00Z'),
-    (10, 'Top of the Class',   'Finish first on a course leaderboard.',           '2026-02-11T11:15:00Z')
-ON CONFLICT (id) DO UPDATE SET
+INSERT INTO api.achievements (achievement_id, name, image, progress_needed) VALUES
+    (1,  'First Course',        '/images/achievements/first-course.png',        1),
+    (2,  'Course Explorer',     '/images/achievements/course-explorer.png',     5),
+    (3,  'Course Champion',     '/images/achievements/course-champion.png',     10),
+    (4,  'First Applause',      '/images/achievements/first-applause.png',      1),
+    (5,  'Crowd Pleaser',       '/images/achievements/crowd-pleaser.png',       10),
+    (6,  'Community Favourite', '/images/achievements/community-favourite.png', 50),
+    (7,  'Quiz Starter',        '/images/achievements/quiz-starter.png',        1),
+    (8,  'Quiz Master',         '/images/achievements/quiz-master.png',         10),
+    (9,  'Three Day Streak',    '/images/achievements/three-day-streak.png',    3),
+    (10, 'Seven Day Streak',    '/images/achievements/seven-day-streak.png',    7)
+ON CONFLICT (achievement_id) DO UPDATE SET
     name = EXCLUDED.name,
-    description = EXCLUDED.description,
-    "createdAt" = EXCLUDED."createdAt";
+    image = EXCLUDED.image,
+    progress_needed = EXCLUDED.progress_needed;
 
 SELECT setval(
-    pg_get_serial_sequence('api.sample_items', 'id'),
-    (SELECT max(id) FROM api.sample_items)
+    pg_get_serial_sequence('api.achievements', 'achievement_id'),
+    (SELECT max(achievement_id) FROM api.achievements)
 );
+
+INSERT INTO api.user_preferences (user_id, email) VALUES
+    (1, 'amber@example.com'),
+    (2, 'lachlan@example.com'),
+    (3, 'roan@example.com'),
+    (4, 'justin@example.com'),
+    (5, 'kyan@example.com')
+ON CONFLICT (user_id) DO UPDATE SET
+    email = EXCLUDED.email;
+
+INSERT INTO api.user_achievements (user_id, achievement_id, progress) VALUES
+    (1, 1, 1),
+    (1, 2, 3),
+    (1, 5, 6),
+    (2, 4, 1),
+    (2, 5, 4),
+    (3, 7, 1),
+    (3, 8, 7),
+    (4, 9, 2),
+    (5, 9, 3),
+    (5, 10, 5)
+ON CONFLICT (user_id, achievement_id) DO UPDATE SET
+    progress = EXCLUDED.progress;
