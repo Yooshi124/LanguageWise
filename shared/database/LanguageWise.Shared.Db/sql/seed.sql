@@ -16,7 +16,7 @@ INSERT INTO SampleItems (Name, Description, CreatedAt) VALUES
 
 INSERT INTO Users (Username, Password) VALUES
     ('amber',   'test'),
-    ('lachlan',     'password'),
-    ('roan', 'password'),
-    ('justin',   'password'),
-    ('kyan',     'password');
+    ('lachlan', 'password'),
+    ('roan',    'password'),
+    ('justin',  'password'),
+    ('kyan',    'password');
