@@ -4,9 +4,10 @@ public sealed class VocabVoyageService
 {
     private readonly VocabVoyageGame game;
 
-    public VocabVoyageService(string language)
+    public VocabVoyageService(string language, ILearningContextProvider contextProvider)
     {
-        game = new VocabVoyageGame(language);
+        var context = contextProvider.GetContext();
+        game = new VocabVoyageGame(language, VocabularySelector.GetCandidates(context));
     }
 
     public VocabVoyageState GetState() => game.GetState();

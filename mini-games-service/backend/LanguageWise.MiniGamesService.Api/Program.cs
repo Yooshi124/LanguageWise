@@ -4,7 +4,10 @@ const string ServiceName = "mini-games-service-backend";
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSingleton(new VocabVoyageService("English"));
+builder.Services.AddSingleton<ILearningContextProvider, FakeLearningContextProvider>();
+builder.Services.AddSingleton(serviceProvider => new VocabVoyageService(
+    "English",
+    serviceProvider.GetRequiredService<ILearningContextProvider>()));
 
 var app = builder.Build();
 

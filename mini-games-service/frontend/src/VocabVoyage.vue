@@ -48,6 +48,19 @@ const colourClass = (colour) => ({
 		'cell-absent': colour === 'R'
 });
 
+const readResponse = async (response) => {
+		const body = await response.text();
+		if (!body) {
+			return null;
+		}
+
+		try {
+			return JSON.parse(body);
+		} catch {
+			throw new Error(`The game backend returned an unexpected response (${response.status}).`);
+		}
+};
+
 const submitGuess = async () => {
 	if (guess.value.trim().length !== 5) {
 		message.value = 'Enter a five-letter guess.';
@@ -64,9 +77,9 @@ const submitGuess = async () => {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ guess: guess.value })
 		});
-		const result = await response.json();
+		const result = await readResponse(response);
 		if (!response.ok) {
-			throw new Error(result.errors?.guess?.[0] ?? result.error ?? 'Unable to submit guess.');
+			throw new Error(result?.errors?.guess?.[0] ?? result?.error ?? `Unable to submit guess (${response.status}).`);
 		}
 
 		guesses.value.push(result);
@@ -82,19 +95,35 @@ const submitGuess = async () => {
 };
 
 const resetGame = async () => {
-	await fetch('/api/vocab-voyage/reset', { method: 'POST' });
-	guesses.value = [];
-	gameComplete.value = false;
-	message.value = '';
-	error.value = false;
+	try {
+		const response = await fetch('/api/vocab-voyage/reset', { method: 'POST' });
+		if (!response.ok) {
+			throw new Error(`Unable to reset the game (${response.status}).`);
+		}
+
+		guesses.value = [];
+		gameComplete.value = false;
+		message.value = '';
+		error.value = false;
+	} catch (exception) {
+		message.value = exception.message;
+		error.value = true;
+	}
 };
 
 onMounted(async () => {
-	const response = await fetch('/api/vocab-voyage');
-	if (response.ok) {
-		const state = await response.json();
-		guesses.value = state.guesses ?? [];
-		gameComplete.value = state.isComplete ?? false;
+	try {
+		const response = await fetch('/api/vocab-voyage');
+		const state = await readResponse(response);
+		if (!response.ok) {
+			throw new Error(`Unable to load the game (${response.status}).`);
+		}
+
+		guesses.value = state?.guesses ?? [];
+		gameComplete.value = state?.isComplete ?? false;
+	} catch (exception) {
+		message.value = exception.message;
+		error.value = true;
 	}
 });
 </script>

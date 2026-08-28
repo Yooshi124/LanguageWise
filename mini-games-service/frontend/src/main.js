@@ -5,6 +5,7 @@ import WordStrings from './WordStrings.vue';
 import Associations from './Associations.vue';
 
 const routes = {
+    '/game': GamePage,
     '/vocab-voyage': VocabVoyage,
     '/word-strings': WordStrings,
     '/associations': Associations,
