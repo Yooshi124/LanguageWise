@@ -1,0 +1,90 @@
+name: chat-discussion-service
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chat-discussion-service-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  PROJECT: chat-discussion-service/database/LanguageWise.ChatDiscussionService.Db/LanguageWise.ChatDiscussionService.Db.csproj
+
+jobs:
+  # The job name below is what you add to the branch ruleset as a required check.
+  chat-discussion-service-database-build:
+    name: chat-discussion-service-database-build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      # Guards against files that exist locally but were never committed — for
+      # example because a .gitignore rule swallowed them. Without this the build
+      # fails later with a bare 'MSB1009: Project file does not exist'.
+      - name: Verify the service layout is complete
+        shell: bash
+        run: |
+          missing=0
+          for path in \
+            "chat-discussion-service/database/LanguageWise.ChatDiscussionService.Db/LanguageWise.ChatDiscussionService.Db.csproj" \
+            "chat-discussion-service/database/Dockerfile" \
+            "chat-discussion-service/database/LanguageWise.ChatDiscussionService.Db/sql/schema.sql" \
+            "chat-discussion-service/database/LanguageWise.ChatDiscussionService.Db/sql/seed.sql" ; do
+            if [ ! -f "$path" ]; then
+              echo "::error file=$path::Missing from the repository. It may exist locally but be untracked — check .gitignore."
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Verify every project is self-contained
+        shell: bash
+        run: |
+          bad=0
+          proj="${{ env.PROJECT }}"
+          if ! grep -q '<TargetFramework>' "$proj"; then
+            echo "::error file=$proj::No <TargetFramework>. It must not rely on a repository-root Directory.Build.props."
+            bad=1
+          fi
+          if grep -E '<PackageReference' "$proj" | grep -qv 'Version='; then
+            echo "::error file=$proj::A PackageReference has no Version attribute."
+            bad=1
+          fi
+          exit $bad
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-chat-discussion-service-${{ hashFiles('chat-discussion-service/**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-chat-discussion-service-
+            nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore "${{ env.PROJECT }}"
+
+      - name: Build
+        run: dotnet build "${{ env.PROJECT }}" -c Release --no-restore
+
+      # Each tier builds from its own folder as the context, which proves the
+      # image does not reach outside the microservice.
+      - name: Build the database image
+        run: docker build -t languagewise/chat-discussion-service-db:ci ./chat-discussion-service/database

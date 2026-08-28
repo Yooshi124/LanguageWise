@@ -135,7 +135,7 @@ services:
     volumes:
       - chat-discussion-service-db-data:/data
     ports:
-      - "127.0.0.1:6005:8080"
+      - "127.0.0.1:6002:8080"
     networks: [languagewise]
     restart: unless-stopped
 
