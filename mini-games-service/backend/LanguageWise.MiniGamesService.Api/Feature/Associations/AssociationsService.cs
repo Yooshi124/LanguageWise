@@ -11,8 +11,7 @@ public sealed class AssociationsService
 
     public AssociationsState GetState() => game.GetState();
 
-    public AssociationResult SelectPair(string firstWord, string secondWord) =>
-        game.SelectPair(firstWord, secondWord);
+    public AssociationResult SubmitGuess(IReadOnlyList<string> words) => game.SubmitGuess(words);
 
     public void ResetGame() => game.Reset();
 }

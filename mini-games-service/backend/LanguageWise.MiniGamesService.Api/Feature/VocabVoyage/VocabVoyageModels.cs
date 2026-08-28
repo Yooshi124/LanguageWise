@@ -5,11 +5,13 @@ public sealed record VocabVoyageState(
     int Attempts,
     bool IsComplete,
     bool IsWon,
-    IReadOnlyList<VocabVoyageGuessResult> Guesses);
+    IReadOnlyList<VocabVoyageGuessResult> Guesses,
+    string? CorrectAnswer);
 
 public sealed record VocabVoyageGuessResult(
     string Guess,
     char[] Colours,
-    bool IsCorrect);
+    bool IsCorrect,
+    string? CorrectAnswer = null);
 
 public sealed record VocabVoyageGuessRequest(string Guess);

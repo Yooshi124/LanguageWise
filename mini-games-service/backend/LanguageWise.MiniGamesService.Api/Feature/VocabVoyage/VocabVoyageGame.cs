@@ -20,7 +20,7 @@ public sealed class VocabVoyageGame
     }
 
     public VocabVoyageState GetState() =>
-        new(language, attempts, isComplete, isWon, guesses.ToArray());
+        new(language, attempts, isComplete, isWon, guesses.ToArray(), isComplete ? answer : null);
 
     public VocabVoyageGuessResult SubmitGuess(string guess)
     {
@@ -45,6 +45,12 @@ public sealed class VocabVoyageGame
         attempts++;
         isWon = isCorrect;
         isComplete = isCorrect || attempts >= MaximumAttempts;
+
+        if (isComplete && !isWon)
+        {
+            result = result with { CorrectAnswer = answer };
+            guesses[^1] = result;
+        }
 
         return result;
     }

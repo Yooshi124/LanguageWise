@@ -94,6 +94,7 @@ public class VocabVoyageGameTests
             Assert.That(game.GetState().Attempts, Is.EqualTo(6));
             Assert.That(game.GetState().IsComplete, Is.True);
             Assert.That(game.GetState().IsWon, Is.False);
+            Assert.That(game.GetState().CorrectAnswer, Is.EqualTo("VOCAB"));
         });
     }
 

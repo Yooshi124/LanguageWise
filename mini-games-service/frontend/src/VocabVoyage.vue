@@ -19,6 +19,10 @@
 				<button type="submit" :disabled="gameComplete || loading">{{ loading ? 'Checking' : 'Guess' }}</button>
 			</div>
 		</form>
+			<div v-if="gameComplete && !isWon" class="failure-banner" role="alert">
+				<strong>Out of guesses</strong>
+				<span>The answer was <b>{{ correctAnswer }}</b>. Start a new round to play again.</span>
+			</div>
 		<p v-if="message" class="game-message" :class="{ 'is-error': error }">{{ message }}</p>
 		<button v-if="gameComplete" class="reset-button" type="button" @click="resetGame">Play again</button>
 		</section>
@@ -34,6 +38,8 @@ const loading = ref(false);
 const message = ref('');
 const error = ref(false);
 const gameComplete = ref(false);
+const isWon = ref(false);
+const correctAnswer = ref('');
 
 const boxes = computed(() => Array.from({ length: 30 }, (_, index) => {
 		const row = Math.floor(index / 5);
@@ -85,7 +91,9 @@ const submitGuess = async () => {
 		guesses.value.push(result);
 		guess.value = '';
 		gameComplete.value = result.isCorrect || guesses.value.length >= 6;
-		message.value = result.isCorrect ? 'Correct. You found the word!' : gameComplete.value ? 'Game complete. Try again!' : 'Keep going.';
+		isWon.value = result.isCorrect;
+		correctAnswer.value = result.correctAnswer ?? '';
+		message.value = result.isCorrect ? 'Correct. You found the word!' : gameComplete.value ? '' : 'Keep going.';
 	} catch (exception) {
 		message.value = exception.message;
 		error.value = true;
@@ -103,6 +111,8 @@ const resetGame = async () => {
 
 		guesses.value = [];
 		gameComplete.value = false;
+		isWon.value = false;
+		correctAnswer.value = '';
 		message.value = '';
 		error.value = false;
 	} catch (exception) {
@@ -121,6 +131,8 @@ onMounted(async () => {
 
 		guesses.value = state?.guesses ?? [];
 		gameComplete.value = state?.isComplete ?? false;
+		isWon.value = state?.isWon ?? false;
+		correctAnswer.value = state?.correctAnswer ?? '';
 	} catch (exception) {
 		message.value = exception.message;
 		error.value = true;
@@ -190,6 +202,10 @@ h1 {
 	border-radius: 10px;
 	box-shadow: 0 12px 32px rgba(28, 85, 78, 0.12);
 }
+
+.attempts { display: flex; justify-content: center; gap: 0.55rem; margin-bottom: 1rem; }
+.attempt-icon { width: 0.8rem; height: 0.8rem; border: 2px solid #10897a; border-radius: 50%; background: #b8e4dc; }
+.attempt-icon.used { border-color: #aab6c6; background: transparent; opacity: 0.45; }
 
 .game-grid {
 	display: grid;
@@ -280,6 +296,10 @@ h1 {
 	font-size: 0.9rem;
 	text-align: center;
 }
+
+.failure-banner { display: grid; gap: 0.2rem; margin: 1.25rem -0.25rem 0; padding: 0.9rem 1rem; color: #713746; border: 1px solid #e4a1ad; border-left: 5px solid #c85b70; border-radius: 6px; background: #fff0f2; text-align: center; }
+.failure-banner strong { font-size: 1rem; }
+.failure-banner span { font-size: 0.85rem; }
 
 .game-message.is-error {
 	color: #b3261e;
