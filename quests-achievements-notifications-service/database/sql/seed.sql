@@ -1,17 +1,18 @@
-INSERT INTO api.achievements (achievement_id, name, image, progress_needed) VALUES
-    (1,  'First Course',        '/images/achievements/first-course.png',        1),
-    (2,  'Course Explorer',     '/images/achievements/course-explorer.png',     5),
-    (3,  'Course Champion',     '/images/achievements/course-champion.png',     10),
-    (4,  'First Applause',      '/images/achievements/first-applause.png',      1),
-    (5,  'Crowd Pleaser',       '/images/achievements/crowd-pleaser.png',       10),
-    (6,  'Community Favourite', '/images/achievements/community-favourite.png', 50),
-    (7,  'Quiz Starter',        '/images/achievements/quiz-starter.png',        1),
-    (8,  'Quiz Master',         '/images/achievements/quiz-master.png',         10),
-    (9,  'Three Day Streak',    '/images/achievements/three-day-streak.png',    3),
-    (10, 'Seven Day Streak',    '/images/achievements/seven-day-streak.png',    7)
+INSERT INTO api.achievements (achievement_id, name, image, trigger, progress_needed) VALUES
+    (1,  'First Course',        '/images/achievements/first-course.png',        'course-completion', 1),
+    (2,  'Course Explorer',     '/images/achievements/course-explorer.png',     'course-completion', 5),
+    (3,  'Course Champion',     '/images/achievements/course-champion.png',     'course-completion', 10),
+    (4,  'First Applause',      '/images/achievements/first-applause.png',      'post-engagement',   1),
+    (5,  'Crowd Pleaser',       '/images/achievements/crowd-pleaser.png',       'post-engagement',   10),
+    (6,  'Community Favourite', '/images/achievements/community-favourite.png', 'post-engagement',   50),
+    (7,  'Quiz Starter',        '/images/achievements/quiz-starter.png',        'quiz-result',       1),
+    (8,  'Quiz Master',         '/images/achievements/quiz-master.png',         'quiz-result',       10),
+    (9,  'Three Day Streak',    '/images/achievements/three-day-streak.png',    'streak',            3),
+    (10, 'Seven Day Streak',    '/images/achievements/seven-day-streak.png',    'streak',            7)
 ON CONFLICT (achievement_id) DO UPDATE SET
     name = EXCLUDED.name,
     image = EXCLUDED.image,
+    trigger = EXCLUDED.trigger,
     progress_needed = EXCLUDED.progress_needed;
 
 SELECT setval(
