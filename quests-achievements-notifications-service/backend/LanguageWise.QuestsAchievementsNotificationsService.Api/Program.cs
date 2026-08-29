@@ -102,6 +102,7 @@ app.MapGet("/api/profile", async (
         var achievements = await client.GetAchievementsAsync(cancellationToken);
         var progress = (await client.GetUserAchievementsAsync(userId.Value, cancellationToken))
             .ToDictionary(item => item.AchievementId, item => item.Progress);
+        var notifications = await client.GetNotificationsAsync(userId.Value, cancellationToken);
         var view = achievements.Select(achievement => new AchievementProgress(
             achievement.AchievementId,
             achievement.Name,
@@ -122,7 +123,16 @@ app.MapGet("/api/profile", async (
                 preferences.NotifyStreaks,
                 preferences.NotifyAchievements
             },
-            achievements = view
+            achievements = view,
+            notifications = notifications.Select(notification => new
+            {
+                notification.NotificationId,
+                notification.EventId,
+                notification.Trigger,
+                notification.Time,
+                notification.EmailSubject,
+                notification.EmailBody
+            })
         });
     }
     catch (Exception exception)
