@@ -1,0 +1,20 @@
+<Solution>
+  <Folder Name="/backend/">
+    <Project Path="backend/LanguageWise.ChatDiscussionService.Api/LanguageWise.ChatDiscussionService.Api.csproj" />
+    <File Path="backend/Dockerfile" />
+  </Folder>
+  <Folder Name="/database/">
+    <Project Path="database/LanguageWise.ChatDiscussionService.Db/LanguageWise.ChatDiscussionService.Db.csproj" />
+    <File Path="database/Dockerfile" />
+    <File Path="database/LanguageWise.ChatDiscussionService.Db/sql/schema.sql" />
+    <File Path="database/LanguageWise.ChatDiscussionService.Db/sql/seed.sql" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/LanguageWise.ChatDiscussionService.Api.Tests/LanguageWise.ChatDiscussionService.Api.Tests.csproj" />
+  </Folder>
+  <Folder Name="/frontend/">
+    <File Path="frontend/Dockerfile" />
+    <File Path="frontend/index.html" />
+    <File Path="frontend/nginx.conf" />
+  </Folder>
+</Solution>
