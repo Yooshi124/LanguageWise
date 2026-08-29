@@ -3,72 +3,139 @@ using Microsoft.Data.Sqlite;
 
 namespace LanguageWise.ChatDiscussionService.Db.Data;
 
+/// <summary>The outcome of trying to like a post or a comment.</summary>
+public enum LikeOutcome
+{
+    Created,
+    Duplicate,
+    TargetNotFound
+}
+
 public sealed class DiscussionRepository(string connectionString)
 {
-    public IReadOnlyList<Post> GetPosts() => Query(
-        "SELECT Id, UserId, Title, Content, CreatedAt, UpdatedAt FROM Posts ORDER BY Id;",
-        reader => new Post(reader.GetInt32(0), reader.GetInt32(1), reader.GetString(2), reader.GetString(3), ParseDate(reader.GetString(4)), ParseDate(reader.GetString(5))));
+    // SQLite extended result codes, used to tell one constraint failure from another
+    // without a second round trip. See https://sqlite.org/rescode.html.
+    private const int ConstraintForeignKey = 787;
+    private const int ConstraintUnique = 2067;
 
-    public Post? GetPost(int id) => QuerySingle(
-        "SELECT Id, UserId, Title, Content, CreatedAt, UpdatedAt FROM Posts WHERE Id = $id;",
-        id,
-        reader => new Post(reader.GetInt32(0), reader.GetInt32(1), reader.GetString(2), reader.GetString(3), ParseDate(reader.GetString(4)), ParseDate(reader.GetString(5))));
+    private const string PostSummarySelect = """
+        SELECT p.Id, p.UserId, p.Title, p.Content, p.Category, p.CreatedAt, p.UpdatedAt,
+               (SELECT COUNT(*) FROM Comments c WHERE c.PostId = p.Id) AS CommentCount,
+               (SELECT COUNT(*) FROM Likes l WHERE l.PostId = p.Id) AS LikeCount,
+               EXISTS (SELECT 1 FROM Likes v WHERE v.PostId = p.Id AND v.UserId = $viewerId) AS LikedByViewer
+        FROM Posts p
+        """;
+
+    private const string CommentSummarySelect = """
+        SELECT c.Id, c.PostId, c.UserId, c.Content, c.CreatedAt, c.UpdatedAt,
+               (SELECT COUNT(*) FROM Likes l WHERE l.CommentId = c.Id) AS LikeCount,
+               EXISTS (SELECT 1 FROM Likes v WHERE v.CommentId = c.Id AND v.UserId = $viewerId) AS LikedByViewer
+        FROM Comments c
+        """;
+
+    // Counts come from correlated subqueries rather than joins: joining Comments and
+    // Likes in one statement multiplies the rows and inflates both totals.
+    public IReadOnlyList<PostSummary> GetPosts(int? userId, string? category, int limit, int offset, int? viewerId)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            {PostSummarySelect}
+            WHERE ($userId IS NULL OR p.UserId = $userId)
+              AND ($category IS NULL OR p.Category = $category)
+            ORDER BY p.CreatedAt DESC, p.Id DESC
+            LIMIT $limit OFFSET $offset;
+            """;
+        Add(command, "$userId", userId);
+        Add(command, "$category", category);
+        Add(command, "$limit", limit);
+        Add(command, "$offset", offset);
+        Add(command, "$viewerId", viewerId);
+        return ReadAll(command, MapPostSummary);
+    }
+
+    public PostSummary? GetPost(int id, int? viewerId)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"{PostSummarySelect} WHERE p.Id = $id;";
+        Add(command, "$id", id);
+        Add(command, "$viewerId", viewerId);
+        return ReadFirst(command, MapPostSummary);
+    }
 
     public Post CreatePost(PostInput input)
     {
-        var now = DateTime.UtcNow.ToString("O");
+        var now = Timestamp();
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO Posts (UserId, Title, Content, CreatedAt, UpdatedAt)
-            VALUES ($userId, $title, $content, $createdAt, $updatedAt)
-            RETURNING Id, UserId, Title, Content, CreatedAt, UpdatedAt;
+            INSERT INTO Posts (UserId, Title, Content, Category, CreatedAt, UpdatedAt)
+            VALUES ($userId, $title, $content, $category, $createdAt, $updatedAt)
+            RETURNING Id, UserId, Title, Content, Category, CreatedAt, UpdatedAt;
             """;
         Add(command, "$userId", input.UserId);
         Add(command, "$title", input.Title!.Trim());
         Add(command, "$content", input.Content!.Trim());
+        Add(command, "$category", input.Category!.Trim());
         Add(command, "$createdAt", now);
         Add(command, "$updatedAt", now);
-        using var reader = command.ExecuteReader();
-        reader.Read();
-        return new Post(reader.GetInt32(0), reader.GetInt32(1), reader.GetString(2), reader.GetString(3), ParseDate(reader.GetString(4)), ParseDate(reader.GetString(5)));
+        return ReadFirst(command, MapPost)!;
     }
 
-    public Post? UpdatePost(int id, PostInput input)
+    /// <summary>
+    /// Replaces the editable fields. UserId is deliberately not written: an edit must
+    /// never reassign authorship, which would also defeat the backend's owner check.
+    /// </summary>
+    public Post? UpdatePost(int id, PostUpdate update)
     {
-        var now = DateTime.UtcNow.ToString("O");
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            UPDATE Posts SET UserId = $userId, Title = $title, Content = $content, UpdatedAt = $updatedAt
+            UPDATE Posts SET Title = $title, Content = $content, Category = $category, UpdatedAt = $updatedAt
             WHERE Id = $id
-            RETURNING Id, UserId, Title, Content, CreatedAt, UpdatedAt;
+            RETURNING Id, UserId, Title, Content, Category, CreatedAt, UpdatedAt;
             """;
         Add(command, "$id", id);
-        Add(command, "$userId", input.UserId);
-        Add(command, "$title", input.Title!.Trim());
-        Add(command, "$content", input.Content!.Trim());
-        Add(command, "$updatedAt", now);
-        using var reader = command.ExecuteReader();
-        return reader.Read()
-            ? new Post(reader.GetInt32(0), reader.GetInt32(1), reader.GetString(2), reader.GetString(3), ParseDate(reader.GetString(4)), ParseDate(reader.GetString(5)))
-            : null;
+        Add(command, "$title", update.Title!.Trim());
+        Add(command, "$content", update.Content!.Trim());
+        Add(command, "$category", update.Category!.Trim());
+        Add(command, "$updatedAt", Timestamp());
+        return ReadFirst(command, MapPost);
     }
 
     public bool DeletePost(int id) => Delete("Posts", id);
 
-    public IReadOnlyList<Comment> GetComments() => Query(
-        "SELECT Id, PostId, UserId, Content, CreatedAt, UpdatedAt FROM Comments ORDER BY Id;",
-        reader => new Comment(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetString(3), ParseDate(reader.GetString(4)), ParseDate(reader.GetString(5))));
-
-    public Comment? GetComment(int id) => QuerySingle(
-        "SELECT Id, PostId, UserId, Content, CreatedAt, UpdatedAt FROM Comments WHERE Id = $id;",
-        id,
-        reader => new Comment(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetString(3), ParseDate(reader.GetString(4)), ParseDate(reader.GetString(5))));
-
-    public Comment CreateComment(CommentInput input)
+    public IReadOnlyList<CommentSummary> GetComments(int postId, int limit, int offset, int? viewerId)
     {
-        var now = DateTime.UtcNow.ToString("O");
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            {CommentSummarySelect}
+            WHERE c.PostId = $postId
+            ORDER BY c.CreatedAt ASC, c.Id ASC
+            LIMIT $limit OFFSET $offset;
+            """;
+        Add(command, "$postId", postId);
+        Add(command, "$limit", limit);
+        Add(command, "$offset", offset);
+        Add(command, "$viewerId", viewerId);
+        return ReadAll(command, MapCommentSummary);
+    }
+
+    public Comment? GetComment(int id)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT Id, PostId, UserId, Content, CreatedAt, UpdatedAt FROM Comments WHERE Id = $id;";
+        Add(command, "$id", id);
+        return ReadFirst(command, MapComment);
+    }
+
+    /// <summary>Returns null when the post does not exist, which SQLite reports as a foreign key violation.</summary>
+    public Comment? CreateComment(int postId, CommentInput input)
+    {
+        var now = Timestamp();
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
@@ -76,142 +143,115 @@ public sealed class DiscussionRepository(string connectionString)
             VALUES ($postId, $userId, $content, $createdAt, $updatedAt)
             RETURNING Id, PostId, UserId, Content, CreatedAt, UpdatedAt;
             """;
-        Add(command, "$postId", input.PostId);
+        Add(command, "$postId", postId);
         Add(command, "$userId", input.UserId);
         Add(command, "$content", input.Content!.Trim());
         Add(command, "$createdAt", now);
         Add(command, "$updatedAt", now);
-        using var reader = command.ExecuteReader();
-        reader.Read();
-        return new Comment(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetString(3), ParseDate(reader.GetString(4)), ParseDate(reader.GetString(5)));
+
+        try
+        {
+            return ReadFirst(command, MapComment);
+        }
+        catch (SqliteException exception) when (exception.SqliteExtendedErrorCode == ConstraintForeignKey)
+        {
+            return null;
+        }
     }
 
-    public Comment? UpdateComment(int id, CommentInput input)
+    public Comment? UpdateComment(int id, CommentUpdate update)
     {
-        var now = DateTime.UtcNow.ToString("O");
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            UPDATE Comments SET PostId = $postId, UserId = $userId, Content = $content, UpdatedAt = $updatedAt
+            UPDATE Comments SET Content = $content, UpdatedAt = $updatedAt
             WHERE Id = $id
             RETURNING Id, PostId, UserId, Content, CreatedAt, UpdatedAt;
             """;
         Add(command, "$id", id);
-        Add(command, "$postId", input.PostId);
-        Add(command, "$userId", input.UserId);
-        Add(command, "$content", input.Content!.Trim());
-        Add(command, "$updatedAt", now);
-        using var reader = command.ExecuteReader();
-        return reader.Read()
-            ? new Comment(reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetString(3), ParseDate(reader.GetString(4)), ParseDate(reader.GetString(5)))
-            : null;
+        Add(command, "$content", update.Content!.Trim());
+        Add(command, "$updatedAt", Timestamp());
+        return ReadFirst(command, MapComment);
     }
 
     public bool DeleteComment(int id) => Delete("Comments", id);
 
-    public IReadOnlyList<Like> GetLikes() => Query(
-        "SELECT Id, PostId, CommentId, UserId, CreatedAt FROM Likes ORDER BY Id;",
-        reader => new Like(reader.GetInt32(0), reader.IsDBNull(1) ? null : reader.GetInt32(1), reader.IsDBNull(2) ? null : reader.GetInt32(2), reader.GetInt32(3), ParseDate(reader.GetString(4))));
+    public IReadOnlyList<Like> GetPostLikes(int postId) => GetLikesFor("PostId", postId);
 
-    public Like? GetLike(int id) => QuerySingle(
-        "SELECT Id, PostId, CommentId, UserId, CreatedAt FROM Likes WHERE Id = $id;",
-        id,
-        reader => new Like(reader.GetInt32(0), reader.IsDBNull(1) ? null : reader.GetInt32(1), reader.IsDBNull(2) ? null : reader.GetInt32(2), reader.GetInt32(3), ParseDate(reader.GetString(4))));
+    public IReadOnlyList<Like> GetCommentLikes(int commentId) => GetLikesFor("CommentId", commentId);
 
-    public Like CreateLike(LikeInput input)
+    public LikeOutcome LikePost(int postId, int userId) => CreateLike("PostId", postId, userId);
+
+    public LikeOutcome LikeComment(int commentId, int userId) => CreateLike("CommentId", commentId, userId);
+
+    public bool UnlikePost(int postId, int userId) => RemoveLike("PostId", postId, userId);
+
+    public bool UnlikeComment(int commentId, int userId) => RemoveLike("CommentId", commentId, userId);
+
+    public IReadOnlyList<Image> GetImages()
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO Likes (PostId, CommentId, UserId, CreatedAt)
-            VALUES ($postId, $commentId, $userId, $createdAt)
-            RETURNING Id, PostId, CommentId, UserId, CreatedAt;
-            """;
-        Add(command, "$postId", input.PostId);
-        Add(command, "$commentId", input.CommentId);
-        Add(command, "$userId", input.UserId);
-        Add(command, "$createdAt", DateTime.UtcNow.ToString("O"));
-        using var reader = command.ExecuteReader();
-        reader.Read();
-        return new Like(reader.GetInt32(0), reader.IsDBNull(1) ? null : reader.GetInt32(1), reader.IsDBNull(2) ? null : reader.GetInt32(2), reader.GetInt32(3), ParseDate(reader.GetString(4)));
+        command.CommandText = "SELECT Id, PostId, CommentId, FileUrl, FileName, UploadedAt FROM Images ORDER BY Id;";
+        return ReadAll(command, MapImage);
     }
 
-    public Like? UpdateLike(int id, LikeInput input)
+    private IReadOnlyList<Like> GetLikesFor(string column, int targetId)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = """
-            UPDATE Likes SET PostId = $postId, CommentId = $commentId, UserId = $userId
-            WHERE Id = $id
-            RETURNING Id, PostId, CommentId, UserId, CreatedAt;
-            """;
+        command.CommandText =
+            $"SELECT Id, PostId, CommentId, UserId, CreatedAt FROM Likes WHERE {column} = $targetId ORDER BY Id;";
+        Add(command, "$targetId", targetId);
+        return ReadAll(command, MapLike);
+    }
+
+    private LikeOutcome CreateLike(string column, int targetId, int userId)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            $"INSERT INTO Likes (UserId, {column}, CreatedAt) VALUES ($userId, $targetId, $createdAt);";
+        Add(command, "$userId", userId);
+        Add(command, "$targetId", targetId);
+        Add(command, "$createdAt", Timestamp());
+
+        try
+        {
+            command.ExecuteNonQuery();
+            return LikeOutcome.Created;
+        }
+        catch (SqliteException exception) when (exception.SqliteExtendedErrorCode == ConstraintUnique)
+        {
+            return LikeOutcome.Duplicate;
+        }
+        catch (SqliteException exception) when (exception.SqliteExtendedErrorCode == ConstraintForeignKey)
+        {
+            return LikeOutcome.TargetNotFound;
+        }
+    }
+
+    private bool RemoveLike(string column, int targetId, int userId)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"DELETE FROM Likes WHERE {column} = $targetId AND UserId = $userId;";
+        Add(command, "$targetId", targetId);
+        Add(command, "$userId", userId);
+        return command.ExecuteNonQuery() > 0;
+    }
+
+    private bool Delete(string table, int id)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"DELETE FROM {table} WHERE Id = $id;";
         Add(command, "$id", id);
-        Add(command, "$postId", input.PostId);
-        Add(command, "$commentId", input.CommentId);
-        Add(command, "$userId", input.UserId);
-        using var reader = command.ExecuteReader();
-        return reader.Read()
-            ? new Like(reader.GetInt32(0), reader.IsDBNull(1) ? null : reader.GetInt32(1), reader.IsDBNull(2) ? null : reader.GetInt32(2), reader.GetInt32(3), ParseDate(reader.GetString(4)))
-            : null;
+        return command.ExecuteNonQuery() > 0;
     }
 
-    public bool DeleteLike(int id) => Delete("Likes", id);
-
-    public IReadOnlyList<Image> GetImages() => Query(
-        "SELECT Id, PostId, CommentId, FileUrl, FileName, UploadedAt FROM Images ORDER BY Id;",
-        reader => new Image(reader.GetInt32(0), reader.IsDBNull(1) ? null : reader.GetInt32(1), reader.IsDBNull(2) ? null : reader.GetInt32(2), reader.GetString(3), reader.GetString(4), ParseDate(reader.GetString(5))));
-
-    public Image? GetImage(int id) => QuerySingle(
-        "SELECT Id, PostId, CommentId, FileUrl, FileName, UploadedAt FROM Images WHERE Id = $id;",
-        id,
-        reader => new Image(reader.GetInt32(0), reader.IsDBNull(1) ? null : reader.GetInt32(1), reader.IsDBNull(2) ? null : reader.GetInt32(2), reader.GetString(3), reader.GetString(4), ParseDate(reader.GetString(5))));
-
-    public Image CreateImage(ImageInput input)
+    private static List<T> ReadAll<T>(SqliteCommand command, Func<SqliteDataReader, T> map)
     {
-        using var connection = Open();
-        using var command = connection.CreateCommand();
-        command.CommandText = """
-            INSERT INTO Images (PostId, CommentId, FileUrl, FileName, UploadedAt)
-            VALUES ($postId, $commentId, $fileUrl, $fileName, $uploadedAt)
-            RETURNING Id, PostId, CommentId, FileUrl, FileName, UploadedAt;
-            """;
-        Add(command, "$postId", input.PostId);
-        Add(command, "$commentId", input.CommentId);
-        Add(command, "$fileUrl", input.FileUrl!.Trim());
-        Add(command, "$fileName", input.FileName!.Trim());
-        Add(command, "$uploadedAt", DateTime.UtcNow.ToString("O"));
-        using var reader = command.ExecuteReader();
-        reader.Read();
-        return new Image(reader.GetInt32(0), reader.IsDBNull(1) ? null : reader.GetInt32(1), reader.IsDBNull(2) ? null : reader.GetInt32(2), reader.GetString(3), reader.GetString(4), ParseDate(reader.GetString(5)));
-    }
-
-    public Image? UpdateImage(int id, ImageInput input)
-    {
-        using var connection = Open();
-        using var command = connection.CreateCommand();
-        command.CommandText = """
-            UPDATE Images SET PostId = $postId, CommentId = $commentId, FileUrl = $fileUrl, FileName = $fileName
-            WHERE Id = $id
-            RETURNING Id, PostId, CommentId, FileUrl, FileName, UploadedAt;
-            """;
-        Add(command, "$id", id);
-        Add(command, "$postId", input.PostId);
-        Add(command, "$commentId", input.CommentId);
-        Add(command, "$fileUrl", input.FileUrl!.Trim());
-        Add(command, "$fileName", input.FileName!.Trim());
-        using var reader = command.ExecuteReader();
-        return reader.Read()
-            ? new Image(reader.GetInt32(0), reader.IsDBNull(1) ? null : reader.GetInt32(1), reader.IsDBNull(2) ? null : reader.GetInt32(2), reader.GetString(3), reader.GetString(4), ParseDate(reader.GetString(5)))
-            : null;
-    }
-
-    public bool DeleteImage(int id) => Delete("Images", id);
-
-    private List<T> Query<T>(string sql, Func<SqliteDataReader, T> map)
-    {
-        using var connection = Open();
-        using var command = connection.CreateCommand();
-        command.CommandText = sql;
         using var reader = command.ExecuteReader();
         var results = new List<T>();
         while (reader.Read())
@@ -222,34 +262,65 @@ public sealed class DiscussionRepository(string connectionString)
         return results;
     }
 
-    private T? QuerySingle<T>(string sql, int id, Func<SqliteDataReader, T> map) where T : class
+    private static T? ReadFirst<T>(SqliteCommand command, Func<SqliteDataReader, T> map) where T : class
     {
-        using var connection = Open();
-        using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        Add(command, "$id", id);
         using var reader = command.ExecuteReader();
         return reader.Read() ? map(reader) : null;
     }
 
-    private bool Delete(string table, int id)
-    {
-        using var connection = Open();
-        using var command = connection.CreateCommand();
-        command.CommandText = $"DELETE FROM {table} WHERE id = $id;";
-        Add(command, "$id", id);
-        return command.ExecuteNonQuery() > 0;
-    }
+    private static Post MapPost(SqliteDataReader reader) => new(
+        reader.GetInt32(0), reader.GetInt32(1), reader.GetString(2), reader.GetString(3),
+        reader.GetString(4), ParseDate(reader.GetString(5)), ParseDate(reader.GetString(6)));
 
+    private static PostSummary MapPostSummary(SqliteDataReader reader) => new(
+        reader.GetInt32(0), reader.GetInt32(1), reader.GetString(2), reader.GetString(3),
+        reader.GetString(4), ParseDate(reader.GetString(5)), ParseDate(reader.GetString(6)),
+        reader.GetInt32(7), reader.GetInt32(8), reader.GetInt32(9) != 0);
+
+    private static Comment MapComment(SqliteDataReader reader) => new(
+        reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetString(3),
+        ParseDate(reader.GetString(4)), ParseDate(reader.GetString(5)));
+
+    private static CommentSummary MapCommentSummary(SqliteDataReader reader) => new(
+        reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetString(3),
+        ParseDate(reader.GetString(4)), ParseDate(reader.GetString(5)),
+        reader.GetInt32(6), reader.GetInt32(7) != 0);
+
+    private static Like MapLike(SqliteDataReader reader) => new(
+        reader.GetInt32(0),
+        reader.IsDBNull(1) ? null : reader.GetInt32(1),
+        reader.IsDBNull(2) ? null : reader.GetInt32(2),
+        reader.GetInt32(3),
+        ParseDate(reader.GetString(4)));
+
+    private static Image MapImage(SqliteDataReader reader) => new(
+        reader.GetInt32(0),
+        reader.IsDBNull(1) ? null : reader.GetInt32(1),
+        reader.IsDBNull(2) ? null : reader.GetInt32(2),
+        reader.GetString(3), reader.GetString(4), ParseDate(reader.GetString(5)));
+
+    /// <summary>
+    /// Foreign key enforcement is per-connection in SQLite, so it has to be switched on
+    /// for every connection rather than once in schema.sql. Without this the ON DELETE
+    /// CASCADE rules never fire and a comment can be attached to a post that does not exist.
+    /// </summary>
     private SqliteConnection Open()
     {
         var connection = new SqliteConnection(connectionString);
         connection.Open();
+
+        using var pragma = connection.CreateCommand();
+        pragma.CommandText = "PRAGMA foreign_keys = ON;";
+        pragma.ExecuteNonQuery();
+
         return connection;
     }
+
+    private static string Timestamp() => DateTime.UtcNow.ToString("O");
 
     private static void Add(SqliteCommand command, string name, object? value) =>
         command.Parameters.AddWithValue(name, value ?? DBNull.Value);
 
-    private static DateTime ParseDate(string value) => DateTime.Parse(value, null, System.Globalization.DateTimeStyles.RoundtripKind);
+    private static DateTime ParseDate(string value) =>
+        DateTime.Parse(value, null, System.Globalization.DateTimeStyles.RoundtripKind);
 }
