@@ -1,14 +1,11 @@
 using LanguageWise.QuizzesCoursesService.Api.Clients;
-using LanguageWise.QuizzesCoursesService.Api.Rendering;
 
 const string ServiceName = "quizzes-courses-service-backend";
 
 var builder = WebApplication.CreateBuilder(args);
-
-// Inside Docker this resolves to the database service by container name.
 var databaseServiceUrl = builder.Configuration["Services:Database"] ?? "http://localhost:6003";
 
-builder.Services.AddHttpClient<SampleItemsClient>(client =>
+builder.Services.AddHttpClient<CatalogClient>(client =>
 {
     client.BaseAddress = new Uri(databaseServiceUrl.TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(10);
@@ -18,38 +15,77 @@ var app = builder.Build();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = ServiceName }));
 
-app.MapGet("/api/sample-items", async (SampleItemsClient client, CancellationToken cancellationToken) =>
-{
-    try
-    {
-        return Results.Ok(await client.GetAllAsync(cancellationToken));
-    }
-    catch (Exception exception)
-    {
-        return Results.Problem(
-            title: "The database microservice is unavailable.",
-            detail: exception.Message,
-            statusCode: StatusCodes.Status503ServiceUnavailable);
-    }
-});
+app.MapGet("/api/courses", async (CatalogClient client, CancellationToken cancellationToken) =>
+    await ExecuteAsync(
+        async () => Results.Ok(await client.GetCoursesAsync(cancellationToken)),
+        app.Logger));
 
-// HTMX target: returns table rows rather than JSON so the browser can swap them straight in.
-app.MapGet("/api/sample-items/fragment", async (SampleItemsClient client, CancellationToken cancellationToken) =>
-{
-    try
+app.MapGet("/api/courses/{code}", async (
+    string code,
+    CatalogClient client,
+    CancellationToken cancellationToken) =>
+    await ExecuteAsync(async () =>
     {
-        var items = await client.GetAllAsync(cancellationToken);
-        return Results.Content(SampleItemHtmlRenderer.RenderRows(items), "text/html");
-    }
-    catch (Exception exception)
-    {
-        app.Logger.LogError(exception, "Failed to load sample items from {Url}.", databaseServiceUrl);
+        var course = await client.GetCourseAsync(Normalize(code), cancellationToken);
+        return course is null ? Results.NotFound() : Results.Ok(course);
+    }, app.Logger));
 
-        return Results.Content(
-            SampleItemHtmlRenderer.RenderError("The database microservice is unavailable."),
-            "text/html",
-            statusCode: StatusCodes.Status503ServiceUnavailable);
-    }
-});
+app.MapGet("/api/courses/{code}/lessons", async (
+    string code,
+    CatalogClient client,
+    CancellationToken cancellationToken) =>
+    await ExecuteAsync(async () =>
+    {
+        var lessons = await client.GetLessonsAsync(Normalize(code), cancellationToken);
+        return lessons is null ? Results.NotFound() : Results.Ok(lessons);
+    }, app.Logger));
+
+app.MapGet("/api/courses/{code}/lessons/{slug}", async (
+    string code,
+    string slug,
+    CatalogClient client,
+    CancellationToken cancellationToken) =>
+    await ExecuteAsync(async () =>
+    {
+        var lesson = await client.GetLessonAsync(Normalize(code), Normalize(slug), cancellationToken);
+        return lesson is null ? Results.NotFound() : Results.Ok(lesson);
+    }, app.Logger));
+
+app.MapGet("/api/courses/{code}/quizzes", async (
+    string code,
+    CatalogClient client,
+    CancellationToken cancellationToken) =>
+    await ExecuteAsync(async () =>
+    {
+        var quizzes = await client.GetQuizzesAsync(Normalize(code), cancellationToken);
+        return quizzes is null ? Results.NotFound() : Results.Ok(quizzes);
+    }, app.Logger));
+
+app.MapGet("/api/courses/{code}/flashcards", async (
+    string code,
+    CatalogClient client,
+    CancellationToken cancellationToken) =>
+    await ExecuteAsync(async () =>
+    {
+        var flashcards = await client.GetFlashcardsAsync(Normalize(code), cancellationToken);
+        return flashcards is null ? Results.NotFound() : Results.Ok(flashcards);
+    }, app.Logger));
 
 app.Run();
+
+static string Normalize(string value) => value.Trim().ToLowerInvariant();
+
+static async Task<IResult> ExecuteAsync(Func<Task<IResult>> action, ILogger logger)
+{
+    try
+    {
+        return await action();
+    }
+    catch (Exception exception)
+    {
+        logger.LogError(exception, "The database microservice request failed.");
+        return Results.Problem(
+            title: "The database microservice is unavailable.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+}

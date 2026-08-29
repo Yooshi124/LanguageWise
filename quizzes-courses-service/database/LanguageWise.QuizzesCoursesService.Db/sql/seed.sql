@@ -1,15 +1,75 @@
--- Seed data for the student 3 (Quizzes and Courses) microservice database.
--- Only executed when SampleItems is empty, so it is safe to re-run.
--- The project specification (section 2.2) requires a minimum of ten records.
+INSERT INTO Courses (Code, Title, Description) VALUES
+    ('de', 'German',  'Build a practical foundation in German.'),
+    ('fr', 'French',  'Learn useful everyday French.'),
+    ('it', 'Italian', 'Start speaking and understanding Italian.'),
+    ('nl', 'Dutch',   'Discover the essentials of Dutch.'),
+    ('es', 'Spanish', 'Develop your everyday Spanish.');
 
-INSERT INTO SampleItems (Name, Description, CreatedAt) VALUES
-    ('Beginner Vocabulary',   'Fifty everyday words to start with.',           '2026-02-02T09:00:00Z'),
-    ('Numbers and Dates',     'Counting, ordinals and the calendar.',          '2026-02-03T09:15:00Z'),
-    ('Present Tense Drill',   'Conjugate regular verbs in the present tense.', '2026-02-04T09:30:00Z'),
-    ('Past Tense Drill',      'Regular and irregular past forms.',             '2026-02-05T09:45:00Z'),
-    ('Food and Drink',        'Order a meal and read a menu.',                 '2026-02-06T10:00:00Z'),
-    ('Travel Essentials',     'Directions, transport and accommodation.',      '2026-02-07T10:15:00Z'),
-    ('Sentence Ordering',     'Click the words in order to build a sentence.', '2026-02-08T10:30:00Z'),
-    ('Listening Quiz',        'Answer questions about a short audio clip.',    '2026-02-09T10:45:00Z'),
-    ('Reading Comprehension', 'Read a passage and answer five questions.',     '2026-02-10T11:00:00Z'),
-    ('Final Assessment',      'A mixed quiz covering the whole course.',       '2026-02-11T11:15:00Z');
+INSERT INTO Lessons (CourseId, Slug, Title, SortOrder, ContentMarkdown)
+SELECT Id, 'welcome', 'Welcome to ' || Title, 1,
+       '# Welcome to ' || Title || char(10) || char(10) ||
+       'This course introduces useful words and expressions at a comfortable pace.' || char(10) || char(10) ||
+       '## How to learn' || char(10) || char(10) ||
+       '- Read each example aloud.' || char(10) ||
+       '- Open the vocabulary sheet for key words.' || char(10) ||
+       '- Revisit lessons whenever you need.'
+FROM Courses;
+
+INSERT INTO Lessons (CourseId, Slug, Title, SortOrder, ContentMarkdown)
+SELECT Id, 'greetings', 'Everyday Greetings', 2,
+       '# Everyday Greetings' || char(10) || char(10) ||
+       'Greetings help begin and end simple conversations.' || char(10) || char(10) ||
+       '> Practise saying each greeting aloud, then use the vocabulary sheet to review its meaning.'
+FROM Courses;
+
+INSERT INTO LessonVocabulary (LessonId, VocabularyJson)
+SELECT l.Id,
+       CASE c.Code
+           WHEN 'de' THEN '{"words":[{"word":"Hallo","meaning":"Hello"},{"word":"Danke","meaning":"Thank you"}]}'
+           WHEN 'fr' THEN '{"words":[{"word":"Bonjour","meaning":"Hello"},{"word":"Merci","meaning":"Thank you"}]}'
+           WHEN 'it' THEN '{"words":[{"word":"Ciao","meaning":"Hello"},{"word":"Grazie","meaning":"Thank you"}]}'
+           WHEN 'nl' THEN '{"words":[{"word":"Hallo","meaning":"Hello"},{"word":"Bedankt","meaning":"Thank you"}]}'
+           WHEN 'es' THEN '{"words":[{"word":"Hola","meaning":"Hello"},{"word":"Gracias","meaning":"Thank you"}]}'
+       END
+FROM Lessons l
+INNER JOIN Courses c ON c.Id = l.CourseId
+WHERE l.Slug = 'welcome';
+
+INSERT INTO LessonVocabulary (LessonId, VocabularyJson)
+SELECT l.Id,
+       CASE c.Code
+           WHEN 'de' THEN '{"words":[{"word":"Guten Morgen","meaning":"Good morning"},{"word":"Auf Wiedersehen","meaning":"Goodbye"}]}'
+           WHEN 'fr' THEN '{"words":[{"word":"Bonsoir","meaning":"Good evening"},{"word":"Au revoir","meaning":"Goodbye"}]}'
+           WHEN 'it' THEN '{"words":[{"word":"Buongiorno","meaning":"Good morning"},{"word":"Arrivederci","meaning":"Goodbye"}]}'
+           WHEN 'nl' THEN '{"words":[{"word":"Goedemorgen","meaning":"Good morning"},{"word":"Tot ziens","meaning":"Goodbye"}]}'
+           WHEN 'es' THEN '{"words":[{"word":"Buenos días","meaning":"Good morning"},{"word":"Adiós","meaning":"Goodbye"}]}'
+       END
+FROM Lessons l
+INNER JOIN Courses c ON c.Id = l.CourseId
+WHERE l.Slug = 'greetings';
+
+INSERT INTO Quizzes (CourseId, Title, IsAi)
+SELECT Id, Title || ' Greetings Check', 0 FROM Courses;
+
+INSERT INTO QuizQuestions (QuizId, Content, Type, QuestionData, CorrectAnswer)
+SELECT q.Id, 'Choose the greeting that means hello.', 'multiple_choice',
+       CASE c.Code
+           WHEN 'de' THEN '{"options":["Hallo","Danke","Bitte"]}'
+           WHEN 'fr' THEN '{"options":["Bonjour","Merci","Oui"]}'
+           WHEN 'it' THEN '{"options":["Ciao","Grazie","Prego"]}'
+           WHEN 'nl' THEN '{"options":["Hallo","Bedankt","Alsjeblieft"]}'
+           WHEN 'es' THEN '{"options":["Hola","Gracias","Por favor"]}'
+       END,
+       CASE c.Code
+           WHEN 'de' THEN 'Hallo' WHEN 'fr' THEN 'Bonjour' WHEN 'it' THEN 'Ciao'
+           WHEN 'nl' THEN 'Hallo' WHEN 'es' THEN 'Hola'
+       END
+FROM Quizzes q
+INNER JOIN Courses c ON c.Id = q.CourseId;
+
+INSERT INTO Flashcards (CourseId, FrontText, BackText, IsAi)
+SELECT Id,
+       CASE Code WHEN 'de' THEN 'Hallo' WHEN 'fr' THEN 'Bonjour' WHEN 'it' THEN 'Ciao'
+                 WHEN 'nl' THEN 'Hallo' WHEN 'es' THEN 'Hola' END,
+       'Hello', 0
+FROM Courses;

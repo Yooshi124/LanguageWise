@@ -37,7 +37,7 @@ services:
     environment:
       OLLAMA_HOST: http://ollama:11434
     entrypoint: ["/bin/sh", "-c"]
-    command: ["ollama pull gemma4:12b"]
+    command: ["ollama pull gemma4:e2b"]
     networks: [languagewise]
     depends_on:
       ollama:
@@ -117,8 +117,6 @@ services:
     container_name: quizzes-courses-service-frontend
     build:
       context: ./quizzes-courses-service/frontend
-    ports:
-      - "127.0.0.1:3003:80"
     networks: [languagewise]
     depends_on:
       quizzes-courses-service-backend:

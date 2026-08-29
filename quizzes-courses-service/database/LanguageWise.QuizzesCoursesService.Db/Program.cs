@@ -9,10 +9,11 @@ var builder = WebApplication.CreateBuilder(args);
 var databasePath = builder.Configuration["Database:Path"] ?? "data/quizzes-courses-service.db";
 var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
 {
-    DataSource = databasePath
+    DataSource = databasePath,
+    ForeignKeys = true
 }.ToString();
 
-builder.Services.AddSingleton(new SampleItemRepository(connectionString));
+builder.Services.AddSingleton(new CatalogRepository(connectionString));
 builder.Services.AddSingleton(serviceProvider => new DatabaseInitializer(
     connectionString,
     Path.Combine(AppContext.BaseDirectory, "sql"),
@@ -22,11 +23,11 @@ var app = builder.Build();
 
 app.Services.GetRequiredService<DatabaseInitializer>().Initialise();
 
-app.MapGet("/health", (SampleItemRepository repository) =>
+app.MapGet("/health", (CatalogRepository repository) =>
 {
     try
     {
-        return Results.Ok(new { status = "healthy", service = ServiceName, items = repository.Count() });
+        return Results.Ok(new { status = "healthy", service = ServiceName, courses = repository.CountCourses() });
     }
     catch (Exception exception)
     {
@@ -36,43 +37,28 @@ app.MapGet("/health", (SampleItemRepository repository) =>
     }
 });
 
-app.MapGet("/api/items", (SampleItemRepository repository) =>
-    Results.Ok(repository.GetAll()));
+app.MapGet("/api/courses", (CatalogRepository repository) =>
+    Results.Ok(repository.GetCourses()));
 
-app.MapGet("/api/items/{id:int}", (int id, SampleItemRepository repository) =>
-    repository.GetById(id) is { } item ? Results.Ok(item) : Results.NotFound());
+app.MapGet("/api/courses/{code}", (string code, CatalogRepository repository) =>
+    repository.GetCourse(code) is { } course ? Results.Ok(course) : Results.NotFound());
 
-app.MapPost("/api/items", (SampleItemInput input, SampleItemRepository repository) =>
-{
-    if (Validate(input) is { } problem)
-    {
-        return problem;
-    }
+app.MapGet("/api/courses/{code}/lessons", (string code, CatalogRepository repository) =>
+    repository.GetCourse(code) is null
+        ? Results.NotFound()
+        : Results.Ok(repository.GetLessons(code)));
 
-    var created = repository.Create(input.Name!.Trim(), input.Description?.Trim() ?? string.Empty);
-    return Results.Created($"/api/items/{created.Id}", created);
-});
+app.MapGet("/api/courses/{code}/lessons/{slug}", (string code, string slug, CatalogRepository repository) =>
+    repository.GetLesson(code, slug) is { } lesson ? Results.Ok(lesson) : Results.NotFound());
 
-app.MapPut("/api/items/{id:int}", (int id, SampleItemInput input, SampleItemRepository repository) =>
-{
-    if (Validate(input) is { } problem)
-    {
-        return problem;
-    }
+app.MapGet("/api/courses/{code}/quizzes", (string code, CatalogRepository repository) =>
+    repository.GetCourse(code) is null
+        ? Results.NotFound()
+        : Results.Ok(repository.GetQuizzes(code)));
 
-    var updated = repository.Update(id, input.Name!.Trim(), input.Description?.Trim() ?? string.Empty);
-    return updated is null ? Results.NotFound() : Results.Ok(updated);
-});
-
-app.MapDelete("/api/items/{id:int}", (int id, SampleItemRepository repository) =>
-    repository.Delete(id) ? Results.NoContent() : Results.NotFound());
+app.MapGet("/api/courses/{code}/flashcards", (string code, CatalogRepository repository) =>
+    repository.GetCourse(code) is null
+        ? Results.NotFound()
+        : Results.Ok(repository.GetFlashcards(code)));
 
 app.Run();
-
-static IResult? Validate(SampleItemInput input) =>
-    string.IsNullOrWhiteSpace(input.Name)
-        ? Results.ValidationProblem(new Dictionary<string, string[]>
-        {
-            ["name"] = ["Name is required."]
-        })
-        : null;
