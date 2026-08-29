@@ -7,6 +7,7 @@ public sealed record Achievement(
     [property: JsonPropertyName("achievement_id")] int AchievementId,
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("image")] string Image,
+    [property: JsonPropertyName("trigger")] string Trigger,
     [property: JsonPropertyName("progress_needed")] int ProgressNeeded);
 
 public sealed record UserAchievement(
@@ -29,7 +30,24 @@ public sealed record NotificationInput(
     [property: JsonPropertyName("user_id")] int UserId,
     [property: JsonPropertyName("trigger")] string Trigger,
     [property: JsonPropertyName("time")] DateTimeOffset Time,
-    [property: JsonPropertyName("email")] string Email);
+    [property: JsonPropertyName("email_subject")] string EmailSubject,
+    [property: JsonPropertyName("email_body")] string EmailBody);
+
+public sealed record Notification(
+    [property: JsonPropertyName("notification_id")] long NotificationId,
+    [property: JsonPropertyName("event_id")] string EventId,
+    [property: JsonPropertyName("user_id")] int UserId,
+    [property: JsonPropertyName("trigger")] string Trigger,
+    [property: JsonPropertyName("time")] DateTimeOffset Time,
+    [property: JsonPropertyName("email_subject")] string EmailSubject,
+    [property: JsonPropertyName("email_body")] string EmailBody);
+
+public sealed record AchievementUpdate(
+    int AchievementId,
+    string Name,
+    int Progress,
+    int ProgressNeeded,
+    bool NewlyAttained);
 
 public sealed record PreferenceUpdateRequest(
     string Email,

@@ -251,7 +251,8 @@ app.MapPost("/api/events", async (
             request.RecipientUserId,
             request.EventType,
             request.OccurredAt,
-            preferences.Email), cancellationToken);
+            string.Empty,
+            string.Empty), cancellationToken);
         if (!created)
         {
             return Results.Conflict(new { error = "The event has already been processed." });

@@ -8,7 +8,14 @@ public sealed class AppDataClient(HttpClient httpClient)
 {
     public async Task<IReadOnlyList<Achievement>> GetAchievementsAsync(CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<List<Achievement>>(
-            "achievements?select=achievement_id,name,image,progress_needed&order=achievement_id.asc",
+            "achievements?select=achievement_id,name,image,trigger,progress_needed&order=achievement_id.asc",
+            cancellationToken) ?? [];
+
+    public async Task<IReadOnlyList<Achievement>> GetAchievementsByTriggerAsync(
+        string trigger,
+        CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<List<Achievement>>(
+            $"achievements?trigger=eq.{Uri.EscapeDataString(trigger)}&select=achievement_id,name,image,trigger,progress_needed&order=progress_needed.asc",
             cancellationToken) ?? [];
 
     public async Task<Achievement?> GetAchievementAsync(int achievementId, CancellationToken cancellationToken = default)
@@ -44,6 +51,29 @@ public sealed class AppDataClient(HttpClient httpClient)
             "user_achievements?on_conflict=user_id,achievement_id",
             achievement,
             cancellationToken);
+
+    public async Task UpsertUserAchievementsAsync(
+        IReadOnlyCollection<UserAchievement> achievements,
+        CancellationToken cancellationToken = default) =>
+        await UpsertAsync(
+            "user_achievements?on_conflict=user_id,achievement_id",
+            achievements,
+            cancellationToken);
+
+    public async Task<bool> EventExistsAsync(string eventId, CancellationToken cancellationToken = default)
+    {
+        var notifications = await httpClient.GetFromJsonAsync<List<Notification>>(
+            $"notifications?event_id=eq.{Uri.EscapeDataString(eventId)}&select=notification_id&limit=1",
+            cancellationToken);
+        return notifications is { Count: > 0 };
+    }
+
+    public async Task<IReadOnlyList<Notification>> GetNotificationsAsync(
+        int userId,
+        CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<List<Notification>>(
+            $"notifications?user_id=eq.{userId}&select=notification_id,event_id,user_id,trigger,time,email_subject,email_body&order=time.desc,notification_id.desc",
+            cancellationToken) ?? [];
 
     public async Task<bool> CreateNotificationAsync(
         NotificationInput notification,
