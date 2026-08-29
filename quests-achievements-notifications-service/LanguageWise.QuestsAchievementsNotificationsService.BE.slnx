@@ -11,7 +11,6 @@
     <Project Path="tests/LanguageWise.QuestsAchievementsNotificationsService.Api.Tests/LanguageWise.QuestsAchievementsNotificationsService.Api.Tests.csproj" />
   </Folder>
   <Folder Name="/frontend/">
-    <File Path="frontend/css/theme.css" />
     <File Path="frontend/index.html" />
     <File Path="frontend/nginx.conf" />
   </Folder>
