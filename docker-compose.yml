@@ -195,8 +195,6 @@ services:
     container_name: quests-achievements-notifications-service-frontend
     build:
       context: ./quests-achievements-notifications-service/frontend
-    ports:
-      - "3004:80"
     networks: [languagewise]
     depends_on:
       quests-achievements-notifications-service-backend:

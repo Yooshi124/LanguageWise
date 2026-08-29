@@ -90,6 +90,11 @@
 </main>
 
 <script>
+    const referrer = document.referrer ? new URL(document.referrer) : null;
+    const returnUrl = referrer && referrer.origin === window.location.origin
+        ? referrer.pathname + referrer.search
+        : '/index.html';
+
     document.getElementById('login-form').addEventListener('submit', async function (e) {
         e.preventDefault();
         const errorEl = document.getElementById('login-error');
@@ -106,7 +111,7 @@
             });
 
             if (res.ok) {
-                window.location.href = '/index.html';
+                window.location.href = returnUrl;
             } else {
                 errorEl.textContent = 'Invalid username or password. Please try again.';
                 errorEl.style.display = 'block';

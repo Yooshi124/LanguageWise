@@ -5,12 +5,25 @@
     var signedOut = document.getElementById("signed-out");
     var serviceError = document.getElementById("service-error");
     var saveStatus = document.getElementById("save-status");
+    var notifyAll = document.getElementById("notify-all");
+    var notificationTypes = document.getElementById("notification-types");
+
+    notifyAll.addEventListener("change", syncNotificationTypes);
+
+    document.body.addEventListener("htmx:configRequest", function (event) {
+        var path = event.detail.path;
+        if (path.endsWith("api/preferences") && !notifyAll.checked) {
+            notificationTypes.querySelectorAll("input:checked").forEach(function (input) {
+                event.detail.parameters[input.name] = input.value;
+            });
+        }
+    });
 
     document.body.addEventListener("htmx:afterRequest", function (event) {
         var path = event.detail.pathInfo.requestPath;
-        if (path === "/api/profile") {
+        if (path.endsWith("api/profile")) {
             handleProfile(event.detail.xhr);
-        } else if (path === "/api/preferences") {
+        } else if (path.endsWith("api/preferences")) {
             handlePreferences(event.detail.xhr);
         }
     });
@@ -40,12 +53,13 @@
         document.getElementById("achievement-summary").textContent = completed + " of " + profile.achievements.length + " achievements complete";
         document.getElementById("completed-count").textContent = completed + " complete";
         document.getElementById("email").value = preferences.email || "";
-        document.getElementById("notify-all").checked = preferences.notifyAll;
+        notifyAll.checked = preferences.notifyAll;
         setChecked("notifyPostEngagement", preferences.notifyPostEngagement);
         setChecked("notifyCourseCompletion", preferences.notifyCourseCompletion);
         setChecked("notifyQuizResults", preferences.notifyQuizResults);
         setChecked("notifyStreaks", preferences.notifyStreaks);
         setChecked("notifyAchievements", preferences.notifyAchievements);
+        syncNotificationTypes();
 
         var grid = document.getElementById("achievement-grid");
         grid.replaceChildren();
@@ -63,7 +77,7 @@
         article.dataset.complete = complete;
         image.src = achievement.image;
         image.addEventListener("error", function () {
-            image.src = "/images/achievement.svg";
+            image.src = "images/achievement.svg";
         }, { once: true });
         fragment.querySelector(".lw-achievement__fallback").textContent = achievement.name.charAt(0);
         fragment.querySelector("h3").textContent = achievement.name;
@@ -90,5 +104,9 @@
 
     function setChecked(name, value) {
         document.querySelector('[name="' + name + '"]').checked = value;
+    }
+
+    function syncNotificationTypes() {
+        notificationTypes.disabled = !notifyAll.checked;
     }
 }());
