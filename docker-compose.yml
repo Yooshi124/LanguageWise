@@ -139,6 +139,35 @@ services:
     networks: [languagewise]
     restart: unless-stopped
 
+  chat-discussion-service-backend:
+    container_name: chat-discussion-service-backend
+    build:
+      context: ./chat-discussion-service/backend
+    environment:
+      Services__Database: http://chat-discussion-service-db:8080
+      Auth__VerificationKeyPath: /run/secrets/signing_public_key
+    secrets:
+      - signing_public_key
+    ports:
+      - "127.0.0.1:5002:8080"
+    networks: [languagewise]
+    depends_on:
+      chat-discussion-service-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  chat-discussion-service-frontend:
+    container_name: chat-discussion-service-frontend
+    build:
+      context: ./chat-discussion-service/frontend
+    ports:
+      - "127.0.0.1:3002:80"
+    networks: [languagewise]
+    depends_on:
+      chat-discussion-service-backend:
+        condition: service_healthy
+    restart: unless-stopped
+
   quests-achievements-notifications-service-db:
     container_name: quests-achievements-notifications-service-db
     build:
