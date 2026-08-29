@@ -1,0 +1,223 @@
+using System.Diagnostics;
+using System.IdentityModel.Tokens.Jwt;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using LanguageWise.QuestsAchievementsNotificationsService.Api.Clients;
+using LanguageWise.QuestsAchievementsNotificationsService.Api.Models;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.IdentityModel.Tokens;
+
+namespace LanguageWise.QuestsAchievementsNotificationsService.Api.Tests;
+
+[NonParallelizable]
+[Category("Integration")]
+public sealed class EventProcessingIntegrationTests
+{
+    private const int UserId = 1;
+    private const int AchievementId = 2;
+    private static readonly string ComposeFile = FindComposeFile();
+    private static readonly string ComposeProject = $"languagewise-qan-tests-{Guid.NewGuid():N}";
+    private static string databaseUrl = string.Empty;
+
+    [OneTimeSetUp]
+    public async Task StartDatabaseAsync()
+    {
+        await RunDockerComposeAsync("up", "-d", "--build", "--wait");
+        var port = (await RunDockerComposeAsync("port", "postgrest", "3000")).Trim();
+        databaseUrl = $"http://{port}";
+
+        using var client = new HttpClient { BaseAddress = new Uri(databaseUrl) };
+        for (var attempt = 0; attempt < 30; attempt++)
+        {
+            try
+            {
+                using var response = await client.GetAsync("achievements?limit=1");
+                if (response.IsSuccessStatusCode)
+                {
+                    return;
+                }
+            }
+            catch (HttpRequestException)
+            {
+            }
+
+            await Task.Delay(500);
+        }
+
+        Assert.Fail("The Docker PostgREST service did not become ready.");
+    }
+
+    [OneTimeTearDown]
+    public async Task StopDatabaseAsync()
+    {
+        await RunDockerComposeAsync("down", "--volumes", "--remove-orphans");
+    }
+
+    [Test]
+    public async Task Event_IsPersistedOnce_WhenDuplicateIsReceived()
+    {
+        using var fixture = new ApiFixture(databaseUrl);
+        using var apiClient = fixture.CreateClient();
+        apiClient.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
+
+        var eventId = $"integration-{Guid.NewGuid():N}";
+        var request = new EventRequest(
+            eventId,
+            "course-completion",
+            "course-integration-test",
+            UserId,
+            AchievementId,
+            DateTimeOffset.UtcNow,
+            1);
+
+        using var firstResponse = await apiClient.PostAsJsonAsync("/api/events", request);
+        using var duplicateResponse = await apiClient.PostAsJsonAsync("/api/events", request);
+
+        using var databaseClient = new HttpClient { BaseAddress = new Uri(databaseUrl) };
+        var progress = await databaseClient.GetFromJsonAsync<List<UserAchievement>>(
+            $"user_achievements?user_id=eq.{UserId}&achievement_id=eq.{AchievementId}");
+        var notifications = await databaseClient.GetFromJsonAsync<List<NotificationInput>>(
+            $"notifications?event_id=eq.{eventId}");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(firstResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(duplicateResponse.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
+            Assert.That(progress, Has.Count.EqualTo(1));
+            Assert.That(progress![0].Progress, Is.EqualTo(4));
+            Assert.That(notifications, Has.Count.EqualTo(1));
+        });
+    }
+
+    private static async Task<string> RunDockerComposeAsync(params string[] arguments)
+    {
+        var startInfo = new ProcessStartInfo("docker")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        startInfo.ArgumentList.Add("compose");
+        startInfo.ArgumentList.Add("--project-name");
+        startInfo.ArgumentList.Add(ComposeProject);
+        startInfo.ArgumentList.Add("--file");
+        startInfo.ArgumentList.Add(ComposeFile);
+        foreach (var argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Docker Compose could not be started.");
+        var outputTask = process.StandardOutput.ReadToEndAsync();
+        var errorTask = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        var output = await outputTask;
+        var error = await errorTask;
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"Docker Compose failed: {error}");
+        }
+
+        return output;
+    }
+
+    private static string FindComposeFile()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(
+                directory.FullName,
+                "quests-achievements-notifications-service",
+                "tests",
+                "LanguageWise.QuestsAchievementsNotificationsService.Api.Tests",
+                "docker-compose.integration.yml");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new FileNotFoundException("Could not locate docker-compose.integration.yml.");
+    }
+
+    private sealed class ApiFixture : WebApplicationFactory<Program>
+    {
+        private readonly RSA rsa = RSA.Create(2048);
+        private readonly string publicKeyPath = Path.GetTempFileName();
+        private readonly string databaseServiceUrl;
+
+        internal ApiFixture(string databaseServiceUrl)
+        {
+            this.databaseServiceUrl = databaseServiceUrl;
+            File.WriteAllText(publicKeyPath, rsa.ExportSubjectPublicKeyInfoPem());
+        }
+
+        internal string CreateToken()
+        {
+            var descriptor = new SecurityTokenDescriptor
+            {
+                Subject = new ClaimsIdentity([
+                    new Claim(JwtRegisteredClaimNames.Sub, UserId.ToString()),
+                    new Claim(JwtRegisteredClaimNames.Name, "integration-test")
+                ]),
+                Expires = DateTime.UtcNow.AddMinutes(5),
+                SigningCredentials = new SigningCredentials(
+                    new RsaSecurityKey(rsa),
+                    SecurityAlgorithms.RsaSha256)
+            };
+            return new JwtSecurityTokenHandler().WriteToken(
+                new JwtSecurityTokenHandler().CreateToken(descriptor));
+        }
+
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            builder.UseSetting("Auth:VerificationKeyPath", publicKeyPath);
+            builder.UseSetting("Services:Database", databaseServiceUrl);
+            builder.ConfigureAppConfiguration((_, configuration) =>
+            {
+                configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Auth:VerificationKeyPath"] = publicKeyPath,
+                    ["Services:Database"] = databaseServiceUrl
+                });
+            });
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IEmailSender>();
+                services.AddSingleton<IEmailSender, DisabledEmailSender>();
+            });
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing)
+            {
+                rsa.Dispose();
+                File.Delete(publicKeyPath);
+            }
+        }
+    }
+
+    private sealed class DisabledEmailSender : IEmailSender
+    {
+        public bool IsConfigured => false;
+
+        public Task SendAsync(
+            string recipient,
+            EmailContent content,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+}

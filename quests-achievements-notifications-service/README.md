@@ -121,4 +121,4 @@ Run automated tests:
 dotnet test quests-achievements-notifications-service/LanguageWise.QuestsAchievementsNotificationsService.BE.slnx
 ```
 
-The suite covers JWT bearer/cookie authorization, validation, progress and attainment rules, notification filtering, PostgREST request contracts and duplicate handling, structured Ollama output and fallback, and MailKit message construction without contacting Gmail.
+The suite covers JWT bearer/cookie authorization, validation, progress and attainment rules, notification filtering, PostgREST persistence and duplicate handling, structured Ollama output and fallback, and MailKit message construction without contacting Gmail.
