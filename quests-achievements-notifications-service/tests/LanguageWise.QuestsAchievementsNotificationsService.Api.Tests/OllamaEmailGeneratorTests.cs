@@ -52,6 +52,29 @@ public sealed class OllamaEmailGeneratorTests
     }
 
     [Test]
+    public async Task GenerateAsync_WhenNoTierIsNewlyAttained_FallbackSummarizesAllProgress()
+    {
+        var context = new EmailContext(
+            "streak",
+            "streak-2",
+            [
+                new AchievementUpdate(9, "Three Day Streak", 2, 3, false),
+                new AchievementUpdate(10, "Seven Day Streak", 2, 7, false)
+            ]);
+        var generator = CreateGenerator(HttpStatusCode.ServiceUnavailable, "{}");
+
+        var result = await generator.GenerateAsync(context);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Subject, Is.EqualTo("Your LanguageWise progress"));
+            Assert.That(result.Body, Does.Contain("Three Day Streak: 2 of 3"));
+            Assert.That(result.Body, Does.Contain("Seven Day Streak: 2 of 7"));
+            Assert.That(result.UsedFallback, Is.True);
+        });
+    }
+
+    [Test]
     public async Task GenerateAsync_DisablesThinkingAndBoundsGeneratedTokens()
     {
         const string response = """
@@ -67,10 +90,18 @@ public sealed class OllamaEmailGeneratorTests
         await generator.GenerateAsync(Context);
 
         using var request = System.Text.Json.JsonDocument.Parse(handler.LastRequestBody!);
+        var messages = request.RootElement.GetProperty("messages");
+        var instructions = messages[0].GetProperty("content").GetString();
+        var eventDetails = messages[1].GetProperty("content").GetString();
         Assert.Multiple(() =>
         {
             Assert.That(request.RootElement.GetProperty("think").GetBoolean(), Is.False);
             Assert.That(request.RootElement.GetProperty("options").GetProperty("num_predict").GetInt32(), Is.EqualTo(192));
+            Assert.That(instructions, Does.Contain("Mention every affected achievement"));
+            Assert.That(instructions, Does.Contain("highlight any marked as newly attained"));
+            Assert.That(eventDetails, Does.Contain("First Course: 1/1; newly attained: False"));
+            Assert.That(eventDetails, Does.Contain("Course Explorer: 5/5; newly attained: True"));
+            Assert.That(eventDetails, Does.Contain("Course Champion: 5/10; newly attained: False"));
         });
     }
 

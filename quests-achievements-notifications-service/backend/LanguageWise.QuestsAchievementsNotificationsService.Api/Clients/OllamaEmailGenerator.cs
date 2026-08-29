@@ -35,7 +35,7 @@ public sealed class OllamaEmailGenerator(
                     new
                     {
                         role = "system",
-                        content = "Write a warm, concise LanguageWise notification email. Return only JSON matching the supplied schema. Do not include markdown, links, or claims not present in the event."
+                        content = "Write one warm, concise LanguageWise notification for the event. Mention every affected achievement and highlight any marked as newly attained; otherwise summarize progress toward the listed tiers. Return only JSON matching the supplied schema. Do not include markdown, links, or claims not present in the event."
                     },
                     new
                     {
