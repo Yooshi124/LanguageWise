@@ -22,9 +22,9 @@ internal static class NotificationRules
             errors["eventId"] = ["Event ID is required."];
         }
 
-        if (request.EventType is not ("post-engagement" or "course-completion" or "quiz-result" or "streak"))
+        if (request.Trigger is not ("post-engagement" or "course-completion" or "quiz-result" or "streak"))
         {
-            errors["eventType"] = ["Event type is not supported."];
+            errors["trigger"] = ["Trigger is not supported."];
         }
 
         if (string.IsNullOrWhiteSpace(request.SubjectId))
@@ -35,11 +35,6 @@ internal static class NotificationRules
         if (request.RecipientUserId <= 0)
         {
             errors["recipientUserId"] = ["Recipient user ID must be positive."];
-        }
-
-        if (request.AchievementId <= 0)
-        {
-            errors["achievementId"] = ["Achievement ID must be positive."];
         }
 
         if (request.OccurredAt == default)
@@ -68,14 +63,14 @@ internal static class NotificationRules
             oldProgress < progressNeeded && progress >= progressNeeded);
     }
 
-    internal static bool ShouldNotify(UserPreferences preferences, string eventType, bool newlyAttained)
+    internal static bool ShouldNotify(UserPreferences preferences, string trigger, bool newlyAttained)
     {
         if (!preferences.NotifyAll)
         {
             return false;
         }
 
-        var eventEnabled = eventType switch
+        var eventEnabled = trigger switch
         {
             "post-engagement" => preferences.NotifyPostEngagement,
             "course-completion" => preferences.NotifyCourseCompletion,

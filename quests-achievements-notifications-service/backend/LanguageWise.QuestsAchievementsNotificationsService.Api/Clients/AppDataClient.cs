@@ -18,14 +18,6 @@ public sealed class AppDataClient(HttpClient httpClient)
             $"achievements?trigger=eq.{Uri.EscapeDataString(trigger)}&select=achievement_id,name,image,trigger,progress_needed&order=progress_needed.asc",
             cancellationToken) ?? [];
 
-    public async Task<Achievement?> GetAchievementAsync(int achievementId, CancellationToken cancellationToken = default)
-    {
-        var achievements = await httpClient.GetFromJsonAsync<List<Achievement>>(
-            $"achievements?achievement_id=eq.{achievementId}&limit=1",
-            cancellationToken);
-        return achievements?.SingleOrDefault();
-    }
-
     public async Task<IReadOnlyList<UserAchievement>> GetUserAchievementsAsync(
         int userId,
         CancellationToken cancellationToken = default) =>
@@ -43,14 +35,6 @@ public sealed class AppDataClient(HttpClient httpClient)
 
     public async Task UpsertPreferencesAsync(UserPreferences preferences, CancellationToken cancellationToken = default) =>
         await UpsertAsync("user_preferences?on_conflict=user_id", preferences, cancellationToken);
-
-    public async Task UpsertUserAchievementAsync(
-        UserAchievement achievement,
-        CancellationToken cancellationToken = default) =>
-        await UpsertAsync(
-            "user_achievements?on_conflict=user_id,achievement_id",
-            achievement,
-            cancellationToken);
 
     public async Task UpsertUserAchievementsAsync(
         IReadOnlyCollection<UserAchievement> achievements,

@@ -21,7 +21,6 @@ namespace LanguageWise.QuestsAchievementsNotificationsService.Api.Tests;
 public sealed class EventProcessingIntegrationTests
 {
     private const int UserId = 1;
-    private const int AchievementId = 2;
     private static readonly string ComposeFile = FindComposeFile();
     private static readonly string ComposeProject = $"languagewise-qan-tests-{Guid.NewGuid():N}";
     private static string databaseUrl = string.Empty;
@@ -74,16 +73,15 @@ public sealed class EventProcessingIntegrationTests
             "course-completion",
             "course-integration-test",
             UserId,
-            AchievementId,
             DateTimeOffset.UtcNow,
-            1);
+            2);
 
         using var firstResponse = await apiClient.PostAsJsonAsync("/api/events", request);
         using var duplicateResponse = await apiClient.PostAsJsonAsync("/api/events", request);
 
         using var databaseClient = new HttpClient { BaseAddress = new Uri(databaseUrl) };
         var progress = await databaseClient.GetFromJsonAsync<List<UserAchievement>>(
-            $"user_achievements?user_id=eq.{UserId}&achievement_id=eq.{AchievementId}");
+            $"user_achievements?user_id=eq.{UserId}&achievement_id=in.(1,2,3)&order=achievement_id.asc");
         var notifications = await databaseClient.GetFromJsonAsync<List<NotificationInput>>(
             $"notifications?event_id=eq.{eventId}");
 
@@ -91,9 +89,11 @@ public sealed class EventProcessingIntegrationTests
         {
             Assert.That(firstResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
             Assert.That(duplicateResponse.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
-            Assert.That(progress, Has.Count.EqualTo(1));
-            Assert.That(progress![0].Progress, Is.EqualTo(4));
+            Assert.That(progress, Has.Count.EqualTo(3));
+            Assert.That(progress!.Select(item => item.Progress), Is.EqualTo(new[] { 1, 5, 2 }));
             Assert.That(notifications, Has.Count.EqualTo(1));
+            Assert.That(notifications![0].EmailSubject, Is.Not.Empty);
+            Assert.That(notifications[0].EmailBody, Is.Not.Empty);
         });
     }
 
@@ -197,6 +197,8 @@ public sealed class EventProcessingIntegrationTests
             {
                 services.RemoveAll<IEmailSender>();
                 services.AddSingleton<IEmailSender, DisabledEmailSender>();
+                services.RemoveAll<IEmailContentGenerator>();
+                services.AddSingleton<IEmailContentGenerator, StubEmailGenerator>();
             });
         }
 
@@ -219,5 +221,16 @@ public sealed class EventProcessingIntegrationTests
             string recipient,
             EmailContent content,
             CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class StubEmailGenerator : IEmailContentGenerator
+    {
+        public Task<EmailContent> GenerateAsync(
+            EmailContext context,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new EmailContent(
+                "Course achievement progress",
+                string.Join(", ", context.Achievements.Select(item => item.Name)),
+                false));
     }
 }

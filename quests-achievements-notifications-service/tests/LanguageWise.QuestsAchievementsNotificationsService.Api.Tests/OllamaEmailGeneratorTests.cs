@@ -9,12 +9,13 @@ namespace LanguageWise.QuestsAchievementsNotificationsService.Api.Tests;
 public sealed class OllamaEmailGeneratorTests
 {
     private static readonly EmailContext Context = new(
-        "course_completion",
+        "course-completion",
         "course-12",
-        "Course Champion",
-        5,
-        5,
-        true);
+        [
+            new AchievementUpdate(1, "First Course", 1, 1, false),
+            new AchievementUpdate(2, "Course Explorer", 5, 5, true),
+            new AchievementUpdate(3, "Course Champion", 5, 10, false)
+        ]);
 
     [Test]
     public async Task GenerateAsync_ReturnsStructuredOllamaContent()
@@ -43,8 +44,9 @@ public sealed class OllamaEmailGeneratorTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(result.Subject, Is.EqualTo("Achievement unlocked: Course Champion"));
+            Assert.That(result.Subject, Is.EqualTo("Achievement unlocked: Course Explorer"));
             Assert.That(result.Body, Does.Contain("5 of 5"));
+            Assert.That(result.Body, Does.Contain("Course Champion: 5 of 10"));
             Assert.That(result.UsedFallback, Is.True);
         });
     }

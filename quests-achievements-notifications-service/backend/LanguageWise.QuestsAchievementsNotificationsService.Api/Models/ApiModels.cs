@@ -60,10 +60,9 @@ public sealed record PreferenceUpdateRequest(
 
 public sealed record EventRequest(
     string EventId,
-    string EventType,
+    string Trigger,
     string SubjectId,
     int RecipientUserId,
-    int AchievementId,
     DateTimeOffset OccurredAt,
     int Value = 1,
     JsonElement? Metadata = null);

@@ -219,67 +219,70 @@ app.MapPost("/api/events", async (
 
     try
     {
-        var preferences = await client.GetPreferencesAsync(request.RecipientUserId, cancellationToken);
-        if (preferences is null)
+        var eventId = request.EventId.Trim();
+        if (await client.EventExistsAsync(eventId, cancellationToken))
         {
-            return Results.NotFound(new { error = "Recipient preferences were not found." });
+            return Results.Conflict(new { error = "The event has already been processed." });
         }
 
-        if (string.IsNullOrWhiteSpace(preferences.Email))
+        var achievements = await client.GetAchievementsByTriggerAsync(request.Trigger, cancellationToken);
+        if (achievements.Count == 0)
         {
-            return Results.Conflict(new { error = "Recipient notification email is not configured." });
+            return Results.NotFound(new { error = "No achievements are configured for this trigger." });
         }
 
-        var achievement = await client.GetAchievementAsync(request.AchievementId, cancellationToken);
-        if (achievement is null)
+        var currentProgress = (await client.GetUserAchievementsAsync(request.RecipientUserId, cancellationToken))
+            .ToDictionary(item => item.AchievementId, item => item.Progress);
+        var achievementUpdates = achievements.Select(achievement =>
         {
-            return Results.NotFound(new { error = "Achievement was not found." });
-        }
+            var progressUpdate = NotificationRules.CalculateProgress(
+                currentProgress.GetValueOrDefault(achievement.AchievementId),
+                request.Value,
+                achievement.ProgressNeeded);
+            return new AchievementUpdate(
+                achievement.AchievementId,
+                achievement.Name,
+                progressUpdate.Progress,
+                achievement.ProgressNeeded,
+                progressUpdate.NewlyAttained);
+        }).ToList();
 
-        var current = (await client.GetUserAchievementsAsync(request.RecipientUserId, cancellationToken))
-            .SingleOrDefault(item => item.AchievementId == request.AchievementId);
-        var oldProgress = current?.Progress ?? 0;
-        var progressUpdate = NotificationRules.CalculateProgress(
-            oldProgress,
-            request.Value,
-            achievement.ProgressNeeded);
-        var newProgress = progressUpdate.Progress;
-        var newlyAttained = progressUpdate.NewlyAttained;
+        var email = await emailGenerator.GenerateAsync(new EmailContext(
+            request.Trigger,
+            request.SubjectId,
+            achievementUpdates), cancellationToken);
 
         var created = await client.CreateNotificationAsync(new NotificationInput(
-            request.EventId.Trim(),
+            eventId,
             request.RecipientUserId,
-            request.EventType,
+            request.Trigger,
             request.OccurredAt,
-            string.Empty,
-            string.Empty), cancellationToken);
+            email.Subject,
+            email.Body), cancellationToken);
         if (!created)
         {
             return Results.Conflict(new { error = "The event has already been processed." });
         }
 
-        await client.UpsertUserAchievementAsync(new UserAchievement(
+        await client.UpsertUserAchievementsAsync(achievementUpdates.Select(update => new UserAchievement(
             request.RecipientUserId,
-            request.AchievementId,
-            newProgress), cancellationToken);
+            update.AchievementId,
+            update.Progress)).ToList(), cancellationToken);
 
-        var shouldNotify = NotificationRules.ShouldNotify(preferences, request.EventType, newlyAttained);
+        var preferences = await client.GetPreferencesAsync(request.RecipientUserId, cancellationToken);
+        var shouldNotify = preferences is not null && NotificationRules.ShouldNotify(
+            preferences,
+            request.Trigger,
+            achievementUpdates.Any(item => item.NewlyAttained));
         var emailSent = false;
-        var usedFallback = false;
         string? emailError = null;
 
-        if (shouldNotify && emailSender.IsConfigured)
+        if (shouldNotify
+            && !string.IsNullOrWhiteSpace(preferences!.Email)
+            && emailSender.IsConfigured)
         {
             try
             {
-                var email = await emailGenerator.GenerateAsync(new EmailContext(
-                    request.EventType,
-                    request.SubjectId,
-                    achievement.Name,
-                    newProgress,
-                    achievement.ProgressNeeded,
-                    newlyAttained), cancellationToken);
-                usedFallback = email.UsedFallback;
                 await emailSender.SendAsync(preferences.Email, email, cancellationToken);
                 emailSent = true;
             }
@@ -295,20 +298,18 @@ app.MapPost("/api/events", async (
             eventId = request.EventId,
             actorUserId,
             recipientUserId = request.RecipientUserId,
-            achievement = new
+            achievements = achievementUpdates,
+            notification = new
             {
-                achievement.AchievementId,
-                achievement.Name,
-                progress = newProgress,
-                achievement.ProgressNeeded,
-                newlyAttained
+                email.Subject,
+                email.Body,
+                email.UsedFallback
             },
             shouldNotify,
             email = new
             {
                 sent = emailSent,
                 configured = emailSender.IsConfigured,
-                usedFallback,
                 error = emailError
             }
         });

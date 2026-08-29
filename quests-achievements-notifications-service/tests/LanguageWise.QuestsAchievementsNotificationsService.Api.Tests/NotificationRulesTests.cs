@@ -46,17 +46,16 @@ public sealed class NotificationRulesTests
     public void ValidateEvent_WithInvalidFields_ReturnsEveryRelevantError()
     {
         using var metadata = JsonDocument.Parse("[]");
-        var request = new EventRequest(" ", "unknown", "", 0, 0, default, 0, metadata.RootElement);
+        var request = new EventRequest(" ", "unknown", "", 0, default, 0, metadata.RootElement);
 
         var errors = NotificationRules.ValidateEvent(request);
 
         Assert.That(errors.Keys, Is.EquivalentTo(new[]
         {
             "eventId",
-            "eventType",
+            "trigger",
             "subjectId",
             "recipientUserId",
-            "achievementId",
             "occurredAt",
             "value",
             "metadata"
@@ -124,7 +123,7 @@ public sealed class NotificationRulesTests
     }
 
     private static EventRequest ValidEvent() =>
-        new("event-1", "course-completion", "course-1", 1, 1, DateTimeOffset.UtcNow);
+        new("event-1", "course-completion", "course-1", 1, DateTimeOffset.UtcNow);
 
     private static UserPreferences Preferences(
         bool notifyAll = true,
