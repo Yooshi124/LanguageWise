@@ -9,7 +9,7 @@ public sealed record EmailContext(
 
 public sealed class OllamaOptions
 {
-    public string Model { get; set; } = "gemma4:12b";
+    public string Model { get; set; } = "gemma4:e4b";
 }
 
 public sealed class SmtpOptions

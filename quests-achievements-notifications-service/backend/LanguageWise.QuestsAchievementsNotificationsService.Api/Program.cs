@@ -24,16 +24,10 @@ builder.Services.AddHttpClient<AppDataClient>(client =>
 var ollamaServiceUrl = builder.Configuration["Services:Ollama"] ?? "http://localhost:11434";
 builder.Services.Configure<OllamaOptions>(builder.Configuration.GetSection("Ollama"));
 builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection("Smtp"));
-builder.Services.PostConfigure<SmtpOptions>(options =>
-{
-    options.Username = builder.Configuration["SMTP_USERNAME"] ?? options.Username;
-    options.Password = builder.Configuration["SMTP_PASSWORD"] ?? options.Password;
-    options.FromName = builder.Configuration["SMTP_FROM_NAME"] ?? options.FromName;
-});
 builder.Services.AddHttpClient<IEmailContentGenerator, OllamaEmailGenerator>(client =>
 {
     client.BaseAddress = new Uri(ollamaServiceUrl.TrimEnd('/') + "/");
-    client.Timeout = TimeSpan.FromSeconds(90);
+    client.Timeout = TimeSpan.FromSeconds(15);
 });
 builder.Services.AddSingleton<ISmtpTransport, MailKitSmtpTransport>();
 builder.Services.AddSingleton<IEmailSender, GmailEmailSender>();

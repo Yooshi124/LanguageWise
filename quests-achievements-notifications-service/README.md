@@ -7,7 +7,7 @@ This service tracks achievement progress, stores notification preferences and ev
 - PostgreSQL stores achievements, user progress, preferences, and notification history.
 - PostgREST exposes the service-owned `api` schema to the backend.
 - ASP.NET Core validates shared-service JWTs and owns event processing.
-- Ollama runs the official `gemma4:12b` model and persists it in the `ollama-data` Docker volume.
+- Ollama runs the official `gemma4:e4b` model and persists it in the `ollama-data` Docker volume.
 - MailKit sends plain-text email through Gmail SMTP with STARTTLS.
 - nginx serves the frontend and proxies `/api/*` to the backend.
 
@@ -22,12 +22,14 @@ Generate the shared JWT key pair from the repository root:
 Create `backend/.env` with the Gmail account and a Google app password:
 
 ```text
-SMTP_USERNAME=sender@example.com
-SMTP_PASSWORD=google-app-password-without-spaces
-SMTP_FROM_NAME=LanguageWise
+Smtp__Host=smtp.gmail.com
+Smtp__Port=587
+Smtp__Username=sender@example.com
+Smtp__Password=google-app-password-without-spaces
+Smtp__FromName=LanguageWise
 ```
 
-The file is ignored by Git and excluded from the backend Docker build context. `SMTP_USERNAME` is always used as the sender address. If the file or credentials are absent, events still update progress but email is skipped.
+The file is the sole source of SMTP configuration. It is ignored by Git and excluded from the backend Docker build context. `Smtp__Username` is always used as the sender address. If the file or credentials are absent, events still update progress but email is skipped.
 
 ## Start
 
@@ -37,7 +39,7 @@ From the repository root:
 docker compose up -d --build quests-achievements-notifications-service-frontend
 ```
 
-The first start downloads the Ollama image and approximately 7.4 GB for `gemma4:12b`. The model initializer exits successfully after populating the persistent volume. Open [http://localhost:3000/quests-and-achievements/](http://localhost:3000/quests-and-achievements/) after the backend and frontend become healthy.
+The first start downloads the Ollama image and `gemma4:e4b` model. The model initializer exits successfully after populating the persistent volume. Open [http://localhost:3000/quests-and-achievements/](http://localhost:3000/quests-and-achievements/) after the backend and frontend become healthy.
 
 Check status without displaying environment values:
 
