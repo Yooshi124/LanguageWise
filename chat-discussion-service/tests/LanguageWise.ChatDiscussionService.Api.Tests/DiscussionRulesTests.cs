@@ -140,9 +140,70 @@ public sealed class DiscussionRulesTests
         Assert.That(DiscussionRules.GetUserId(new ClaimsPrincipal(new ClaimsIdentity())), Is.Null);
     }
 
+    [Test]
+    public void ValidateCreatePost_WithAForumThatDoesNotExist_ReportsAnError()
+    {
+        var errors = DiscussionRules.ValidateCreatePost(new CreatePostRequest("Title", "Content", "klingon"));
+
+        Assert.That(errors, Does.ContainKey("category"));
+    }
+
+    [Test]
+    public void ValidateCreatePost_MatchesAForumRegardlessOfCasing()
+    {
+        var errors = DiscussionRules.ValidateCreatePost(new CreatePostRequest("Title", "Content", "Spanish"));
+
+        Assert.That(errors, Is.Empty);
+    }
+
+    [Test]
+    public void ValidatePatchPost_WithAForumThatDoesNotExist_ReportsAnError()
+    {
+        var errors = DiscussionRules.ValidatePatchPost(new PatchPostRequest(null, null, "klingon"));
+
+        Assert.That(errors, Does.ContainKey("category"));
+    }
+
+    [Test]
+    public void ValidateCategoryFilter_WithAForumThatDoesNotExist_ReportsAnError()
+    {
+        Assert.That(DiscussionRules.ValidateCategoryFilter("klingon"), Does.ContainKey("category"));
+    }
+
+    [Test]
+    public void ValidateCategoryFilter_WithNoFilter_ReportsNoErrors()
+    {
+        Assert.That(DiscussionRules.ValidateCategoryFilter(null), Is.Empty);
+    }
+
+    [Test]
+    public void Forums_IncludeGlobalAndTheSeededLanguages()
+    {
+        Assert.That(
+            DiscussionRules.Forums.Select(forum => forum.Code),
+            Is.EquivalentTo(new[] { "global", "spanish", "italian", "japanese" }));
+    }
+
+    [Test]
+    public void GetUserName_ReadsTheNameClaim()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([
+            new Claim(JwtRegisteredClaimNames.Name, "lachlan")
+        ]));
+
+        Assert.That(DiscussionRules.GetUserName(principal), Is.EqualTo("lachlan"));
+    }
+
+    [Test]
+    public void GetUserName_WithoutANameClaim_ReturnsAnEmptyString()
+    {
+        Assert.That(DiscussionRules.GetUserName(new ClaimsPrincipal(new ClaimsIdentity())), Is.Empty);
+    }
+
     private static PostSummary CurrentPost() => new(
         1,
         1,
+        "lachlan",
         "Original title",
         "Original content",
         "italian",
@@ -150,5 +211,6 @@ public sealed class DiscussionRulesTests
         DateTime.UtcNow,
         0,
         0,
-        false);
+        false,
+        null);
 }

@@ -3,6 +3,7 @@ namespace LanguageWise.ChatDiscussionService.Db.Models;
 public sealed record Post(
     int Id,
     int UserId,
+    string AuthorName,
     string Title,
     string Content,
     string Category,
@@ -17,6 +18,7 @@ public sealed record Post(
 public sealed record PostSummary(
     int Id,
     int UserId,
+    string AuthorName,
     string Title,
     string Content,
     string Category,
@@ -24,17 +26,19 @@ public sealed record PostSummary(
     DateTime UpdatedAt,
     int CommentCount,
     int LikeCount,
-    bool LikedByViewer);
+    bool LikedByViewer,
+    string? MatchedCommentExcerpt);
 
-public sealed record PostInput(int UserId, string? Title, string? Content, string? Category);
+public sealed record PostInput(int UserId, string? AuthorName, string? Title, string? Content, string? Category);
 
-/// <summary>Editable fields only. UserId is absent by design: an edit must never reassign authorship.</summary>
+/// <summary>Editable fields only. UserId and AuthorName are absent by design: an edit must never reassign authorship.</summary>
 public sealed record PostUpdate(string? Title, string? Content, string? Category);
 
 public sealed record Comment(
     int Id,
     int PostId,
     int UserId,
+    string AuthorName,
     string Content,
     DateTime CreatedAt,
     DateTime UpdatedAt);
@@ -43,6 +47,7 @@ public sealed record CommentSummary(
     int Id,
     int PostId,
     int UserId,
+    string AuthorName,
     string Content,
     DateTime CreatedAt,
     DateTime UpdatedAt,
@@ -50,7 +55,7 @@ public sealed record CommentSummary(
     bool LikedByViewer);
 
 /// <summary>The post is taken from the route, not the body.</summary>
-public sealed record CommentInput(int UserId, string? Content);
+public sealed record CommentInput(int UserId, string? AuthorName, string? Content);
 
 public sealed record CommentUpdate(string? Content);
 

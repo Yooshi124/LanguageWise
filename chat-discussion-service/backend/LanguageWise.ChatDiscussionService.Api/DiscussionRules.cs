@@ -13,6 +13,19 @@ internal static class DiscussionRules
     internal const int DefaultLimit = 20;
     internal const int MaxLimit = 100;
 
+    internal const int CommentPreviewLimit = 20;
+
+    internal static readonly IReadOnlyList<Forum> Forums =
+    [
+        new("global", "Global", 0),
+        new("spanish", "Spanish", 1),
+        new("italian", "Italian", 2),
+        new("japanese", "Japanese", 3)
+    ];
+
+    internal static bool IsKnownForum(string? code) =>
+        code is not null && Forums.Any(forum => string.Equals(forum.Code, code.Trim(), StringComparison.OrdinalIgnoreCase));
+
     /// <summary>
     /// The signed-in user's ID, or null when the caller is anonymous. Reading the
     /// raw 'sub' claim only works because the JWT bearer options set
@@ -20,6 +33,9 @@ internal static class DiscussionRules
     /// </summary>
     internal static int? GetUserId(ClaimsPrincipal user) =>
         int.TryParse(user.FindFirstValue(JwtRegisteredClaimNames.Sub), out var userId) ? userId : null;
+
+    internal static string GetUserName(ClaimsPrincipal user) =>
+        user.FindFirstValue(JwtRegisteredClaimNames.Name) ?? string.Empty;
 
     internal static Dictionary<string, string[]> ValidateCreatePost(CreatePostRequest? request)
     {
@@ -34,6 +50,11 @@ internal static class DiscussionRules
         Require(errors, "title", request.Title, "A title is required.");
         Require(errors, "content", request.Content, "Content is required.");
         Require(errors, "category", request.Category, "A category is required.");
+
+        if (!errors.ContainsKey("category") && !IsKnownForum(request.Category))
+        {
+            errors["category"] = [UnknownForumMessage];
+        }
 
         return errors;
     }
@@ -57,6 +78,11 @@ internal static class DiscussionRules
         RejectBlank(errors, "title", request.Title, "A title cannot be blank.");
         RejectBlank(errors, "content", request.Content, "Content cannot be blank.");
         RejectBlank(errors, "category", request.Category, "A category cannot be blank.");
+
+        if (request.Category is not null && !errors.ContainsKey("category") && !IsKnownForum(request.Category))
+        {
+            errors["category"] = [UnknownForumMessage];
+        }
 
         return errors;
     }
@@ -114,6 +140,18 @@ internal static class DiscussionRules
         return errors;
     }
 
+    internal static Dictionary<string, string[]> ValidateCategoryFilter(string? category)
+    {
+        var errors = new Dictionary<string, string[]>();
+
+        if (!string.IsNullOrWhiteSpace(category) && !IsKnownForum(category))
+        {
+            errors["category"] = [UnknownForumMessage];
+        }
+
+        return errors;
+    }
+
     /// <summary>
     /// Folds a partial update over the post as it stands. The backend has already
     /// loaded the post to check ownership, so the merge happens here and the
@@ -128,6 +166,9 @@ internal static class DiscussionRules
 
     internal static string MergeComment(Comment current, PatchCommentRequest patch) =>
         patch.Content?.Trim() ?? current.Content;
+
+    private static string UnknownForumMessage =>
+        $"Unknown forum. Valid values are: {string.Join(", ", Forums.Select(forum => forum.Code))}.";
 
     private static void Require(
         Dictionary<string, string[]> errors,

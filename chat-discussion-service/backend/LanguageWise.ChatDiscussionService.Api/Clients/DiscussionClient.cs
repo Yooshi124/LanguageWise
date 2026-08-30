@@ -22,6 +22,7 @@ public sealed class DiscussionClient(HttpClient httpClient)
     public async Task<IReadOnlyList<PostSummary>> GetPostsAsync(
         int? userId,
         string? category,
+        string? search,
         int limit,
         int offset,
         int? viewerId,
@@ -30,6 +31,7 @@ public sealed class DiscussionClient(HttpClient httpClient)
         var query = new QueryBuilder()
             .Add("userId", userId)
             .Add("category", category)
+            .Add("search", search)
             .Add("limit", limit)
             .Add("offset", offset)
             .Add("viewerId", viewerId);
@@ -50,6 +52,7 @@ public sealed class DiscussionClient(HttpClient httpClient)
 
     public async Task<Post> CreatePostAsync(
         int userId,
+        string authorName,
         string title,
         string content,
         string category,
@@ -57,7 +60,7 @@ public sealed class DiscussionClient(HttpClient httpClient)
     {
         using var response = await httpClient.PostAsJsonAsync(
             "api/posts",
-            new { UserId = userId, Title = title, Content = content, Category = category },
+            new { UserId = userId, AuthorName = authorName, Title = title, Content = content, Category = category },
             cancellationToken);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<Post>(cancellationToken))!;
@@ -111,12 +114,13 @@ public sealed class DiscussionClient(HttpClient httpClient)
     public async Task<Comment?> CreateCommentAsync(
         int postId,
         int userId,
+        string authorName,
         string content,
         CancellationToken cancellationToken = default)
     {
         using var response = await httpClient.PostAsJsonAsync(
             $"api/posts/{postId}/comments",
-            new { UserId = userId, Content = content },
+            new { UserId = userId, AuthorName = authorName, Content = content },
             cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.NotFound)

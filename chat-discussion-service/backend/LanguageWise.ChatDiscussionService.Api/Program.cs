@@ -67,6 +67,17 @@ app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = ServiceName }));
 
+app.MapGet("/api/forums", () => Results.Ok(DiscussionRules.Forums));
+
+app.MapGet("/api/me", (HttpContext context) =>
+{
+    var userId = DiscussionRules.GetUserId(context.User);
+    return userId is null
+        ? Results.Unauthorized()
+        : Results.Ok(new Me(userId.Value, DiscussionRules.GetUserName(context.User)));
+})
+    .RequireAuthorization();
+
 // ---------------------------------------------------------------------------
 // Reads. Anonymous callers are welcome; a signed-in one additionally gets
 // likedByViewer populated so the like button renders correctly on first paint.
@@ -78,6 +89,8 @@ app.MapGet("/api/posts", (
     CancellationToken cancellationToken,
     int? userId = null,
     string? category = null,
+    string? q = null,
+    string? sort = null,
     int limit = DiscussionRules.DefaultLimit,
     int offset = 0) =>
     Guard(async () =>
@@ -88,9 +101,24 @@ app.MapGet("/api/posts", (
             return Results.ValidationProblem(paging);
         }
 
+        var filter = DiscussionRules.ValidateCategoryFilter(category);
+        if (filter.Count > 0)
+        {
+            return Results.ValidationProblem(filter);
+        }
+
+        if (sort is not null && !string.Equals(sort, "newest", StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["sort"] = ["The only supported sort is 'newest'."]
+            });
+        }
+
         var posts = await client.GetPostsAsync(
             userId,
             category,
+            q,
             limit,
             offset,
             DiscussionRules.GetUserId(context.User),
@@ -106,8 +134,40 @@ app.MapGet("/api/posts/{id:int}", (
     CancellationToken cancellationToken) =>
     Guard(async () =>
     {
-        var post = await client.GetPostAsync(id, DiscussionRules.GetUserId(context.User), cancellationToken);
-        return post is null ? Results.NotFound() : Results.Ok(post);
+        var viewerId = DiscussionRules.GetUserId(context.User);
+
+        var postTask = client.GetPostAsync(id, viewerId, cancellationToken);
+        var commentsTask = client.GetCommentsAsync(
+            id,
+            DiscussionRules.CommentPreviewLimit,
+            0,
+            viewerId,
+            cancellationToken);
+
+        await Task.WhenAll(postTask, commentsTask);
+
+        var post = await postTask;
+        if (post is null)
+        {
+            return Results.NotFound();
+        }
+
+        var comments = await commentsTask;
+
+        return Results.Ok(new PostDetail(
+            post.Id,
+            post.UserId,
+            post.AuthorName,
+            post.Title,
+            post.Content,
+            post.Category,
+            post.CreatedAt,
+            post.UpdatedAt,
+            post.CommentCount,
+            post.LikeCount,
+            post.LikedByViewer,
+            comments,
+            post.CommentCount > comments.Count));
     }, "read post"));
 
 app.MapGet("/api/posts/{id:int}/comments", (
@@ -166,6 +226,7 @@ app.MapPost("/api/posts", (
 
         var created = await client.CreatePostAsync(
             userId.Value,
+            DiscussionRules.GetUserName(context.User),
             request!.Title!.Trim(),
             request.Content!.Trim(),
             request.Category!.Trim(),
@@ -269,6 +330,7 @@ app.MapPost("/api/posts/{id:int}/comments", (
         var created = await client.CreateCommentAsync(
             id,
             userId.Value,
+            DiscussionRules.GetUserName(context.User),
             request!.Content!.Trim(),
             cancellationToken);
 

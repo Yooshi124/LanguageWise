@@ -126,16 +126,16 @@ internal sealed class FakeDiscussionDatabase : HttpMessageHandler
     private static string PostSummary(int id, int userId) =>
         $$"""
         {
-          "id": {{id}}, "userId": {{userId}}, "title": "A title", "content": "Some content",
+          "id": {{id}}, "userId": {{userId}}, "authorName": "someone", "title": "A title", "content": "Some content",
           "category": "global", "createdAt": "2026-02-12T09:00:00Z", "updatedAt": "2026-02-12T09:00:00Z",
-          "commentCount": 2, "likeCount": 3, "likedByViewer": false
+          "commentCount": 2, "likeCount": 3, "likedByViewer": false, "matchedCommentExcerpt": null
         }
         """;
 
     private static string Post(int id, int userId) =>
         $$"""
         {
-          "id": {{id}}, "userId": {{userId}}, "title": "A title", "content": "Some content",
+          "id": {{id}}, "userId": {{userId}}, "authorName": "someone", "title": "A title", "content": "Some content",
           "category": "global", "createdAt": "2026-02-12T09:00:00Z", "updatedAt": "2026-02-12T09:00:00Z"
         }
         """;
@@ -143,8 +143,9 @@ internal sealed class FakeDiscussionDatabase : HttpMessageHandler
     private static string Comment(int id, int userId) =>
         $$"""
         {
-          "id": {{id}}, "postId": 1, "userId": {{userId}}, "content": "A comment",
-          "createdAt": "2026-02-12T09:30:00Z", "updatedAt": "2026-02-12T09:30:00Z"
+          "id": {{id}}, "postId": 1, "userId": {{userId}}, "authorName": "someone", "content": "A comment",
+          "createdAt": "2026-02-12T09:30:00Z", "updatedAt": "2026-02-12T09:30:00Z",
+          "likeCount": 0, "likedByViewer": false
         }
         """;
 

@@ -58,7 +58,12 @@ jobs:
             "chat-discussion-service/database/Dockerfile" \
             "chat-discussion-service/database/LanguageWise.ChatDiscussionService.Db/sql/schema.sql" \
             "chat-discussion-service/database/LanguageWise.ChatDiscussionService.Db/sql/seed.sql" \
-            "chat-discussion-service/frontend/Dockerfile" ; do
+            "chat-discussion-service/frontend/Dockerfile" \
+            "chat-discussion-service/frontend/package.json" \
+            "chat-discussion-service/frontend/package-lock.json" \
+            "chat-discussion-service/frontend/vite.config.js" \
+            "chat-discussion-service/frontend/index.html" \
+            "chat-discussion-service/frontend/src/main.js" ; do
             if [ ! -f "$path" ]; then
               echo "::error file=$path::Missing from the repository. It may exist locally but be untracked — check .gitignore."
               missing=1
