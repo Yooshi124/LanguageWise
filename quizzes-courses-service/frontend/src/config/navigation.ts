@@ -1,0 +1,61 @@
+export type AppIconName =
+  | 'analytics'
+  | 'arrow-left'
+  | 'arrow-right'
+  | 'close'
+  | 'courses'
+  | 'discussion'
+  | 'games'
+  | 'home'
+  | 'logout'
+  | 'menu'
+  | 'profile'
+  | 'quests'
+
+export interface ServiceNavigationItem {
+  label: string
+  href?: string
+  icon: AppIconName
+  current?: boolean
+  disabled?: boolean
+}
+
+export interface UtilityNavigationItem {
+  label: string
+  icon: AppIconName
+  disabled: true
+}
+
+const sharedFrontend = `${window.location.protocol}//${window.location.hostname}:3000`
+export const sharedHomeHref = `${sharedFrontend}/`
+
+export const serviceNavigation: readonly ServiceNavigationItem[] = [
+  { label: 'Home', href: sharedHomeHref, icon: 'home' },
+  { label: 'Mini Games', href: `${sharedFrontend}/mini-games/`, icon: 'games' },
+  {
+    label: 'Discussion Forum',
+    href: `${sharedFrontend}/chat-discussion/`,
+    icon: 'discussion',
+  },
+  {
+    label: 'Quizzes & Courses',
+    href: `${sharedFrontend}/quizzes-and-courses/`,
+    icon: 'courses',
+    current: true,
+  },
+  {
+    label: 'Quests & Achievements',
+    href: `${sharedFrontend}/quests-and-achievements/`,
+    icon: 'quests',
+  },
+  {
+    label: 'Leaderboard & Analytics',
+    icon: 'analytics',
+    disabled: true,
+  },
+]
+
+export const utilityNavigation: readonly UtilityNavigationItem[] = [
+  { label: 'Profile', icon: 'profile', disabled: true },
+  { label: 'Logout', icon: 'logout', disabled: true },
+]

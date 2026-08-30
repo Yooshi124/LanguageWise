@@ -7,9 +7,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/LanguageWise.QuizzesCoursesService.Api.Tests/LanguageWise.QuizzesCoursesService.Api.Tests.csproj" />
-  </Folder>
-  <Folder Name="/frontend/">
-    <File Path="frontend/index.html" />
-    <File Path="frontend/nginx.conf" />
+    <Project Path="tests/LanguageWise.QuizzesCoursesService.Db.Tests/LanguageWise.QuizzesCoursesService.Db.Tests.csproj" />
   </Folder>
 </Solution>

@@ -142,8 +142,6 @@ services:
     container_name: quizzes-courses-service-frontend
     build:
       context: ./quizzes-courses-service/frontend
-    ports:
-      - "127.0.0.1:3003:80"
     networks: [languagewise]
     depends_on:
       quizzes-courses-service-backend:
