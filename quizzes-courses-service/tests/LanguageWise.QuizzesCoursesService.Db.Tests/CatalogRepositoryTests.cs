@@ -44,13 +44,13 @@ public sealed class CatalogRepositoryTests
     }
 
     [Test]
-    public void Initialisation_SeedsExactlyTheFiveSupportedCourses()
+    public void Initialisation_SeedsAllSixSupportedCourses()
     {
         var repository = new CatalogRepository(connectionString);
 
         var courses = repository.GetCourses();
 
-        Assert.That(courses.Select(course => course.Code), Is.EqualTo(new[] { "de", "fr", "it", "nl", "es" }));
+        Assert.That(courses.Select(course => course.Code), Is.EqualTo(new[] { "de", "fr", "it", "nl", "es", "pl" }));
     }
 
     [Test]
@@ -69,7 +69,7 @@ public sealed class CatalogRepositoryTests
 
         initializer.Initialise();
 
-        Assert.That(new CatalogRepository(connectionString).CountCourses(), Is.EqualTo(5));
+        Assert.That(new CatalogRepository(connectionString).CountCourses(), Is.EqualTo(6));
     }
 
     [Test]
@@ -81,17 +81,21 @@ public sealed class CatalogRepositoryTests
         Assert.That(lessons.Select(lesson => lesson.SortOrder), Is.Ordered);
     }
 
-    [Test]
-    public void GetLesson_ReturnsMarkdownAndTypedVocabulary()
+    [TestCase("de", "German", "Hallo")]
+    [TestCase("pl", "Polish", "Cześć")]
+    public void GetLesson_ReturnsMarkdownAndTypedVocabulary(
+        string courseCode,
+        string courseTitle,
+        string firstVocabularyWord)
     {
-        var lesson = new CatalogRepository(connectionString).GetLesson("de", "welcome");
+        var lesson = new CatalogRepository(connectionString).GetLesson(courseCode, "welcome");
 
         Assert.That(lesson, Is.Not.Null);
         Assert.Multiple(() =>
         {
-            Assert.That(lesson!.ContentMarkdown, Does.StartWith("# Welcome to German"));
+            Assert.That(lesson!.ContentMarkdown, Does.StartWith($"# Welcome to {courseTitle}"));
             Assert.That(lesson.Vocabulary, Has.Count.EqualTo(2));
-            Assert.That(lesson.Vocabulary[0].Word, Is.EqualTo("Hallo"));
+            Assert.That(lesson.Vocabulary[0].Word, Is.EqualTo(firstVocabularyWord));
         });
     }
 
