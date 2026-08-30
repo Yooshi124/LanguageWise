@@ -1,12 +1,12 @@
 <template>
-	<main class="vocab-voyage">
+	<main class="guess-the-word">
 		<a class="back-button" href="/game" aria-label="Return to the main game page">Back</a>
 		<header class="game-header">
 			<p class="eyebrow">Daily vocabulary challenge</p>
 			<h1>Guess the word</h1>
 			<p>Find the hidden five-letter word in six guesses.</p>
 		</header>
-		<section class="board-shell" aria-label="VocabVoyage game board">
+		<section class="board-shell" aria-label="GuessTheWord game board">
 			<div class="game-grid">
 				<div v-for="(box, index) in boxes" :key="index" class="grid-box" :class="colourClass(box.colour)">
 					{{ box.letter }}
@@ -112,7 +112,7 @@ const submitGuess = async () => {
 	message.value = '';
 	error.value = false;
 	try {
-		const response = await fetch('/api/vocab-voyage/guess', {
+		const response = await fetch('/api/guess-the-word/guess', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ guess: guess.value })
@@ -138,7 +138,7 @@ const submitGuess = async () => {
 
 const resetGame = async () => {
 	try {
-		const response = await fetch('/api/vocab-voyage/reset', { method: 'POST' });
+		const response = await fetch('/api/guess-the-word/reset', { method: 'POST' });
 		if (!response.ok) {
 			throw new Error(`Unable to reset the game (${response.status}).`);
 		}
@@ -157,7 +157,7 @@ const resetGame = async () => {
 
 onMounted(async () => {
 	try {
-		const response = await fetch('/api/vocab-voyage');
+		const response = await fetch('/api/guess-the-word');
 		const state = await readResponse(response);
 		if (!response.ok) {
 			throw new Error(`Unable to load the game (${response.status}).`);
@@ -175,7 +175,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.vocab-voyage {
+.guess-the-word {
 	position: relative;
 	min-height: 100vh;
 	padding: 2.5rem 2rem 4rem;

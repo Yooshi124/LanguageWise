@@ -1,9 +1,9 @@
-using LanguageWise.MiniGamesService.Api.Feature.VocabVoyage;
+using LanguageWise.MiniGamesService.Api.Feature.GuessTheWord;
 
 namespace LanguageWise.MiniGamesService.Api.Tests;
 
 [TestFixture]
-public class VocabVoyageGameTests
+public class GuessTheWordGameTests
 {
     [Test]
     public void VocabularySelector_PrefersFiveLetterWordsFromCourseContent()
@@ -36,7 +36,7 @@ public class VocabVoyageGameTests
     }
 
     [Test]
-    public void FakeLearningContext_ProvidesTenVocabVoyageAnswers()
+    public void FakeLearningContext_ProvidesTenGuessTheWordAnswers()
     {
         var candidates = VocabularySelector.GetCandidates(new FakeLearningContextProvider().GetContext());
 
@@ -48,7 +48,7 @@ public class VocabVoyageGameTests
     [Test]
     public void SubmitGuess_ReturnsGreenForAnExactMatch()
     {
-        var game = new VocabVoyageGame("English", ["VOCAB"]);
+        var game = new GuessTheWordGame("English", ["VOCAB"]);
 
         var result = game.SubmitGuess("vocab");
 
@@ -64,7 +64,7 @@ public class VocabVoyageGameTests
     [Test]
     public void SubmitGuess_ReturnsRedForLettersNotInTheAnswer()
     {
-        var game = new VocabVoyageGame("English", ["VOCAB"]);
+        var game = new GuessTheWordGame("English", ["VOCAB"]);
 
         var result = game.SubmitGuess("vexxx");
 
@@ -74,7 +74,7 @@ public class VocabVoyageGameTests
     [Test]
     public void SubmitGuess_RejectsGuessesThatAreNotFiveLetters()
     {
-        var game = new VocabVoyageGame("English", ["VOCAB"]);
+        var game = new GuessTheWordGame("English", ["VOCAB"]);
 
         Assert.Throws<ArgumentException>(() => game.SubmitGuess("four"));
     }
@@ -82,7 +82,7 @@ public class VocabVoyageGameTests
     [Test]
     public void SubmitGuess_CompletesAfterSixIncorrectAttempts()
     {
-        var game = new VocabVoyageGame("English", ["VOCAB"]);
+        var game = new GuessTheWordGame("English", ["VOCAB"]);
 
         for (var attempt = 0; attempt < 6; attempt++)
         {
@@ -101,7 +101,7 @@ public class VocabVoyageGameTests
     [Test]
     public void SubmitGuess_DoesNotReuseMatchedLettersForOrangeResults()
     {
-        var game = new VocabVoyageGame("English", ["LEVEL"]);
+        var game = new GuessTheWordGame("English", ["LEVEL"]);
 
         var result = game.SubmitGuess("EERIE");
 
@@ -111,7 +111,7 @@ public class VocabVoyageGameTests
     [Test]
     public void SubmitGuess_RejectsNonLetterCharacters()
     {
-        var game = new VocabVoyageGame("English", ["VOCAB"]);
+        var game = new GuessTheWordGame("English", ["VOCAB"]);
 
         Assert.Throws<ArgumentException>(() => game.SubmitGuess("voc4b"));
     }

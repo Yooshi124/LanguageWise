@@ -7,8 +7,7 @@ future cross-service integrations.
 
 ## What is in here
 
-- `VocabVoyage.cs`, `WordStrings.cs`, `Associations.cs` — the original flat stubs,
-  retained for comparison while the grouped structure is evaluated.
+- `GuessTheWord`, `WordSearch`, and `Associations` — grouped game implementations.
 
 The grouped structure is now present, with each game following the same
 three-part relationship:
@@ -20,15 +19,15 @@ Feature/<Game>/
   <Game>Service.cs  session/application boundary; references <Game>Game.cs
 ```
 
-For example, `VocabVoyageService.SubmitGuess` calls `VocabVoyageGame.SubmitGuess`,
-which returns the `VocabVoyageGuessResult` model. The equivalent references exist for
-`WordStrings` and `Associations`.
+For example, `GuessTheWordService.SubmitGuess` calls `GuessTheWordGame.SubmitGuess`,
+which returns the `GuessTheWordGuessResult` model. The equivalent references exist for
+`WordSearch` and `Associations`.
 
 The Guess the word game is registered in `Program.cs` and uses a local fake learning-context
 provider until the quizzes/courses service exposes the required API.
 
-The Word Search and Associations classes remain stubs until their game rules are
-implemented.
+Word Search uses a themed board with pointer-drag selection and server-side
+progress tracking.
 
 The local provider currently supplies a small Markdown learning context containing
 candidate vocabulary. It is deliberately replaceable when the courses API exists.
@@ -36,7 +35,7 @@ candidate vocabulary. It is deliberately replaceable when the courses API exists
 ## The frontend
 
 This microservice's frontend is Kyan's **Vue + Vite** single-page app, in
-`mini-games-service/frontend/src/`. `GamePage.vue` and `VocabVoyage.vue` are the
+`mini-games-service/frontend/src/`. `GamePage.vue` and `GuessTheWord.vue` are the
 currently supported screens.
 The build runs entirely inside the frontend Dockerfile, so no Node install is needed
 locally or in CI.
@@ -46,8 +45,8 @@ Routes, resolved in `src/main.js`:
 | Path | Component |
 | --- | --- |
 | `/` | `GamePage.vue` |
-| `/game/guess-the-word` | `VocabVoyage.vue` |
-| `/game/word-search` | `WordStrings.vue` — game screen stub |
+| `/game/guess-the-word` | `GuessTheWord.vue` |
+| `/game/word-search` | `WordSearch.vue` |
 | `/game/associations` | `Associations.vue` — game screen stub |
 
 ## Wiring this feature up
@@ -61,4 +60,3 @@ Routes, resolved in `src/main.js`:
 
 - Learning context is currently fake and is not user-specific.
 - Game state is currently held in memory and is shared by requests to the backend process.
-- Word Strings and Associations are not playable yet.

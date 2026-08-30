@@ -1,4 +1,4 @@
-namespace LanguageWise.MiniGamesService.Api.Feature.VocabVoyage;
+namespace LanguageWise.MiniGamesService.Api.Feature.GuessTheWord;
 
 public sealed record LearningContext(
     int? UserId,

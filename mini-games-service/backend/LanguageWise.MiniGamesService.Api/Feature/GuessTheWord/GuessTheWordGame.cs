@@ -1,28 +1,28 @@
-namespace LanguageWise.MiniGamesService.Api.Feature.VocabVoyage;
+namespace LanguageWise.MiniGamesService.Api.Feature.GuessTheWord;
 
-public sealed class VocabVoyageGame
+public sealed class GuessTheWordGame
 {
     private const int WordLength = 5;
     private const int MaximumAttempts = 6;
     private readonly string language;
     private readonly IReadOnlyList<string> candidateWords;
-    private readonly List<VocabVoyageGuessResult> guesses = [];
+    private readonly List<GuessTheWordGuessResult> guesses = [];
     private string answer;
     private int attempts = 0;
     private bool isComplete = false;
     private bool isWon = false;
 
-    public VocabVoyageGame(string language, IReadOnlyList<string>? candidateWords = null)
+    public GuessTheWordGame(string language, IReadOnlyList<string>? candidateWords = null)
     {
         this.language = language;
         this.candidateWords = candidateWords ?? ["VOCAB"];
         answer = SelectAnswer(this.candidateWords);
     }
 
-    public VocabVoyageState GetState() =>
+    public GuessTheWordState GetState() =>
         new(language, attempts, isComplete, isWon, guesses.ToArray(), isComplete ? answer : null);
 
-    public VocabVoyageGuessResult SubmitGuess(string guess)
+    public GuessTheWordGuessResult SubmitGuess(string guess)
     {
         var normalisedGuess = guess?.Trim().ToUpperInvariant();
         if (string.IsNullOrWhiteSpace(normalisedGuess) ||
@@ -39,7 +39,7 @@ public sealed class VocabVoyageGame
 
         var colours = GetGuessColours(normalisedGuess);
         var isCorrect = colours.All(colour => colour == 'G');
-        var result = new VocabVoyageGuessResult(normalisedGuess, colours, isCorrect);
+        var result = new GuessTheWordGuessResult(normalisedGuess, colours, isCorrect);
 
         guesses.Add(result);
         attempts++;
