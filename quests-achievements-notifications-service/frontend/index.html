@@ -5,16 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>LanguageWise &mdash; Quests &amp; Achievements</title>
     <link rel="stylesheet" href="/css/theme.css">
-    <link rel="stylesheet" href="/css/app.css">
-    <script src="/js/htmx.min.js" defer></script>
-    <script src="/js/app.js" defer></script>
+    <script src="js/htmx.min.js" defer></script>
+    <script src="js/app.js" defer></script>
 </head>
 <body>
 
 <header class="lw-header">
     <div class="lw-header__inner">
         <h1 class="lw-header__title">Quests &amp; Achievements</h1>
-        <p class="lw-header__subtitle">Track your progress and choose the moments worth hearing about.</p>
+        <p class="lw-header__subtitle">Amber &mdash; Track progress and choose the moments worth hearing about.</p>
+        <span id="auth-status"
+              class="lw-auth-status"
+              hx-post="/api/check-login/fragment"
+              hx-trigger="load"
+              hx-swap="innerHTML"></span>
     </div>
 </header>
 
@@ -26,30 +30,30 @@
             Home
             <span class="lw-tabs__owner">Team</span>
         </a></li>
-        <li><a class="lw-tabs__link" href="http://localhost:3001/">
+        <li><span class="lw-tabs__link lw-tabs__link--disabled" aria-disabled="true">
             Mini Games
             <span class="lw-tabs__owner">Kyan</span>
-        </a></li>
-        <li><a class="lw-tabs__link" href="http://localhost:3002/">
+        </span></li>
+        <li><span class="lw-tabs__link lw-tabs__link--disabled" aria-disabled="true">
             Discussion Forum
             <span class="lw-tabs__owner">Lachlan</span>
-        </a></li>
-        <li><a class="lw-tabs__link" href="http://localhost:3003/">
+        </span></li>
+        <li><a class="lw-tabs__link" href="http://localhost:3000/quizzes-and-courses/">
             Quizzes &amp; Courses
             <span class="lw-tabs__owner">Justin</span>
         </a></li>
-        <li><a class="lw-tabs__link" aria-current="page" href="/">
+        <li><a class="lw-tabs__link" aria-current="page" href="./">
             Quests &amp; Achievements
             <span class="lw-tabs__owner">Amber</span>
         </a></li>
-        <li><a class="lw-tabs__link" href="http://localhost:3005/">
+        <li><span class="lw-tabs__link lw-tabs__link--disabled" aria-disabled="true">
             Leaderboard &amp; Analytics
             <span class="lw-tabs__owner">Roan</span>
-        </a></li>
+        </span></li>
         </ul>
     </nav>
 
-    <div hx-get="/api/profile"
+    <div hx-get="api/profile"
          hx-trigger="load"
          hx-swap="none"
          hx-indicator="#profile-loading"></div>
@@ -76,15 +80,18 @@
                 <h2 class="lw-card__title" id="preferences-title">Email notifications</h2>
                 <p class="lw-card__hint">Choose what arrives in your inbox.</p>
 
-                <form hx-put="/api/preferences" hx-swap="none" hx-indicator="#save-indicator">
+                <form hx-put="api/preferences" hx-swap="none" hx-indicator="#save-indicator">
                     <label class="lw-field" for="email">
                         <span>Email address</span>
                         <input id="email" name="email" type="email" autocomplete="email" required>
                     </label>
 
                     <label class="lw-master-toggle">
-                        <span><strong>All notifications</strong><small>Pause or resume every email at once</small></span>
-                        <input id="notify-all" name="notifyAll" type="checkbox">
+                        <span><strong>All notifications</strong><small>Pause every email at once</small></span>
+                        <span class="lw-switch">
+                            <input id="notify-all" name="notifyAll" type="checkbox" role="switch">
+                            <span class="lw-switch__track" aria-hidden="true"></span>
+                        </span>
                     </label>
 
                     <fieldset id="notification-types">
@@ -115,6 +122,18 @@
                 <div id="achievement-grid" class="lw-achievement-grid"></div>
             </section>
         </div>
+
+        <section class="lw-notifications" aria-labelledby="notifications-title">
+            <div class="lw-section-heading">
+                <div>
+                    <p class="lw-eyebrow">Your updates</p>
+                    <h2 id="notifications-title">Past notifications</h2>
+                </div>
+                <span id="notification-count" class="lw-badge"></span>
+            </div>
+            <p id="notification-empty" class="lw-notifications__empty" hidden>No notifications yet.</p>
+            <ol id="notification-list" class="lw-notification-list"></ol>
+        </section>
     </div>
 
     <section id="service-error" class="lw-card lw-state lw-state--error" hidden>
@@ -138,6 +157,28 @@
             </div>
         </article>
     </template>
+
+    <template id="notification-template">
+        <li class="lw-notification">
+            <button class="lw-notification__open" type="button">
+                <span class="lw-notification__subject"></span>
+                <span class="lw-notification__meta"></span>
+            </button>
+        </li>
+    </template>
+
+    <dialog id="notification-dialog" class="lw-notification-dialog" aria-labelledby="notification-dialog-title">
+        <div class="lw-notification-dialog__heading">
+            <div>
+                <p id="notification-dialog-meta" class="lw-notification-dialog__meta"></p>
+                <h2 id="notification-dialog-title"></h2>
+            </div>
+            <form method="dialog">
+                <button class="lw-dialog-close" type="submit">Close</button>
+            </form>
+        </div>
+        <p id="notification-dialog-body" class="lw-notification-dialog__body"></p>
+    </dialog>
 
 </main>
 

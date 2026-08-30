@@ -4,10 +4,10 @@ This service tracks achievement progress, stores notification preferences and ev
 
 ## Components
 
-- PostgreSQL stores achievements, user progress, preferences, and processed event IDs.
+- PostgreSQL stores achievements, user progress, preferences, and notification history.
 - PostgREST exposes the service-owned `api` schema to the backend.
 - ASP.NET Core validates shared-service JWTs and owns event processing.
-- Ollama runs the official `gemma4:12b` model and persists it in the `ollama-data` Docker volume.
+- Ollama runs the official `gemma4:e4b` model and persists it in the `ollama-data` Docker volume.
 - MailKit sends plain-text email through Gmail SMTP with STARTTLS.
 - nginx serves the frontend and proxies `/api/*` to the backend.
 
@@ -22,12 +22,14 @@ Generate the shared JWT key pair from the repository root:
 Create `backend/.env` with the Gmail account and a Google app password:
 
 ```text
-SMTP_USERNAME=sender@example.com
-SMTP_PASSWORD=google-app-password-without-spaces
-SMTP_FROM_NAME=LanguageWise
+Smtp__Host=smtp.gmail.com
+Smtp__Port=587
+Smtp__Username=sender@example.com
+Smtp__Password=google-app-password-without-spaces
+Smtp__FromName=LanguageWise
 ```
 
-The file is ignored by Git and excluded from the backend Docker build context. `SMTP_USERNAME` is always used as the sender address. If the file or credentials are absent, events still update progress but email is skipped.
+The file is the sole source of SMTP configuration. It is ignored by Git and excluded from the backend Docker build context. `Smtp__Username` is always used as the sender address. If the file or credentials are absent, events still update progress but email is skipped.
 
 ## Start
 
@@ -37,7 +39,7 @@ From the repository root:
 docker compose up -d --build quests-achievements-notifications-service-frontend
 ```
 
-The first start downloads the Ollama image and approximately 7.4 GB for `gemma4:12b`. The model initializer exits successfully after populating the persistent volume. Open [http://localhost:3004/](http://localhost:3004/) after the backend and frontend become healthy.
+The first start downloads the Ollama image and `gemma4:e4b` model. The model initializer exits successfully after populating the persistent volume. Open [http://localhost:3000/quests-and-achievements/](http://localhost:3000/quests-and-achievements/) after the backend and frontend become healthy.
 
 Check status without displaying environment values:
 
@@ -56,7 +58,36 @@ The backend derives the actor user ID from the numeric JWT `sub` claim. It never
 
 ### `GET /api/profile`
 
-Returns the authenticated username, preferences, and achievement progress as JSON.
+Returns the authenticated username, preferences, achievement progress, and newest-first notification history as JSON:
+
+```json
+{
+  "username": "amber",
+  "preferences": {
+    "email": "amber@example.com",
+    "notifyAll": true,
+    "notifyCourseCompletion": true
+  },
+  "achievements": [
+    {
+      "achievementId": 1,
+      "name": "First Course",
+      "image": "/images/achievements/first-course.png",
+      "progress": 1,
+      "progressNeeded": 1
+    }
+  ],
+  "notifications": [
+    {
+      "notificationId": 2,
+      "trigger": "post-engagement",
+      "time": "2026-08-29T14:15:00Z",
+      "emailSubject": "Consectetur adipiscing elit",
+      "emailBody": "Ut enim ad minim veniam."
+    }
+  ]
+}
+```
 
 ### `PUT /api/preferences`
 
@@ -74,7 +105,7 @@ Accepts JSON or an HTMX form. JSON example:
 }
 ```
 
-A valid email is required. The record is upserted by authenticated user ID.
+A valid email is required. The record is upserted by authenticated user ID. Preferences control email delivery only; every accepted event still creates in-app notification history and updates achievement progress.
 
 ### `POST /api/events`
 
@@ -82,36 +113,42 @@ Accepts a noteworthy event from another service:
 
 ```json
 {
-  "eventId": "forum-like-post-123-user-7",
-  "eventType": "post-engagement",
-  "subjectId": "post-123",
-  "recipientUserId": 7,
-  "achievementId": 4,
-  "occurredAt": "2026-08-27T10:00:00Z",
-  "value": 1,
-  "metadata": {
-    "action": "like"
-  }
+  "trigger": "post-engagement",
+  "subject": "Tips for practising Spanish every day",
+  "recipientUserId": 7
 }
 ```
 
-Supported event types are `post-engagement`, `course-completion`, `quiz-result`, and `streak`. `eventId` is unique; replaying it returns `409 Conflict` without applying progress twice.
+Supported triggers are `post-engagement`, `course-completion`, `quiz-result`, and `streak`. The subject is a human-readable description used to generate the notification. Every accepted request represents a new occurrence, adds one progress unit to every achievement tier mapped to that trigger, and uses the server's current time for notification history.
 
-A successful response includes updated progress, whether the achievement was newly attained, preference eligibility, and email status:
+A successful response includes all updated achievements, stored notification content, preference eligibility, and email status:
 
 ```json
 {
+  "achievements": [
+    {
+      "achievementId": 4,
+      "name": "First Applause",
+      "progress": 1,
+      "progressNeeded": 1,
+      "newlyAttained": true
+    }
+  ],
+  "notification": {
+    "subject": "Achievement unlocked: First Applause",
+    "body": "You unlocked First Applause. Congratulations!",
+    "usedFallback": false
+  },
   "shouldNotify": true,
   "email": {
     "sent": true,
     "configured": true,
-    "usedFallback": false,
     "error": null
   }
 }
 ```
 
-Ollama output is constrained to structured JSON, thinking is disabled, and generation is capped at 192 tokens. If generation fails or times out, the backend sends a deterministic fallback. SMTP failure is logged and returned as an email error without undoing the recorded event or progress.
+Ollama output is constrained to structured JSON, thinking is disabled, and generation is capped at 192 tokens. If generation fails or times out, the backend stores a deterministic fallback. SMTP failure is logged and returned as an email error without undoing the notification or progress.
 
 ## Verification
 
@@ -121,4 +158,4 @@ Run automated tests:
 dotnet test quests-achievements-notifications-service/LanguageWise.QuestsAchievementsNotificationsService.BE.slnx
 ```
 
-The suite covers JWT bearer/cookie authorization, validation, progress and attainment rules, notification filtering, PostgREST request contracts and duplicate handling, structured Ollama output and fallback, and MailKit message construction without contacting Gmail.
+The suite covers JWT bearer/cookie authorization, validation, progress and attainment rules, notification filtering, repeated event processing, PostgREST persistence, structured Ollama output and fallback, and MailKit message construction without contacting Gmail.

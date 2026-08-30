@@ -6,9 +6,9 @@
     var SERVICES = [
         { name: "Home", owner: "Team", frontend: 3000, backend: 5000, database: 6000, available: true },
         { name: "Mini Games", owner: "Kyan", frontend: 3001, backend: 5001, database: 6001, available: false },
-        { name: "Discussion Forum", owner: "Lachlan", frontend: 3002, backend: 5002, database: 6002, available: false },
+        { name: "Discussion Forum", owner: "Lachlan", frontend: 3002, backend: 5002, database: 6002, available: true },
         { name: "Quizzes & Courses", owner: "Justin", frontend: 3003, backend: 5003, database: 6003, available: true },
-        { name: "Quests & Achievements", owner: "Amber", frontend: 3004, backend: 5004, database: 6004, available: false },
+        { name: "Quests & Achievements", owner: "Amber", frontend: 3000, frontendPath: "/quests-and-achievements/", backend: 5004, database: 6004, available: true },
         { name: "Leaderboard & Analytics", owner: "Roan", frontend: 3005, backend: 5005, database: 6005, available: false }
     ];
 
@@ -53,7 +53,7 @@
             var row = document.createElement("tr");
             cell(row, service.name);
             cell(row, service.owner);
-            cell(row, endpoint(service, service.frontend));
+            cell(row, endpoint(service, service.frontend, service.frontendPath));
             cell(row, endpoint(service, service.backend, "/health"));
             cell(row, endpoint(service, service.database, "/health"));
             body.appendChild(row);

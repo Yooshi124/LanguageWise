@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace LanguageWise.QuestsAchievementsNotificationsService.Api.Models;
@@ -7,6 +6,7 @@ public sealed record Achievement(
     [property: JsonPropertyName("achievement_id")] int AchievementId,
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("image")] string Image,
+    [property: JsonPropertyName("trigger")] string Trigger,
     [property: JsonPropertyName("progress_needed")] int ProgressNeeded);
 
 public sealed record UserAchievement(
@@ -25,11 +25,26 @@ public sealed record UserPreferences(
     [property: JsonPropertyName("notify_achievements")] bool NotifyAchievements);
 
 public sealed record NotificationInput(
-    [property: JsonPropertyName("event_id")] string EventId,
     [property: JsonPropertyName("user_id")] int UserId,
     [property: JsonPropertyName("trigger")] string Trigger,
     [property: JsonPropertyName("time")] DateTimeOffset Time,
-    [property: JsonPropertyName("email")] string Email);
+    [property: JsonPropertyName("email_subject")] string EmailSubject,
+    [property: JsonPropertyName("email_body")] string EmailBody);
+
+public sealed record Notification(
+    [property: JsonPropertyName("notification_id")] long NotificationId,
+    [property: JsonPropertyName("user_id")] int UserId,
+    [property: JsonPropertyName("trigger")] string Trigger,
+    [property: JsonPropertyName("time")] DateTimeOffset Time,
+    [property: JsonPropertyName("email_subject")] string EmailSubject,
+    [property: JsonPropertyName("email_body")] string EmailBody);
+
+public sealed record AchievementUpdate(
+    int AchievementId,
+    string Name,
+    int Progress,
+    int ProgressNeeded,
+    bool NewlyAttained);
 
 public sealed record PreferenceUpdateRequest(
     string Email,
@@ -41,14 +56,9 @@ public sealed record PreferenceUpdateRequest(
     bool NotifyAchievements);
 
 public sealed record EventRequest(
-    string EventId,
-    string EventType,
-    string SubjectId,
-    int RecipientUserId,
-    int AchievementId,
-    DateTimeOffset OccurredAt,
-    int Value = 1,
-    JsonElement? Metadata = null);
+    string Trigger,
+    string Subject,
+    int RecipientUserId);
 
 public sealed record AchievementProgress(
     int AchievementId,

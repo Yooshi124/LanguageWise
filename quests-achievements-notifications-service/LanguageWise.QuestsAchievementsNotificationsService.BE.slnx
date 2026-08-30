@@ -9,9 +9,9 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/LanguageWise.QuestsAchievementsNotificationsService.Api.Tests/LanguageWise.QuestsAchievementsNotificationsService.Api.Tests.csproj" />
+    <File Path="tests/LanguageWise.QuestsAchievementsNotificationsService.Api.Tests/docker-compose.integration.yml" />
   </Folder>
   <Folder Name="/frontend/">
-    <File Path="frontend/css/theme.css" />
     <File Path="frontend/index.html" />
     <File Path="frontend/nginx.conf" />
   </Folder>

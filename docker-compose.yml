@@ -7,6 +7,7 @@ networks:
 volumes:
   shared-db-data:
   quizzes-courses-service-db-data:
+  chat-discussion-service-db-data:
   quests-achievements-notifications-service-db-data:
   ollama-data:
 
@@ -21,6 +22,9 @@ services:
   ollama:
     container_name: ollama
     image: ollama/ollama:0.33.1
+    gpus: all
+    environment:
+      OLLAMA_KEEP_ALIVE: -1
     volumes:
       - ollama-data:/root/.ollama
     networks: [languagewise]
@@ -37,7 +41,7 @@ services:
     environment:
       OLLAMA_HOST: http://ollama:11434
     entrypoint: ["/bin/sh", "-c"]
-    command: ["ollama pull gemma4:e2b"]
+    command: ["ollama pull gemma4:e4b && ollama run gemma4:e4b \"\""]
     networks: [languagewise]
     depends_on:
       ollama:
@@ -86,6 +90,27 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  mini-games-service-backend:
+    container_name: mini-games-service-backend
+    build:
+      context: ./mini-games-service/backend
+    ports:
+      - "127.0.0.1:5001:8080"
+    networks: [languagewise]
+    restart: unless-stopped
+
+  mini-games-service-frontend:
+    container_name: mini-games-service-frontend
+    build:
+      context: ./mini-games-service/frontend
+    ports:
+      - "127.0.0.1:3001:80"
+    networks: [languagewise]
+    depends_on:
+      mini-games-service-backend:
+        condition: service_healthy
+    restart: unless-stopped
+
   quizzes-courses-service-db:
     container_name: quizzes-courses-service-db
     build:
@@ -120,6 +145,48 @@ services:
     networks: [languagewise]
     depends_on:
       quizzes-courses-service-backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  chat-discussion-service-db:
+    container_name: chat-discussion-service-db
+    build:
+      context: ./chat-discussion-service/database
+    environment:
+      Database__Path: /data/chat-discussion-service.db
+    volumes:
+      - chat-discussion-service-db-data:/data
+    ports:
+      - "127.0.0.1:6002:8080"
+    networks: [languagewise]
+    restart: unless-stopped
+
+  chat-discussion-service-backend:
+    container_name: chat-discussion-service-backend
+    build:
+      context: ./chat-discussion-service/backend
+    environment:
+      Services__Database: http://chat-discussion-service-db:8080
+      Auth__VerificationKeyPath: /run/secrets/signing_public_key
+    secrets:
+      - signing_public_key
+    ports:
+      - "127.0.0.1:5002:8080"
+    networks: [languagewise]
+    depends_on:
+      chat-discussion-service-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  chat-discussion-service-frontend:
+    container_name: chat-discussion-service-frontend
+    build:
+      context: ./chat-discussion-service/frontend
+    ports:
+      - "127.0.0.1:3002:80"
+    networks: [languagewise]
+    depends_on:
+      chat-discussion-service-backend:
         condition: service_healthy
     restart: unless-stopped
 
@@ -159,10 +226,8 @@ services:
     environment:
       Services__Database: http://quests-achievements-notifications-service-db-api:3000
       Services__Ollama: http://ollama:11434
-      Ollama__Model: gemma4:12b
+      Ollama__Model: gemma4:e4b
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
-      Smtp__Host: smtp.gmail.com
-      Smtp__Port: 587
     secrets:
       - signing_public_key
     ports:
@@ -179,8 +244,6 @@ services:
     container_name: quests-achievements-notifications-service-frontend
     build:
       context: ./quests-achievements-notifications-service/frontend
-    ports:
-      - "3004:80"
     networks: [languagewise]
     depends_on:
       quests-achievements-notifications-service-backend:

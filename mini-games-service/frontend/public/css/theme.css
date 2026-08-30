@@ -227,15 +227,3 @@ a {
     font-weight: 600;
 }
 
-/* ------------------------------------------------------- htmx indicators -- */
-
-.lw-indicator {
-    display: none;
-    color: var(--lw-colour-ink-muted);
-    font-size: 0.85rem;
-}
-
-.htmx-request .lw-indicator,
-.htmx-request.lw-indicator {
-    display: inline;
-}
