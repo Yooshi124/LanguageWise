@@ -265,6 +265,135 @@ public sealed class AuthorizationTests
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.ServiceUnavailable));
     }
 
+    [Test]
+    public async Task GetForums_AllowsAnonymousRequestsAndListsEveryForum()
+    {
+        using var fixture = new ApiFixture();
+        using var client = fixture.CreateClient();
+
+        var response = await client.GetAsync("/api/forums");
+        var codes = (await response.Content.ReadFromJsonAsync<List<ForumResponse>>())!
+            .Select(forum => forum.Code);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(codes, Is.EquivalentTo(new[] { "global", "spanish", "italian", "japanese" }));
+        });
+    }
+
+    [Test]
+    public async Task GetMe_WithoutToken_ReturnsUnauthorized()
+    {
+        using var fixture = new ApiFixture();
+        using var client = fixture.CreateClient();
+
+        var response = await client.GetAsync("/api/me");
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+    }
+
+    [Test]
+    public async Task GetMe_WithBearerToken_ReturnsTheIdentityFromTheToken()
+    {
+        using var fixture = new ApiFixture();
+        using var client = fixture.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
+
+        var response = await client.GetAsync("/api/me");
+        var me = await response.Content.ReadFromJsonAsync<MeResponse>();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(me!.Id, Is.EqualTo(FakeDiscussionDatabase.SignedInUserId));
+            Assert.That(me.Username, Is.EqualTo("lachlan"));
+        });
+    }
+
+    [Test]
+    public async Task GetPost_ReturnsTheFirstPageOfCommentsWithThePost()
+    {
+        using var fixture = new ApiFixture();
+        using var client = fixture.CreateClient();
+
+        var response = await client.GetAsync("/api/posts/1");
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(body.RootElement.GetProperty("comments").GetArrayLength(), Is.EqualTo(1));
+            Assert.That(body.RootElement.GetProperty("commentsHasMore").GetBoolean(), Is.True);
+        });
+    }
+
+    [Test]
+    public async Task GetPosts_WithAForumThatDoesNotExist_ReturnsBadRequest()
+    {
+        using var fixture = new ApiFixture();
+        using var client = fixture.CreateClient();
+
+        var response = await client.GetAsync("/api/posts?category=klingon");
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+    }
+
+    [Test]
+    public async Task GetPosts_ForwardsTheSearchTermToTheDatabaseService()
+    {
+        using var fixture = new ApiFixture();
+        using var client = fixture.CreateClient();
+
+        await client.GetAsync("/api/posts?q=flashcards");
+
+        Assert.That(fixture.Database.LastRequestUri?.Query, Does.Contain("search=flashcards"));
+    }
+
+    [Test]
+    public async Task GetPosts_WithAnUnsupportedSort_ReturnsBadRequest()
+    {
+        using var fixture = new ApiFixture();
+        using var client = fixture.CreateClient();
+
+        var response = await client.GetAsync("/api/posts?sort=top");
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+    }
+
+    [Test]
+    public async Task CreatePost_WithAForumThatDoesNotExist_ReturnsBadRequest()
+    {
+        using var fixture = new ApiFixture();
+        using var client = fixture.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
+
+        var response = await client.PostAsJsonAsync(
+            "/api/posts",
+            new { title = "Hello", content = "World", category = "klingon" });
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+    }
+
+    [Test]
+    public async Task CreatePost_SendsTheAuthorNameFromTheToken()
+    {
+        using var fixture = new ApiFixture();
+        using var client = fixture.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
+
+        await client.PostAsJsonAsync(
+            "/api/posts",
+            new { title = "Hello", content = "World", category = "global" });
+
+        using var forwarded = JsonDocument.Parse(fixture.Database.LastRequestBody!);
+        Assert.That(forwarded.RootElement.GetProperty("authorName").GetString(), Is.EqualTo("lachlan"));
+    }
+
+    private sealed record ForumResponse(string Code, string DisplayName, int SortOrder);
+
+    private sealed record MeResponse(int Id, string Username);
+
     private sealed class ApiFixture : WebApplicationFactory<Program>
     {
         private readonly RSA rsa = RSA.Create(2048);

@@ -8,47 +8,8 @@
 </head>
 <body>
 
-<main class="lw-page">
-    <h1>Discussion Forum</h1>
-
-    <div class="lw-card">
-        <h2 class="lw-card__title">Backend is live, the interface is not</h2>
-        <p>
-            This container currently only proxies <code>/api/</code> to the discussion
-            backend so the route works end to end. The forum interface itself is the
-            next piece of work.
-        </p>
-    </div>
-
-    <div class="lw-card">
-        <h2 class="lw-card__title">Available endpoints</h2>
-        <p>Reads work signed out. Writes need a LanguageWise session cookie.</p>
-        <table class="lw-table">
-            <thead>
-                <tr><th>Method</th><th>Route</th><th>Purpose</th></tr>
-            </thead>
-            <tbody>
-                <tr><td>GET</td><td><code>/api/posts</code></td><td>List posts, filtered by <code>userId</code> and <code>category</code></td></tr>
-                <tr><td>GET</td><td><code>/api/posts/{id}</code></td><td>A single post with its counts</td></tr>
-                <tr><td>GET</td><td><code>/api/posts/{id}/comments</code></td><td>Comments on a post</td></tr>
-                <tr><td>GET</td><td><code>/api/posts/{id}/likes</code></td><td>Likes on a post</td></tr>
-                <tr><td>GET</td><td><code>/api/comments/{id}/likes</code></td><td>Likes on a comment</td></tr>
-                <tr><td>POST</td><td><code>/api/posts</code></td><td>Create a post</td></tr>
-                <tr><td>PATCH</td><td><code>/api/posts/{id}</code></td><td>Edit your own post</td></tr>
-                <tr><td>DELETE</td><td><code>/api/posts/{id}</code></td><td>Delete your own post</td></tr>
-                <tr><td>POST</td><td><code>/api/posts/{id}/comments</code></td><td>Comment on a post</td></tr>
-                <tr><td>PATCH</td><td><code>/api/comments/{id}</code></td><td>Edit your own comment</td></tr>
-                <tr><td>DELETE</td><td><code>/api/comments/{id}</code></td><td>Delete your own comment</td></tr>
-                <tr><td>POST</td><td><code>/api/posts/{id}/likes</code></td><td>Like a post</td></tr>
-                <tr><td>DELETE</td><td><code>/api/posts/{id}/likes</code></td><td>Remove your like</td></tr>
-                <tr><td>POST</td><td><code>/api/comments/{id}/likes</code></td><td>Like a comment</td></tr>
-                <tr><td>DELETE</td><td><code>/api/comments/{id}/likes</code></td><td>Remove your like</td></tr>
-            </tbody>
-        </table>
-    </div>
-
-    <p><a href="/api/posts">Fetch the current posts as JSON</a></p>
-</main>
+<div id="app"></div>
+<script type="module" src="/src/main.js"></script>
 
 </body>
 </html>

@@ -7,6 +7,7 @@ namespace LanguageWise.ChatDiscussionService.Api.Models;
 public sealed record PostSummary(
     int Id,
     int UserId,
+    string AuthorName,
     string Title,
     string Content,
     string Category,
@@ -14,21 +15,39 @@ public sealed record PostSummary(
     DateTime UpdatedAt,
     int CommentCount,
     int LikeCount,
-    bool LikedByViewer);
+    bool LikedByViewer,
+    string? MatchedCommentExcerpt);
 
 public sealed record Post(
     int Id,
     int UserId,
+    string AuthorName,
     string Title,
     string Content,
     string Category,
     DateTime CreatedAt,
     DateTime UpdatedAt);
 
+public sealed record PostDetail(
+    int Id,
+    int UserId,
+    string AuthorName,
+    string Title,
+    string Content,
+    string Category,
+    DateTime CreatedAt,
+    DateTime UpdatedAt,
+    int CommentCount,
+    int LikeCount,
+    bool LikedByViewer,
+    IReadOnlyList<CommentSummary> Comments,
+    bool CommentsHasMore);
+
 public sealed record CommentSummary(
     int Id,
     int PostId,
     int UserId,
+    string AuthorName,
     string Content,
     DateTime CreatedAt,
     DateTime UpdatedAt,
@@ -39,11 +58,16 @@ public sealed record Comment(
     int Id,
     int PostId,
     int UserId,
+    string AuthorName,
     string Content,
     DateTime CreatedAt,
     DateTime UpdatedAt);
 
 public sealed record Like(int Id, int? PostId, int? CommentId, int UserId, DateTime CreatedAt);
+
+public sealed record Forum(string Code, string DisplayName, int SortOrder);
+
+public sealed record Me(int Id, string Username);
 
 // ---------------------------------------------------------------------------
 // Requests.

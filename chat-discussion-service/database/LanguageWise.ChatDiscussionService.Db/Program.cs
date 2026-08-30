@@ -45,10 +45,11 @@ app.MapGet("/api/posts", (
     DiscussionRepository repository,
     int? userId = null,
     string? category = null,
+    string? search = null,
     int limit = 20,
     int offset = 0,
     int? viewerId = null) =>
-    Results.Ok(repository.GetPosts(userId, category, limit, offset, viewerId)));
+    Results.Ok(repository.GetPosts(userId, category, search, limit, offset, viewerId)));
 
 app.MapGet("/api/posts/{id:int}", (int id, DiscussionRepository repository, int? viewerId = null) =>
     repository.GetPost(id, viewerId) is { } post ? Results.Ok(post) : Results.NotFound());

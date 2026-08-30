@@ -10,9 +10,9 @@ public sealed class DiscussionClientTests
         """
         [
           {
-            "id": 1, "userId": 2, "title": "Welcome", "content": "Say hello",
+            "id": 1, "userId": 2, "authorName": "lachlan", "title": "Welcome", "content": "Say hello",
             "category": "global", "createdAt": "2026-02-12T09:00:00Z", "updatedAt": "2026-02-12T09:00:00Z",
-            "commentCount": 4, "likeCount": 7, "likedByViewer": true
+            "commentCount": 4, "likeCount": 7, "likedByViewer": true, "matchedCommentExcerpt": null
           }
         ]
         """;
@@ -23,15 +23,17 @@ public sealed class DiscussionClientTests
         using var handler = new StubHttpMessageHandler(HttpStatusCode.OK, PostsJson);
         var client = CreateClient(handler);
 
-        var posts = await client.GetPostsAsync(null, null, 20, 0, null);
+        var posts = await client.GetPostsAsync(null, null, null, 20, 0, null);
 
         Assert.That(posts, Has.Count.EqualTo(1));
         Assert.Multiple(() =>
         {
             Assert.That(posts[0].Category, Is.EqualTo("global"));
+            Assert.That(posts[0].AuthorName, Is.EqualTo("lachlan"));
             Assert.That(posts[0].CommentCount, Is.EqualTo(4));
             Assert.That(posts[0].LikeCount, Is.EqualTo(7));
             Assert.That(posts[0].LikedByViewer, Is.True);
+            Assert.That(posts[0].MatchedCommentExcerpt, Is.Null);
         });
     }
 
@@ -41,11 +43,11 @@ public sealed class DiscussionClientTests
         using var handler = new StubHttpMessageHandler(HttpStatusCode.OK, "[]");
         var client = CreateClient(handler);
 
-        await client.GetPostsAsync(3, "spanish", 20, 40, 9);
+        await client.GetPostsAsync(3, "spanish", "verbs", 20, 40, 9);
 
         Assert.That(
             handler.LastRequestUri?.PathAndQuery,
-            Is.EqualTo("/api/posts?userId=3&category=spanish&limit=20&offset=40&viewerId=9"));
+            Is.EqualTo("/api/posts?userId=3&category=spanish&search=verbs&limit=20&offset=40&viewerId=9"));
     }
 
     [Test]
@@ -54,9 +56,20 @@ public sealed class DiscussionClientTests
         using var handler = new StubHttpMessageHandler(HttpStatusCode.OK, "[]");
         var client = CreateClient(handler);
 
-        await client.GetPostsAsync(null, null, 20, 0, null);
+        await client.GetPostsAsync(null, null, null, 20, 0, null);
 
         Assert.That(handler.LastRequestUri?.PathAndQuery, Is.EqualTo("/api/posts?limit=20&offset=0"));
+    }
+
+    [Test]
+    public async Task GetPostsAsync_EscapesASearchTermContainingASpace()
+    {
+        using var handler = new StubHttpMessageHandler(HttpStatusCode.OK, "[]");
+        var client = CreateClient(handler);
+
+        await client.GetPostsAsync(null, null, "double consonants", 20, 0, null);
+
+        Assert.That(handler.LastRequestUri?.Query, Does.Contain("search=double%20consonants"));
     }
 
     [Test]
@@ -65,7 +78,7 @@ public sealed class DiscussionClientTests
         using var handler = new StubHttpMessageHandler(HttpStatusCode.OK, "[]");
         var client = CreateClient(handler);
 
-        await client.GetPostsAsync(null, "brazilian portuguese", 20, 0, null);
+        await client.GetPostsAsync(null, "brazilian portuguese", null, 20, 0, null);
 
         Assert.That(handler.LastRequestUri?.Query, Does.Contain("category=brazilian%20portuguese"));
     }
@@ -76,7 +89,7 @@ public sealed class DiscussionClientTests
         using var handler = new StubHttpMessageHandler(HttpStatusCode.OK, "[]");
         var client = CreateClient(handler);
 
-        Assert.That(await client.GetPostsAsync(null, null, 20, 0, null), Is.Empty);
+        Assert.That(await client.GetPostsAsync(null, null, null, 20, 0, null), Is.Empty);
     }
 
     [Test]
@@ -95,21 +108,41 @@ public sealed class DiscussionClientTests
             HttpStatusCode.Created,
             """
             {
-              "id": 5, "userId": 2, "title": "T", "content": "C", "category": "global",
+              "id": 5, "userId": 2, "authorName": "lachlan", "title": "T", "content": "C", "category": "global",
               "createdAt": "2026-02-12T09:00:00Z", "updatedAt": "2026-02-12T09:00:00Z"
             }
             """);
         var client = CreateClient(handler);
 
-        await client.CreatePostAsync(2, "T", "C", "global");
+        await client.CreatePostAsync(2, "lachlan", "T", "C", "global");
 
         using var body = JsonDocument.Parse(handler.LastRequestBody!);
         Assert.Multiple(() =>
         {
             Assert.That(handler.LastRequestUri?.AbsolutePath, Is.EqualTo("/api/posts"));
             Assert.That(body.RootElement.GetProperty("userId").GetInt32(), Is.EqualTo(2));
+            Assert.That(body.RootElement.GetProperty("authorName").GetString(), Is.EqualTo("lachlan"));
             Assert.That(body.RootElement.GetProperty("category").GetString(), Is.EqualTo("global"));
         });
+    }
+
+    [Test]
+    public async Task CreateCommentAsync_SendsTheAuthorNameFromTheCaller()
+    {
+        using var handler = new StubHttpMessageHandler(
+            HttpStatusCode.Created,
+            """
+            {
+              "id": 5, "postId": 1, "userId": 2, "authorName": "lachlan", "content": "C",
+              "createdAt": "2026-02-12T09:00:00Z", "updatedAt": "2026-02-12T09:00:00Z"
+            }
+            """);
+        var client = CreateClient(handler);
+
+        await client.CreateCommentAsync(1, 2, "lachlan", "C");
+
+        using var body = JsonDocument.Parse(handler.LastRequestBody!);
+        Assert.That(body.RootElement.GetProperty("authorName").GetString(), Is.EqualTo("lachlan"));
     }
 
     [Test]

@@ -15,36 +15,36 @@ INSERT INTO SampleItems (Name, Description, CreatedAt) VALUES
 -- signed-in account actually owns some of this content and can exercise the
 -- owner-only edit and delete routes:
 --   1 = amber, 2 = lachlan, 3 = roan, 4 = justin, 5 = kyan
-INSERT INTO Posts (Id, UserId, Title, Content, Category, CreatedAt, UpdatedAt) VALUES
-    (1, 2, 'Welcome to the discussion forum',
+INSERT INTO Posts (Id, UserId, AuthorName, Title, Content, Category, CreatedAt, UpdatedAt) VALUES
+    (1, 2, 'lachlan', 'Welcome to the discussion forum',
         'Introduce yourself and tell us what language you are learning.',
         'global', '2026-02-12T09:00:00Z', '2026-02-12T09:00:00Z'),
-    (2, 2, 'Best way to practise vocabulary',
+    (2, 2, 'lachlan', 'Best way to practise vocabulary',
         'What routine helps you remember new words?',
         'spanish', '2026-02-12T10:00:00Z', '2026-02-12T10:00:00Z'),
-    (3, 4, 'Share a useful resource',
+    (3, 4, 'justin', 'Share a useful resource',
         'Post a book, podcast, or channel that has helped you.',
         'global', '2026-02-12T11:00:00Z', '2026-02-12T11:00:00Z'),
-    (4, 1, 'Italian pronunciation drills',
+    (4, 1, 'amber', 'Italian pronunciation drills',
         'Rolling the double consonants is still catching me out.',
         'italian', '2026-02-13T09:00:00Z', '2026-02-13T09:00:00Z'),
-    (5, 3, 'Weekly Japanese study check-in',
+    (5, 3, 'roan', 'Weekly Japanese study check-in',
         'Post how many kanji you added this week.',
         'japanese', '2026-02-13T10:00:00Z', '2026-02-13T10:00:00Z'),
-    (6, 2, 'Help with the Spanish subjunctive',
+    (6, 2, 'lachlan', 'Help with the Spanish subjunctive',
         'When does the subjunctive actually become necessary?',
         'spanish', '2026-02-13T11:00:00Z', '2026-02-13T11:00:00Z');
 
-INSERT INTO Comments (Id, PostId, UserId, Content, CreatedAt, UpdatedAt) VALUES
-    (1, 1, 1, 'I am learning Spanish and looking forward to practising here.',
+INSERT INTO Comments (Id, PostId, UserId, AuthorName, Content, CreatedAt, UpdatedAt) VALUES
+    (1, 1, 1, 'amber',   'I am learning Spanish and looking forward to practising here.',
         '2026-02-12T09:30:00Z', '2026-02-12T09:30:00Z'),
-    (2, 2, 5, 'I use flashcards every morning on my commute.',
+    (2, 2, 5, 'kyan',    'I use flashcards every morning on my commute.',
         '2026-02-12T10:30:00Z', '2026-02-12T10:30:00Z'),
-    (3, 3, 2, 'The podcast Coffee Break Languages is a great starting point.',
+    (3, 3, 2, 'lachlan', 'The podcast Coffee Break Languages is a great starting point.',
         '2026-02-12T11:30:00Z', '2026-02-12T11:30:00Z'),
-    (4, 6, 4, 'It shows up after expressions of doubt, wishes and emotion.',
+    (4, 6, 4, 'justin',  'It shows up after expressions of doubt, wishes and emotion.',
         '2026-02-13T11:30:00Z', '2026-02-13T11:30:00Z'),
-    (5, 2, 2, 'Spacing the reviews out mattered more than the app I picked.',
+    (5, 2, 2, 'lachlan', 'Spacing the reviews out mattered more than the app I picked.',
         '2026-02-13T12:00:00Z', '2026-02-13T12:00:00Z');
 
 INSERT INTO Likes (Id, UserId, PostId, CommentId, CreatedAt) VALUES

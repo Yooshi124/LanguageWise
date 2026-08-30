@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS SampleItems (
 CREATE TABLE IF NOT EXISTS Posts (
     Id          INTEGER PRIMARY KEY AUTOINCREMENT,
     UserId      INTEGER NOT NULL,
+    AuthorName  TEXT NOT NULL DEFAULT '',
     Title       TEXT NOT NULL,
     Content     TEXT NOT NULL,
     Category    TEXT NOT NULL,
@@ -24,6 +25,7 @@ CREATE TABLE IF NOT EXISTS Comments (
     Id          INTEGER PRIMARY KEY AUTOINCREMENT,
     PostId      INTEGER NOT NULL,
     UserId      INTEGER NOT NULL,
+    AuthorName  TEXT NOT NULL DEFAULT '',
     Content     TEXT NOT NULL,
     CreatedAt   TEXT NOT NULL,
     UpdatedAt   TEXT NOT NULL,
