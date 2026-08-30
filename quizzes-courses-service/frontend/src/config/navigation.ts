@@ -32,10 +32,10 @@ export const sharedHomeHref = `${sharedFrontend}/`
 
 export const serviceNavigation: readonly ServiceNavigationItem[] = [
   { label: 'Home', href: sharedHomeHref, icon: 'home' },
-  { label: 'Mini Games', href: `${loopbackHost}:3001/`, icon: 'games' },
+  { label: 'Mini Games', href: `${sharedFrontend}/mini-games/`, icon: 'games' },
   {
     label: 'Discussion Forum',
-    href: `${loopbackHost}:3002/`,
+    href: `${sharedFrontend}/chat-discussion/`,
     icon: 'discussion',
   },
   {
@@ -46,7 +46,7 @@ export const serviceNavigation: readonly ServiceNavigationItem[] = [
   },
   {
     label: 'Quests & Achievements',
-    href: `${loopbackHost}:3004/`,
+    href: `${sharedFrontend}/quests-and-achievements/`,
     icon: 'quests',
   },
   {
