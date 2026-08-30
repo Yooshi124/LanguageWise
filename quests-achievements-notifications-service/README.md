@@ -37,7 +37,7 @@ From the repository root:
 docker compose up -d --build quests-achievements-notifications-service-frontend
 ```
 
-The first start downloads the Ollama image and approximately 7.4 GB for `gemma4:12b`. The model initializer exits successfully after populating the persistent volume. Open [http://localhost:3004/](http://localhost:3004/) after the backend and frontend become healthy.
+The first start downloads the Ollama image and approximately 7.4 GB for `gemma4:12b`. The model initializer exits successfully after populating the persistent volume. Open [http://localhost:3000/quests-and-achievements/](http://localhost:3000/quests-and-achievements/) after the backend and frontend become healthy.
 
 Check status without displaying environment values:
 
@@ -56,7 +56,36 @@ The backend derives the actor user ID from the numeric JWT `sub` claim. It never
 
 ### `GET /api/profile`
 
-Returns the authenticated username, preferences, and achievement progress as JSON.
+Returns the authenticated username, preferences, achievement progress, and newest-first notification history as JSON:
+
+```json
+{
+  "username": "amber",
+  "preferences": {
+    "email": "amber@example.com",
+    "notifyAll": true,
+    "notifyCourseCompletion": true
+  },
+  "achievements": [
+    {
+      "achievementId": 1,
+      "name": "First Course",
+      "image": "/images/achievements/first-course.png",
+      "progress": 1,
+      "progressNeeded": 1
+    }
+  ],
+  "notifications": [
+    {
+      "notificationId": 2,
+      "trigger": "post-engagement",
+      "time": "2026-08-29T14:15:00Z",
+      "emailSubject": "Consectetur adipiscing elit",
+      "emailBody": "Ut enim ad minim veniam."
+    }
+  ]
+}
+```
 
 ### `PUT /api/preferences`
 
@@ -74,7 +103,7 @@ Accepts JSON or an HTMX form. JSON example:
 }
 ```
 
-A valid email is required. The record is upserted by authenticated user ID.
+A valid email is required. The record is upserted by authenticated user ID. Preferences control email delivery only; every accepted event still creates in-app notification history and updates achievement progress.
 
 ### `POST /api/events`
 
