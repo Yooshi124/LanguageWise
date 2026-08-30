@@ -2,7 +2,7 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS Courses (
     Id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    Code        TEXT NOT NULL UNIQUE CHECK (Code IN ('de', 'fr', 'it', 'nl', 'es')),
+    Code        TEXT NOT NULL UNIQUE CHECK (Code IN ('de', 'fr', 'it', 'nl', 'es', 'pl')),
     Title       TEXT NOT NULL,
     Description TEXT NOT NULL DEFAULT ''
 );

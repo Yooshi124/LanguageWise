@@ -1,20 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
+import LanguageCourseCard from '../components/LanguageCourseCard.vue'
 import { useCourses } from '../composables/useCourses'
+import { languageOptions } from '../config/languages'
 
 const flagsPath = `${import.meta.env.BASE_URL}flags`
-const languages = [
-  { code: 'de', flag: `${flagsPath}/de.svg`, name: 'German', color: '#f59e0b' },
-  { code: 'fr', flag: `${flagsPath}/fr.svg`, name: 'French', color: '#3b82f6' },
-  { code: 'it', flag: `${flagsPath}/it.svg`, name: 'Italian', color: '#16a34a' },
-  { code: 'nl', flag: `${flagsPath}/nl.svg`, name: 'Dutch', color: '#f97316' },
-  { code: 'es', flag: `${flagsPath}/es.svg`, name: 'Spanish', color: '#dc2626' },
-] as const
 
 const store = useCourses()
 const cards = computed(() =>
-  languages.map((language) => ({
+  languageOptions.map((language) => ({
     ...language,
+    flag: `${flagsPath}/${language.flag}`,
     course: store.courses.value.find((course) => course.code === language.code),
   })),
 )
@@ -24,9 +20,9 @@ onMounted(() => store.load())
 
 <template>
   <section class="hero">
-    <v-container class="py-16">
+    <v-container class="course-home-container">
       <div class="hero-copy">
-        <v-chip color="primary" variant="tonal" class="mb-5">Learn at your own pace</v-chip>
+        <v-chip color="primary" variant="tonal" class="mb-5">Learn your own way!</v-chip>
         <h1>Choose a language.<br /><span>Open a new world.</span></h1>
         <p>Practical, bite-sized lessons designed to build real confidence every day.</p>
       </div>
@@ -49,23 +45,7 @@ onMounted(() => store.load())
 
       <v-row v-else class="mt-10" align="stretch">
         <v-col v-for="card in cards" :key="card.code" cols="12" sm="6" lg="4">
-          <v-card
-            :to="`/courses/${card.code}`"
-            class="language-card h-100"
-            rounded="xl"
-            elevation="0"
-            :aria-label="`Open ${card.name} course`"
-          >
-            <div class="card-accent" :style="{ background: card.color }" />
-            <v-card-text class="pa-7">
-              <img class="flag" :src="card.flag" alt="" aria-hidden="true" />
-              <h2>{{ card.course?.title || card.name }}</h2>
-              <p>{{ card.course?.description || `Start your ${card.name} learning journey.` }}</p>
-              <div class="card-action" :style="{ color: card.color }">
-                Explore course <span aria-hidden="true">→</span>
-              </div>
-            </v-card-text>
-          </v-card>
+          <LanguageCourseCard v-bind="card" />
         </v-col>
       </v-row>
 

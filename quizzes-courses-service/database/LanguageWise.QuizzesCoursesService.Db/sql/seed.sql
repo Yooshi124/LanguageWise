@@ -3,7 +3,8 @@ INSERT INTO Courses (Code, Title, Description) VALUES
     ('fr', 'French',  'Learn useful everyday French.'),
     ('it', 'Italian', 'Start speaking and understanding Italian.'),
     ('nl', 'Dutch',   'Discover the essentials of Dutch.'),
-    ('es', 'Spanish', 'Develop your everyday Spanish.');
+    ('es', 'Spanish', 'Develop your everyday Spanish.'),
+    ('pl', 'Polish',  'Build confidence with everyday Polish.');
 
 INSERT INTO Lessons (CourseId, Slug, Title, SortOrder, ContentMarkdown)
 SELECT Id, 'welcome', 'Welcome to ' || Title, 1,
@@ -30,6 +31,7 @@ SELECT l.Id,
            WHEN 'it' THEN '{"words":[{"word":"Ciao","meaning":"Hello"},{"word":"Grazie","meaning":"Thank you"}]}'
            WHEN 'nl' THEN '{"words":[{"word":"Hallo","meaning":"Hello"},{"word":"Bedankt","meaning":"Thank you"}]}'
            WHEN 'es' THEN '{"words":[{"word":"Hola","meaning":"Hello"},{"word":"Gracias","meaning":"Thank you"}]}'
+           WHEN 'pl' THEN '{"words":[{"word":"Cześć","meaning":"Hello"},{"word":"Dziękuję","meaning":"Thank you"}]}'
        END
 FROM Lessons l
 INNER JOIN Courses c ON c.Id = l.CourseId
@@ -43,6 +45,7 @@ SELECT l.Id,
            WHEN 'it' THEN '{"words":[{"word":"Buongiorno","meaning":"Good morning"},{"word":"Arrivederci","meaning":"Goodbye"}]}'
            WHEN 'nl' THEN '{"words":[{"word":"Goedemorgen","meaning":"Good morning"},{"word":"Tot ziens","meaning":"Goodbye"}]}'
            WHEN 'es' THEN '{"words":[{"word":"Buenos días","meaning":"Good morning"},{"word":"Adiós","meaning":"Goodbye"}]}'
+           WHEN 'pl' THEN '{"words":[{"word":"Dzień dobry","meaning":"Good morning"},{"word":"Do widzenia","meaning":"Goodbye"}]}'
        END
 FROM Lessons l
 INNER JOIN Courses c ON c.Id = l.CourseId
@@ -59,10 +62,11 @@ SELECT q.Id, 'Choose the greeting that means hello.', 'multiple_choice',
            WHEN 'it' THEN '{"options":["Ciao","Grazie","Prego"]}'
            WHEN 'nl' THEN '{"options":["Hallo","Bedankt","Alsjeblieft"]}'
            WHEN 'es' THEN '{"options":["Hola","Gracias","Por favor"]}'
+           WHEN 'pl' THEN '{"options":["Cześć","Dziękuję","Proszę"]}'
        END,
        CASE c.Code
            WHEN 'de' THEN 'Hallo' WHEN 'fr' THEN 'Bonjour' WHEN 'it' THEN 'Ciao'
-           WHEN 'nl' THEN 'Hallo' WHEN 'es' THEN 'Hola'
+           WHEN 'nl' THEN 'Hallo' WHEN 'es' THEN 'Hola' WHEN 'pl' THEN 'Cześć'
        END
 FROM Quizzes q
 INNER JOIN Courses c ON c.Id = q.CourseId;
@@ -70,6 +74,6 @@ INNER JOIN Courses c ON c.Id = q.CourseId;
 INSERT INTO Flashcards (CourseId, FrontText, BackText, IsAi)
 SELECT Id,
        CASE Code WHEN 'de' THEN 'Hallo' WHEN 'fr' THEN 'Bonjour' WHEN 'it' THEN 'Ciao'
-                 WHEN 'nl' THEN 'Hallo' WHEN 'es' THEN 'Hola' END,
+                 WHEN 'nl' THEN 'Hallo' WHEN 'es' THEN 'Hola' WHEN 'pl' THEN 'Cześć' END,
        'Hello', 0
 FROM Courses;
