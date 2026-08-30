@@ -26,16 +26,16 @@ export interface UtilityNavigationItem {
   disabled: true
 }
 
-const host = window.location.hostname || 'localhost'
-const sharedFrontend = `http://${host}:3000`
+const loopbackHost = 'http://127.0.0.1'
+const sharedFrontend = `${loopbackHost}:3000`
 export const sharedHomeHref = `${sharedFrontend}/`
 
 export const serviceNavigation: readonly ServiceNavigationItem[] = [
   { label: 'Home', href: sharedHomeHref, icon: 'home' },
-  { label: 'Mini Games', href: `${sharedFrontend}/mini-games/`, icon: 'games' },
+  { label: 'Mini Games', href: `${loopbackHost}:3001/`, icon: 'games' },
   {
     label: 'Discussion Forum',
-    href: `${sharedFrontend}/chat-discussion/`,
+    href: `${loopbackHost}:3002/`,
     icon: 'discussion',
   },
   {
@@ -46,7 +46,7 @@ export const serviceNavigation: readonly ServiceNavigationItem[] = [
   },
   {
     label: 'Quests & Achievements',
-    href: `${sharedFrontend}/quests-and-achievements/`,
+    href: `${loopbackHost}:3004/`,
     icon: 'quests',
   },
   {
