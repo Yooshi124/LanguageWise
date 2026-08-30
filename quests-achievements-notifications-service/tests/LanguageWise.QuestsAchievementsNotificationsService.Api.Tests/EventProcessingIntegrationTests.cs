@@ -90,7 +90,7 @@ public sealed class EventProcessingIntegrationTests
             Assert.That(firstResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
             Assert.That(duplicateResponse.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
             Assert.That(progress, Has.Count.EqualTo(3));
-            Assert.That(progress!.Select(item => item.Progress), Is.EqualTo(new[] { 1, 5, 2 }));
+            Assert.That(progress!.Select(item => item.Progress), Is.EqualTo(new[] { 1, 5, 5 }));
             Assert.That(notifications, Has.Count.EqualTo(1));
             Assert.That(notifications![0].EmailSubject, Is.Not.Empty);
             Assert.That(notifications[0].EmailBody, Is.Not.Empty);

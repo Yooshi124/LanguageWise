@@ -122,6 +122,18 @@
                 <div id="achievement-grid" class="lw-achievement-grid"></div>
             </section>
         </div>
+
+        <section class="lw-notifications" aria-labelledby="notifications-title">
+            <div class="lw-section-heading">
+                <div>
+                    <p class="lw-eyebrow">Your updates</p>
+                    <h2 id="notifications-title">Past notifications</h2>
+                </div>
+                <span id="notification-count" class="lw-badge"></span>
+            </div>
+            <p id="notification-empty" class="lw-notifications__empty" hidden>No notifications yet.</p>
+            <ol id="notification-list" class="lw-notification-list"></ol>
+        </section>
     </div>
 
     <section id="service-error" class="lw-card lw-state lw-state--error" hidden>
@@ -145,6 +157,28 @@
             </div>
         </article>
     </template>
+
+    <template id="notification-template">
+        <li class="lw-notification">
+            <button class="lw-notification__open" type="button">
+                <span class="lw-notification__subject"></span>
+                <span class="lw-notification__meta"></span>
+            </button>
+        </li>
+    </template>
+
+    <dialog id="notification-dialog" class="lw-notification-dialog" aria-labelledby="notification-dialog-title">
+        <div class="lw-notification-dialog__heading">
+            <div>
+                <p id="notification-dialog-meta" class="lw-notification-dialog__meta"></p>
+                <h2 id="notification-dialog-title"></h2>
+            </div>
+            <form method="dialog">
+                <button class="lw-dialog-close" type="submit">Close</button>
+            </form>
+        </div>
+        <p id="notification-dialog-body" class="lw-notification-dialog__body"></p>
+    </dialog>
 
 </main>
 
