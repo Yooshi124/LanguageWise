@@ -40,7 +40,7 @@ public sealed class OllamaEmailGenerator(
                     new
                     {
                         role = "user",
-                        content = $"Trigger: {context.Trigger}\nSubject: {context.SubjectId}\nAchievements:\n{FormatAchievements(context.Achievements)}"
+                        content = $"Trigger: {context.Trigger}\nSubject: {context.Subject}\nAchievements:\n{FormatAchievements(context.Achievements)}"
                     }
                 },
                 format = new

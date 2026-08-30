@@ -44,33 +44,19 @@ public sealed class AppDataClient(HttpClient httpClient)
             achievements,
             cancellationToken);
 
-    public async Task<bool> EventExistsAsync(string eventId, CancellationToken cancellationToken = default)
-    {
-        var notifications = await httpClient.GetFromJsonAsync<List<Notification>>(
-            $"notifications?event_id=eq.{Uri.EscapeDataString(eventId)}&select=notification_id&limit=1",
-            cancellationToken);
-        return notifications is { Count: > 0 };
-    }
-
     public async Task<IReadOnlyList<Notification>> GetNotificationsAsync(
         int userId,
         CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<List<Notification>>(
-            $"notifications?user_id=eq.{userId}&select=notification_id,event_id,user_id,trigger,time,email_subject,email_body&order=time.desc,notification_id.desc",
+            $"notifications?user_id=eq.{userId}&select=notification_id,user_id,trigger,time,email_subject,email_body&order=time.desc,notification_id.desc",
             cancellationToken) ?? [];
 
-    public async Task<bool> CreateNotificationAsync(
+    public async Task CreateNotificationAsync(
         NotificationInput notification,
         CancellationToken cancellationToken = default)
     {
         using var response = await httpClient.PostAsJsonAsync("notifications", notification, cancellationToken);
-        if (response.StatusCode == HttpStatusCode.Conflict)
-        {
-            return false;
-        }
-
         response.EnsureSuccessStatusCode();
-        return true;
     }
 
     private async Task UpsertAsync<T>(string path, T value, CancellationToken cancellationToken)

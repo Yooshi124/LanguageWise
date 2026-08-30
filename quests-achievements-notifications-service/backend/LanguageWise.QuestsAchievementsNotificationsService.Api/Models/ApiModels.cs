@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace LanguageWise.QuestsAchievementsNotificationsService.Api.Models;
@@ -26,7 +25,6 @@ public sealed record UserPreferences(
     [property: JsonPropertyName("notify_achievements")] bool NotifyAchievements);
 
 public sealed record NotificationInput(
-    [property: JsonPropertyName("event_id")] string EventId,
     [property: JsonPropertyName("user_id")] int UserId,
     [property: JsonPropertyName("trigger")] string Trigger,
     [property: JsonPropertyName("time")] DateTimeOffset Time,
@@ -35,7 +33,6 @@ public sealed record NotificationInput(
 
 public sealed record Notification(
     [property: JsonPropertyName("notification_id")] long NotificationId,
-    [property: JsonPropertyName("event_id")] string EventId,
     [property: JsonPropertyName("user_id")] int UserId,
     [property: JsonPropertyName("trigger")] string Trigger,
     [property: JsonPropertyName("time")] DateTimeOffset Time,
@@ -59,13 +56,9 @@ public sealed record PreferenceUpdateRequest(
     bool NotifyAchievements);
 
 public sealed record EventRequest(
-    string EventId,
     string Trigger,
-    string SubjectId,
-    int RecipientUserId,
-    DateTimeOffset OccurredAt,
-    int Value = 1,
-    JsonElement? Metadata = null);
+    string Subject,
+    int RecipientUserId);
 
 public sealed record AchievementProgress(
     int AchievementId,

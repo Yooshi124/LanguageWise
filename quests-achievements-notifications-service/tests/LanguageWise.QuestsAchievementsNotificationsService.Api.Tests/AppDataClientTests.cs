@@ -8,30 +8,12 @@ namespace LanguageWise.QuestsAchievementsNotificationsService.Api.Tests;
 public sealed class AppDataClientTests
 {
     [Test]
-    public async Task CreateNotificationAsync_WhenEventAlreadyExists_ReturnsFalse()
-    {
-        var handler = new StubHttpMessageHandler(HttpStatusCode.Conflict, "{}");
-        var client = CreateClient(handler);
-
-        var created = await client.CreateNotificationAsync(new NotificationInput(
-            "duplicate-event",
-            1,
-            "course-completion",
-            DateTimeOffset.UtcNow,
-            "Course progress",
-            "You made progress."));
-
-        Assert.That(created, Is.False);
-    }
-
-    [Test]
-    public async Task CreateNotificationAsync_WhenInsertSucceeds_ReturnsTrue()
+    public async Task CreateNotificationAsync_SerializesContent()
     {
         var handler = new StubHttpMessageHandler(HttpStatusCode.Created, "{}");
         var client = CreateClient(handler);
 
-        var created = await client.CreateNotificationAsync(new NotificationInput(
-            "new-event",
+        await client.CreateNotificationAsync(new NotificationInput(
             1,
             "course-completion",
             DateTimeOffset.UtcNow,
@@ -40,7 +22,6 @@ public sealed class AppDataClientTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(created, Is.True);
             Assert.That(handler.LastRequestMethod, Is.EqualTo(HttpMethod.Post));
             Assert.That(handler.LastRequestUri?.AbsolutePath, Is.EqualTo("/notifications"));
             Assert.That(handler.LastRequestBody, Does.Contain("\"email_subject\":\"Course progress\""));
@@ -89,25 +70,7 @@ public sealed class AppDataClientTests
         await client.GetNotificationsAsync(7);
 
         Assert.That(handler.LastRequestUri?.PathAndQuery, Is.EqualTo(
-            "/notifications?user_id=eq.7&select=notification_id,event_id,user_id,trigger,time,email_subject,email_body&order=time.desc,notification_id.desc"));
-    }
-
-    [Test]
-    public async Task EventExistsAsync_WhenNotificationMatches_ReturnsTrue()
-    {
-        var handler = new StubHttpMessageHandler(
-            HttpStatusCode.OK,
-            "[{\"notification_id\":12}]");
-        var client = CreateClient(handler);
-
-        var exists = await client.EventExistsAsync("event-12");
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(exists, Is.True);
-            Assert.That(handler.LastRequestUri?.PathAndQuery, Is.EqualTo(
-                "/notifications?event_id=eq.event-12&select=notification_id&limit=1"));
-        });
+            "/notifications?user_id=eq.7&select=notification_id,user_id,trigger,time,email_subject,email_body&order=time.desc,notification_id.desc"));
     }
 
     [Test]

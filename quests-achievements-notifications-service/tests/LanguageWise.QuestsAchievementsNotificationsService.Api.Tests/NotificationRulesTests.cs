@@ -1,6 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Text.Json;
 using LanguageWise.QuestsAchievementsNotificationsService.Api.Models;
 
 namespace LanguageWise.QuestsAchievementsNotificationsService.Api.Tests;
@@ -45,27 +44,22 @@ public sealed class NotificationRulesTests
     [Test]
     public void ValidateEvent_WithInvalidFields_ReturnsEveryRelevantError()
     {
-        using var metadata = JsonDocument.Parse("[]");
-        var request = new EventRequest(" ", "unknown", "", 0, default, 0, metadata.RootElement);
+        var request = new EventRequest("unknown", "", 0);
 
         var errors = NotificationRules.ValidateEvent(request);
 
         Assert.That(errors.Keys, Is.EquivalentTo(new[]
         {
-            "eventId",
             "trigger",
-            "subjectId",
-            "recipientUserId",
-            "occurredAt",
-            "value",
-            "metadata"
+            "subject",
+            "recipientUserId"
         }));
     }
 
     [Test]
     public void CalculateProgress_CapsProgressAndMarksNewAttainment()
     {
-        var update = NotificationRules.CalculateProgress(4, 3, 5);
+        var update = NotificationRules.CalculateProgress(4, 5);
 
         Assert.Multiple(() =>
         {
@@ -77,7 +71,7 @@ public sealed class NotificationRulesTests
     [Test]
     public void CalculateProgress_WhenAlreadyAttained_DoesNotAttainAgain()
     {
-        var update = NotificationRules.CalculateProgress(5, 1, 5);
+        var update = NotificationRules.CalculateProgress(5, 5);
 
         Assert.Multiple(() =>
         {
@@ -89,12 +83,12 @@ public sealed class NotificationRulesTests
     [Test]
     public void CalculateProgress_WithMaximumValue_DoesNotOverflow()
     {
-        var update = NotificationRules.CalculateProgress(9, int.MaxValue, 10);
+        var update = NotificationRules.CalculateProgress(int.MaxValue, int.MaxValue);
 
         Assert.Multiple(() =>
         {
-            Assert.That(update.Progress, Is.EqualTo(10));
-            Assert.That(update.NewlyAttained, Is.True);
+            Assert.That(update.Progress, Is.EqualTo(int.MaxValue));
+            Assert.That(update.NewlyAttained, Is.False);
         });
     }
 
@@ -123,7 +117,7 @@ public sealed class NotificationRulesTests
     }
 
     private static EventRequest ValidEvent() =>
-        new("event-1", "course-completion", "course-1", 1, DateTimeOffset.UtcNow);
+        new("course-completion", "Introduction to Spanish", 1);
 
     private static UserPreferences Preferences(
         bool notifyAll = true,

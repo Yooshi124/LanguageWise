@@ -10,10 +10,7 @@ INSERT INTO api.achievements (achievement_id, name, image, trigger, progress_nee
     (9,  'Three Day Streak',    '/images/achievements/three-day-streak.png',    'streak',            3),
     (10, 'Seven Day Streak',    '/images/achievements/seven-day-streak.png',    'streak',            7);
 
-SELECT setval(
-    pg_get_serial_sequence('api.achievements', 'achievement_id'),
-    (SELECT max(achievement_id) FROM api.achievements)
-);
+SELECT setval(pg_get_serial_sequence('api.achievements', 'achievement_id'), 10);
 
 INSERT INTO api.user_preferences (user_id, email) VALUES
     (1, 'amber@example.com'),
@@ -39,8 +36,8 @@ INSERT INTO api.user_achievements (user_id, achievement_id, progress) VALUES
     (5, 9, 3),
     (5, 10, 5);
 
-INSERT INTO api.notifications (event_id, user_id, trigger, time, email_subject, email_body) VALUES
-    ('seed-course-completion-1', 1, 'course-completion', '2026-08-28T09:30:00Z', 'Lorem ipsum dolor sit amet', 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.'),
-    ('seed-post-engagement-1',   1, 'post-engagement',   '2026-08-29T14:15:00Z', 'Consectetur adipiscing elit', 'Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.'),
-    ('seed-quiz-result-3',       3, 'quiz-result',       '2026-08-27T11:45:00Z', 'Sed do eiusmod tempor', 'Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.'),
-    ('seed-streak-5',            5, 'streak',            '2026-08-30T08:00:00Z', 'Ut labore et dolore magna', 'Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.');
+INSERT INTO api.notifications (user_id, trigger, time, email_subject, email_body) VALUES
+    (1, 'course-completion', '2026-08-28T09:30:00Z', 'Lorem ipsum dolor sit amet', 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.'),
+    (1, 'post-engagement',   '2026-08-29T14:15:00Z', 'Consectetur adipiscing elit', 'Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.'),
+    (3, 'quiz-result',       '2026-08-27T11:45:00Z', 'Sed do eiusmod tempor', 'Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.'),
+    (5, 'streak',            '2026-08-30T08:00:00Z', 'Ut labore et dolore magna', 'Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.');

@@ -4,7 +4,7 @@ This service tracks achievement progress, stores notification preferences and ev
 
 ## Components
 
-- PostgreSQL stores achievements, user progress, preferences, and processed event IDs.
+- PostgreSQL stores achievements, user progress, preferences, and notification history.
 - PostgREST exposes the service-owned `api` schema to the backend.
 - ASP.NET Core validates shared-service JWTs and owns event processing.
 - Ollama runs the official `gemma4:12b` model and persists it in the `ollama-data` Docker volume.
@@ -82,36 +82,42 @@ Accepts a noteworthy event from another service:
 
 ```json
 {
-  "eventId": "forum-like-post-123-user-7",
-  "eventType": "post-engagement",
-  "subjectId": "post-123",
-  "recipientUserId": 7,
-  "achievementId": 4,
-  "occurredAt": "2026-08-27T10:00:00Z",
-  "value": 1,
-  "metadata": {
-    "action": "like"
-  }
+  "trigger": "post-engagement",
+  "subject": "Tips for practising Spanish every day",
+  "recipientUserId": 7
 }
 ```
 
-Supported event types are `post-engagement`, `course-completion`, `quiz-result`, and `streak`. `eventId` is unique; replaying it returns `409 Conflict` without applying progress twice.
+Supported triggers are `post-engagement`, `course-completion`, `quiz-result`, and `streak`. The subject is a human-readable description used to generate the notification. Every accepted request represents a new occurrence, adds one progress unit to every achievement tier mapped to that trigger, and uses the server's current time for notification history.
 
-A successful response includes updated progress, whether the achievement was newly attained, preference eligibility, and email status:
+A successful response includes all updated achievements, stored notification content, preference eligibility, and email status:
 
 ```json
 {
+  "achievements": [
+    {
+      "achievementId": 4,
+      "name": "First Applause",
+      "progress": 1,
+      "progressNeeded": 1,
+      "newlyAttained": true
+    }
+  ],
+  "notification": {
+    "subject": "Achievement unlocked: First Applause",
+    "body": "You unlocked First Applause. Congratulations!",
+    "usedFallback": false
+  },
   "shouldNotify": true,
   "email": {
     "sent": true,
     "configured": true,
-    "usedFallback": false,
     "error": null
   }
 }
 ```
 
-Ollama output is constrained to structured JSON, thinking is disabled, and generation is capped at 192 tokens. If generation fails or times out, the backend sends a deterministic fallback. SMTP failure is logged and returned as an email error without undoing the recorded event or progress.
+Ollama output is constrained to structured JSON, thinking is disabled, and generation is capped at 192 tokens. If generation fails or times out, the backend stores a deterministic fallback. SMTP failure is logged and returned as an email error without undoing the notification or progress.
 
 ## Verification
 
@@ -121,4 +127,4 @@ Run automated tests:
 dotnet test quests-achievements-notifications-service/LanguageWise.QuestsAchievementsNotificationsService.BE.slnx
 ```
 
-The suite covers JWT bearer/cookie authorization, validation, progress and attainment rules, notification filtering, PostgREST persistence and duplicate handling, structured Ollama output and fallback, and MailKit message construction without contacting Gmail.
+The suite covers JWT bearer/cookie authorization, validation, progress and attainment rules, notification filtering, repeated event processing, PostgREST persistence, structured Ollama output and fallback, and MailKit message construction without contacting Gmail.

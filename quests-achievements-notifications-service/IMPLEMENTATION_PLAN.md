@@ -19,12 +19,13 @@ Change event processing so callers identify an activity by trigger rather than a
   - `post-engagement`
   - `quiz-result`
   - `streak`
-- Remove `achievementId` from `EventRequest`; rename `eventType` to `trigger` for one consistent term.
-- Apply an event's positive `value` to every achievement with the matching trigger, capping each row at its own `progress_needed` value.
+- Keep `EventRequest` limited to `trigger`, a human-readable `subject`, and `recipientUserId`.
+- Apply one progress unit to every achievement with the matching trigger, capping each row at its own `progress_needed` value.
+- Use the server's current time for notification history.
 - Generate one notification per event. Its content summarizes all affected achievements and highlights newly attained tiers.
 - Generate and store notification content regardless of notification preferences, email address, SMTP configuration, or delivery outcome.
 - Use preferences only to decide whether the stored notification is also sent by email.
-- Keep `event_id` unique so retries return `409 Conflict` and do not increment progress twice or create duplicate history entries.
+- Treat every accepted `POST /api/events` request as a new activity occurrence; callers do not provide an event identifier.
 - Update the fresh schema and seed scripts directly; do not add migration-only `ALTER TABLE` statements.
 
 ## 1. Database Schema and Seed Data
@@ -36,7 +37,7 @@ Update `database/sql/schema.sql`:
 - Replace `api.notifications.email` with:
   - `email_subject text NOT NULL`
   - `email_body text NOT NULL`
-- Retain `event_id`, `user_id`, `trigger`, and `time` for idempotency, ownership, filtering, and display ordering.
+- Retain `notification_id`, `user_id`, `trigger`, and `time` for identity, ownership, filtering, and display ordering.
 
 Update `database/sql/seed.sql` so achievement tiers share triggers:
 
@@ -54,9 +55,9 @@ Recreate the development database volume when validating because this project in
 Update `Models/ApiModels.cs`:
 
 - Add `Trigger` to `Achievement`.
-- Change `EventRequest` to accept `Trigger` and remove `AchievementId`/`EventType`.
+- Change `EventRequest` to accept only `Trigger`, `Subject`, and `RecipientUserId`.
 - Replace `NotificationInput.Email` with `EmailSubject` and `EmailBody`.
-- Add a notification response model containing ID, event ID, trigger, time, subject, and body.
+- Add a notification response model containing ID, trigger, time, subject, and body.
 - Add a response model for each affected achievement's new progress and attainment state.
 
 Update `Clients/AppDataClient.cs`:
@@ -65,28 +66,27 @@ Update `Clients/AppDataClient.cs`:
 - Add a bulk progress upsert accepting all affected `UserAchievement` rows in one PostgREST request.
 - Update notification insertion for subject/body fields.
 - Add `GetNotificationsAsync(userId)`, ordered by `time.desc,notification_id.desc`.
-- Add an event-ID existence check so obvious retries are rejected before invoking Ollama; retain the unique database constraint for concurrent retries.
+- Use the generated `notification_id` as the notification row's primary key.
 
 ## 3. Event Processing
 
 Refactor `POST /api/events`:
 
-1. Authenticate the actor and validate event ID, trigger, subject ID, recipient user ID, occurrence time, value, and metadata.
+1. Authenticate the actor and validate trigger, subject description, and recipient user ID.
 2. Reject unsupported triggers using the canonical trigger set.
-3. Reject an already-recorded event with `409 Conflict` before generating content.
-4. Load every achievement mapped to the trigger; return `404` if none are configured.
-5. Load the recipient's current progress and calculate the capped update for each matched achievement.
-6. Generate one notification subject/body from the trigger, subject ID, and complete list of affected/newly attained achievements. Use the deterministic fallback if Ollama fails.
-7. Insert the notification history record with generated subject/body.
-8. Bulk-upsert all affected progress rows.
-9. Evaluate email preferences after storage. Send the same stored subject/body only when the trigger is enabled, an email address exists, and SMTP is configured.
-10. Return all affected achievement results plus notification generation and email-delivery status.
+3. Load every achievement mapped to the trigger; return `404` if none are configured.
+4. Load the recipient's current progress and calculate the capped update for each matched achievement.
+5. Generate one notification subject/body from the trigger, subject description, and complete list of affected/newly attained achievements. Use the deterministic fallback if Ollama fails.
+6. Insert the notification history record with generated subject/body.
+7. Bulk-upsert all affected progress rows.
+8. Evaluate email preferences after storage. Send the same stored subject/body only when the trigger is enabled, an email address exists, and SMTP is configured.
+9. Return all affected achievement results plus notification generation and email-delivery status.
 
 Missing preferences or a missing email address must no longer prevent progress updates or notification-history creation.
 
 ### Consistency Constraint
 
-PostgREST cannot make the notification insert and progress upsert atomic across separate HTTP requests. Keep the existing event-first ordering and unique `event_id` guard for this MVP, and document the partial-failure limitation. Do not introduce a database RPC or direct PostgreSQL credentials without a separate architecture decision.
+PostgREST cannot make the notification insert and progress upsert atomic across separate HTTP requests. Keep the existing notification-first ordering for this MVP and document the partial-failure limitation. Do not introduce a database RPC or direct PostgreSQL credentials without a separate architecture decision.
 
 ## 4. Notification Generation
 
@@ -144,7 +144,7 @@ Update the Docker-backed integration test to verify:
 2. Each tier is capped independently and newly attained tiers are reported correctly.
 3. One notification row stores non-empty `email_subject` and `email_body`.
 4. The notification is stored when SMTP is disabled.
-5. Replaying the same `event_id` returns `409` and does not change any progress or add history.
+5. Sending identical requests twice creates two notifications and applies progress twice.
 6. Notification history is returned only for the authenticated user and newest first.
 
 Run the complete service suite with the existing command:
@@ -171,7 +171,7 @@ Final validation:
 - Exercise one event for each trigger.
 - Confirm notification history and modal behaviour on desktop and mobile.
 - Confirm email-disabled users still receive in-app history.
-- Confirm duplicate events remain idempotent.
+- Confirm repeated requests are treated as separate occurrences.
 
 ## Acceptance Criteria
 
@@ -180,5 +180,5 @@ Final validation:
 - Generated notification subject/body are persisted for every accepted event.
 - Email delivery uses the persisted content and remains optional.
 - Authenticated users can view all their past notifications and open the full body in a modal.
-- Duplicate event IDs neither update progress nor create duplicate notifications.
+- Repeated accepted requests each update progress and create a notification.
 - Existing authentication, preferences, shared navigation, and shared-CSS behaviour continue to work.

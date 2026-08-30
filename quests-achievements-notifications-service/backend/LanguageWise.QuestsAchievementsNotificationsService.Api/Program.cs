@@ -127,7 +127,6 @@ app.MapGet("/api/profile", async (
             notifications = notifications.Select(notification => new
             {
                 notification.NotificationId,
-                notification.EventId,
                 notification.Trigger,
                 notification.Time,
                 notification.EmailSubject,
@@ -229,12 +228,6 @@ app.MapPost("/api/events", async (
 
     try
     {
-        var eventId = request.EventId.Trim();
-        if (await client.EventExistsAsync(eventId, cancellationToken))
-        {
-            return Results.Conflict(new { error = "The event has already been processed." });
-        }
-
         var achievements = await client.GetAchievementsByTriggerAsync(request.Trigger, cancellationToken);
         if (achievements.Count == 0)
         {
@@ -247,7 +240,6 @@ app.MapPost("/api/events", async (
         {
             var progressUpdate = NotificationRules.CalculateProgress(
                 currentProgress.GetValueOrDefault(achievement.AchievementId),
-                request.Value,
                 achievement.ProgressNeeded);
             return new AchievementUpdate(
                 achievement.AchievementId,
@@ -259,20 +251,15 @@ app.MapPost("/api/events", async (
 
         var email = await emailGenerator.GenerateAsync(new EmailContext(
             request.Trigger,
-            request.SubjectId,
+            request.Subject,
             achievementUpdates), cancellationToken);
 
-        var created = await client.CreateNotificationAsync(new NotificationInput(
-            eventId,
+        await client.CreateNotificationAsync(new NotificationInput(
             request.RecipientUserId,
             request.Trigger,
-            request.OccurredAt,
+            DateTimeOffset.UtcNow,
             email.Subject,
             email.Body), cancellationToken);
-        if (!created)
-        {
-            return Results.Conflict(new { error = "The event has already been processed." });
-        }
 
         await client.UpsertUserAchievementsAsync(achievementUpdates.Select(update => new UserAchievement(
             request.RecipientUserId,
@@ -298,14 +285,13 @@ app.MapPost("/api/events", async (
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                app.Logger.LogError(exception, "Failed to send notification email for event {EventId}.", request.EventId);
+                app.Logger.LogError(exception, "Failed to send notification email for trigger {Trigger} and user {UserId}.", request.Trigger, request.RecipientUserId);
                 emailError = "Email delivery failed.";
             }
         }
 
         return Results.Ok(new
         {
-            eventId = request.EventId,
             actorUserId,
             recipientUserId = request.RecipientUserId,
             achievements = achievementUpdates,
@@ -326,7 +312,7 @@ app.MapPost("/api/events", async (
     }
     catch (Exception exception)
     {
-        app.Logger.LogError(exception, "Failed to process event {EventId}.", request.EventId);
+        app.Logger.LogError(exception, "Failed to process trigger {Trigger} for user {UserId}.", request.Trigger, request.RecipientUserId);
 
         return Results.Problem(
             title: "The database microservice is unavailable.",
