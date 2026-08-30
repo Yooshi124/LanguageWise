@@ -26,8 +26,7 @@ export interface UtilityNavigationItem {
   disabled: true
 }
 
-const loopbackHost = 'http://127.0.0.1'
-const sharedFrontend = `${loopbackHost}:3000`
+const sharedFrontend = `${window.location.protocol}//${window.location.hostname}:3000`
 export const sharedHomeHref = `${sharedFrontend}/`
 
 export const serviceNavigation: readonly ServiceNavigationItem[] = [
