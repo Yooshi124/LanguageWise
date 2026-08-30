@@ -6,9 +6,9 @@ import Associations from './Associations.vue';
 
 const routes = {
     '/game': GamePage,
-    '/vocab-voyage': VocabVoyage,
-    '/word-strings': WordStrings,
-    '/associations': Associations,
+    '/game/guess-the-word': VocabVoyage,
+    '/game/word-search': WordStrings,
+    '/game/associations': Associations,
 };
 
 const page = routes[window.location.pathname] ?? GamePage;

@@ -24,10 +24,10 @@ For example, `VocabVoyageService.SubmitGuess` calls `VocabVoyageGame.SubmitGuess
 which returns the `VocabVoyageGuessResult` model. The equivalent references exist for
 `WordStrings` and `Associations`.
 
-VocabVoyage is registered in `Program.cs` and uses a local fake learning-context
+The Guess the word game is registered in `Program.cs` and uses a local fake learning-context
 provider until the quizzes/courses service exposes the required API.
 
-The Word Strings and Associations classes remain stubs until their game rules are
+The Word Search and Associations classes remain stubs until their game rules are
 implemented.
 
 The local provider currently supplies a small Markdown learning context containing
@@ -46,9 +46,9 @@ Routes, resolved in `src/main.js`:
 | Path | Component |
 | --- | --- |
 | `/` | `GamePage.vue` |
-| `/vocab-voyage` | `VocabVoyage.vue` |
-| `/word-strings` | `WordStrings.vue` — game screen stub |
-| `/associations` | `Associations.vue` — game screen stub |
+| `/game/guess-the-word` | `VocabVoyage.vue` |
+| `/game/word-search` | `WordStrings.vue` — game screen stub |
+| `/game/associations` | `Associations.vue` — game screen stub |
 
 ## Wiring this feature up
 

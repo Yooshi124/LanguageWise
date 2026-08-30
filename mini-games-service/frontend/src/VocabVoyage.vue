@@ -1,9 +1,9 @@
 <template>
 	<main class="vocab-voyage">
-		<a class="back-button" href="/" aria-label="Return to the main game page">Back</a>
+		<a class="back-button" href="/game" aria-label="Return to the main game page">Back</a>
 		<header class="game-header">
 			<p class="eyebrow">Daily vocabulary challenge</p>
-			<h1>VocabVoyage</h1>
+			<h1>Guess the word</h1>
 			<p>Find the hidden five-letter word in six guesses.</p>
 		</header>
 		<section class="board-shell" aria-label="VocabVoyage game board">
@@ -11,6 +11,17 @@
 				<div v-for="(box, index) in boxes" :key="index" class="grid-box" :class="colourClass(box.colour)">
 					{{ box.letter }}
 				</div>
+			</div>
+			<div class="alphabet" aria-label="Guessed letter status">
+				<span
+					v-for="letter in letterStatuses"
+					:key="letter.value"
+					class="alphabet-letter"
+					:class="colourClass(letter.status)"
+					:aria-label="`${letter.value}${letter.status ? `, ${letter.statusLabel}` : ', not guessed'}`"
+				>
+					{{ letter.value }}
+				</span>
 			</div>
 			<form class="guess-form" @submit.prevent="submitGuess">
 			<label for="guess">Your guess</label>
@@ -40,6 +51,7 @@ const error = ref(false);
 const gameComplete = ref(false);
 const isWon = ref(false);
 const correctAnswer = ref('');
+const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
 const boxes = computed(() => Array.from({ length: 30 }, (_, index) => {
 		const row = Math.floor(index / 5);
@@ -52,6 +64,28 @@ const colourClass = (colour) => ({
 		'cell-correct': colour === 'G',
 		'cell-present': colour === 'O',
 		'cell-absent': colour === 'R'
+});
+
+const letterStatuses = computed(() => {
+	const statusPriority = { R: 1, O: 2, G: 3 };
+	const statusLabels = { R: 'incorrect', O: 'in the word', G: 'correct position' };
+	const statuses = {};
+
+	guesses.value.forEach((submittedGuess) => {
+		const submittedLetters = submittedGuess.guess?.toUpperCase() ?? '';
+		submittedLetters.split('').forEach((letter, index) => {
+			const status = submittedGuess.colours?.[index];
+			if (status && (!statuses[letter] || statusPriority[status] > statusPriority[statuses[letter]])) {
+				statuses[letter] = status;
+			}
+		});
+	});
+
+	return alphabet.map((value) => ({
+		value,
+		status: statuses[value] ?? '',
+		statusLabel: statusLabels[statuses[value]] ?? ''
+	}));
 });
 
 const readResponse = async (response) => {
@@ -241,6 +275,43 @@ h1 {
 .grid-box.cell-absent {
 	border-color: #8290a8;
 	background: #dce2eb;
+}
+
+.alphabet {
+	display: grid;
+	grid-template-columns: repeat(13, minmax(1.55rem, 1fr));
+	gap: 0.35rem;
+	max-width: 30rem;
+	margin: 1.25rem auto 0;
+}
+
+.alphabet-letter {
+	display: grid;
+	place-items: center;
+	min-width: 0;
+	aspect-ratio: 1;
+	border: 1px solid #a7cbc7;
+	border-radius: 4px;
+	background: rgba(255, 255, 255, 0.9);
+	color: #1c2b45;
+	font-size: 0.78rem;
+	font-weight: 800;
+}
+
+.alphabet-letter.cell-correct {
+	border-color: #10897a;
+	background: #b8e4dc;
+}
+
+.alphabet-letter.cell-present {
+	border-color: #d87832;
+	background: #f6c58f;
+}
+
+.alphabet-letter.cell-absent {
+	border-color: #8290a8;
+	background: #dce2eb;
+	color: #5b6b85;
 }
 
 .guess-form {

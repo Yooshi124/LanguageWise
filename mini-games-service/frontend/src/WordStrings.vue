@@ -1,9 +1,9 @@
 <template>
 	<main class="game-page">
-		<a class="back-button" href="/" aria-label="Return to the main game page">Back</a>
+		<a class="back-button" href="/game" aria-label="Return to the main game page">Back</a>
 		<header class="game-header">
 			<p class="eyebrow">Build the chain</p>
-			<h1>Word Strings</h1>
+			<h1>Word Search</h1>
 			<p>Follow the letters and uncover the next word.</p>
 		</header>
 		<div class="game-layout">

@@ -1,6 +1,6 @@
 <template>
 	<main class="game-page">
-		<a class="back-button" href="/" aria-label="Return to the main game page">Back</a>
+		<a class="back-button" href="/game" aria-label="Return to the main game page">Back</a>
 		<header class="game-header">
 			<p class="eyebrow">Make the associations</p>
 			<h1>Associations</h1>

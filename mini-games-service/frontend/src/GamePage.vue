@@ -39,22 +39,22 @@
 const games = [
 	{
 		id: 1,
-		name: 'VocabVoyage',
-		link: '/vocab-voyage',
+		name: 'Guess the word',
+		link: '/game/guess-the-word',
 		theme: 'vocab',
 		description: 'Guess the word, build your streak, and sharpen your language instincts.'
 	},
 	{
 		id: 2,
-		name: 'Word Strings',
-		link: '/word-strings',
+		name: 'Word Search',
+		link: '/game/word-search',
 		theme: 'strings',
 		description: 'Follow the chain of letters and discover the words hiding in plain sight.'
 	},
 	{
 		id: 3,
 		name: 'Associations',
-		link: '/associations',
+		link: '/game/associations',
 		theme: 'associations',
 		description: 'Connect ideas, spot patterns, and make vocabulary stick together.'
 	}
