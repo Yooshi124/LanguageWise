@@ -35,12 +35,12 @@ public sealed class OllamaEmailGenerator(
                     new
                     {
                         role = "system",
-                        content = "Write a warm, concise LanguageWise notification email. Return only JSON matching the supplied schema. Do not include markdown, links, or claims not present in the event."
+                        content = "Write one warm, concise LanguageWise notification for the event. Mention every affected achievement and highlight any marked as newly attained; otherwise summarize progress toward the listed tiers. Return only JSON matching the supplied schema. Do not include markdown, links, or claims not present in the event."
                     },
                     new
                     {
                         role = "user",
-                        content = $"Event: {context.EventType}\nSubject: {context.SubjectId}\nAchievement: {context.AchievementName}\nProgress: {context.Progress}/{context.ProgressNeeded}\nNewly attained: {context.NewlyAttained}"
+                        content = $"Trigger: {context.Trigger}\nSubject: {context.Subject}\nAchievements:\n{FormatAchievements(context.Achievements)}"
                     }
                 },
                 format = new
@@ -88,15 +88,25 @@ public sealed class OllamaEmailGenerator(
 
     private static EmailContent Fallback(EmailContext context)
     {
-        var subject = context.NewlyAttained
-            ? $"Achievement unlocked: {context.AchievementName}"
-            : $"Your {context.AchievementName} progress";
-        var body = context.NewlyAttained
-            ? $"You unlocked {context.AchievementName}. Congratulations on reaching {context.Progress} of {context.ProgressNeeded}!"
-            : $"You made progress toward {context.AchievementName}: {context.Progress} of {context.ProgressNeeded}. Keep going!";
+        var attained = context.Achievements.Where(item => item.NewlyAttained).ToList();
+        var subject = attained.Count > 0
+            ? $"Achievement unlocked: {string.Join(", ", attained.Select(item => item.Name))}"
+            : "Your LanguageWise progress";
+        var body = attained.Count > 0
+            ? $"You unlocked {string.Join(", ", attained.Select(item => item.Name))}. Congratulations! "
+            : "You made progress. ";
+        body += string.Join(" ", context.Achievements.Select(item =>
+            $"{item.Name}: {item.Progress} of {item.ProgressNeeded}."));
 
-        return new EmailContent(subject, body, true);
+        return new EmailContent(
+            Truncate(subject, MaximumSubjectLength),
+            Truncate(body, MaximumBodyLength),
+            true);
     }
+
+    private static string FormatAchievements(IEnumerable<AchievementUpdate> achievements) =>
+        string.Join("\n", achievements.Select(item =>
+            $"- {item.Name}: {item.Progress}/{item.ProgressNeeded}; newly attained: {item.NewlyAttained}"));
 
     private static string Truncate(string value, int maximumLength) =>
         value.Length <= maximumLength ? value : value[..maximumLength];

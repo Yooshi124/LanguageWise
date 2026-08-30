@@ -8,16 +8,15 @@ public sealed class AppDataClient(HttpClient httpClient)
 {
     public async Task<IReadOnlyList<Achievement>> GetAchievementsAsync(CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<List<Achievement>>(
-            "achievements?select=achievement_id,name,image,progress_needed&order=achievement_id.asc",
+            "achievements?select=achievement_id,name,image,trigger,progress_needed&order=achievement_id.asc",
             cancellationToken) ?? [];
 
-    public async Task<Achievement?> GetAchievementAsync(int achievementId, CancellationToken cancellationToken = default)
-    {
-        var achievements = await httpClient.GetFromJsonAsync<List<Achievement>>(
-            $"achievements?achievement_id=eq.{achievementId}&limit=1",
-            cancellationToken);
-        return achievements?.SingleOrDefault();
-    }
+    public async Task<IReadOnlyList<Achievement>> GetAchievementsByTriggerAsync(
+        string trigger,
+        CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<List<Achievement>>(
+            $"achievements?trigger=eq.{Uri.EscapeDataString(trigger)}&select=achievement_id,name,image,trigger,progress_needed&order=progress_needed.asc",
+            cancellationToken) ?? [];
 
     public async Task<IReadOnlyList<UserAchievement>> GetUserAchievementsAsync(
         int userId,
@@ -37,26 +36,27 @@ public sealed class AppDataClient(HttpClient httpClient)
     public async Task UpsertPreferencesAsync(UserPreferences preferences, CancellationToken cancellationToken = default) =>
         await UpsertAsync("user_preferences?on_conflict=user_id", preferences, cancellationToken);
 
-    public async Task UpsertUserAchievementAsync(
-        UserAchievement achievement,
+    public async Task UpsertUserAchievementsAsync(
+        IReadOnlyCollection<UserAchievement> achievements,
         CancellationToken cancellationToken = default) =>
         await UpsertAsync(
             "user_achievements?on_conflict=user_id,achievement_id",
-            achievement,
+            achievements,
             cancellationToken);
 
-    public async Task<bool> CreateNotificationAsync(
+    public async Task<IReadOnlyList<Notification>> GetNotificationsAsync(
+        int userId,
+        CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<List<Notification>>(
+            $"notifications?user_id=eq.{userId}&select=notification_id,user_id,trigger,time,email_subject,email_body&order=time.desc,notification_id.desc",
+            cancellationToken) ?? [];
+
+    public async Task CreateNotificationAsync(
         NotificationInput notification,
         CancellationToken cancellationToken = default)
     {
         using var response = await httpClient.PostAsJsonAsync("notifications", notification, cancellationToken);
-        if (response.StatusCode == HttpStatusCode.Conflict)
-        {
-            return false;
-        }
-
         response.EnsureSuccessStatusCode();
-        return true;
     }
 
     private async Task UpsertAsync<T>(string path, T value, CancellationToken cancellationToken)

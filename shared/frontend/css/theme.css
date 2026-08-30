@@ -586,6 +586,116 @@ a {
     font-size: 0.82rem;
 }
 
+.lw-notifications {
+    margin-top: 2.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--lw-colour-border);
+}
+
+.lw-notification-list {
+    padding: 0;
+    margin: 0;
+    border-top: 1px solid var(--lw-colour-border);
+    list-style: none;
+}
+
+.lw-notification {
+    border-bottom: 1px solid var(--lw-colour-border);
+}
+
+.lw-notification__open {
+    display: grid;
+    gap: 0.2rem;
+    width: 100%;
+    padding: 1rem 0.25rem;
+    border: 0;
+    background: transparent;
+    color: var(--lw-colour-ink);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.lw-notification__open:hover .lw-notification__subject,
+.lw-notification__open:focus-visible .lw-notification__subject {
+    color: var(--lw-colour-primary);
+}
+
+.lw-notification__open:focus-visible {
+    outline: 3px solid rgba(31, 111, 235, 0.18);
+    outline-offset: 2px;
+}
+
+.lw-notification__subject {
+    font-weight: 700;
+}
+
+.lw-notification__meta,
+.lw-notification-dialog__meta,
+.lw-notifications__empty {
+    color: var(--lw-colour-ink-muted);
+    font-size: 0.85rem;
+}
+
+.lw-notifications__empty {
+    margin: 0;
+    padding: 1.5rem 0;
+}
+
+.lw-notification-dialog {
+    width: min(36rem, calc(100% - 2rem));
+    max-height: calc(100vh - 2rem);
+    padding: 1.5rem;
+    border: 1px solid var(--lw-colour-border);
+    border-radius: var(--lw-radius-sm);
+    box-shadow: var(--lw-shadow);
+    color: var(--lw-colour-ink);
+}
+
+.lw-notification-dialog::backdrop {
+    background: rgba(28, 43, 69, 0.48);
+}
+
+.lw-notification-dialog__heading {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.lw-notification-dialog h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    overflow-wrap: anywhere;
+}
+
+.lw-notification-dialog__meta {
+    margin: 0 0 0.25rem;
+}
+
+.lw-notification-dialog__body {
+    margin: 1.25rem 0 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.lw-dialog-close {
+    min-height: 2.25rem;
+    padding: 0.4rem 0.7rem;
+    border: 1px solid var(--lw-colour-border);
+    border-radius: var(--lw-radius-sm);
+    background: var(--lw-colour-surface);
+    color: var(--lw-colour-ink);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.lw-dialog-close:hover,
+.lw-dialog-close:focus-visible {
+    border-color: var(--lw-colour-primary);
+}
+
 @media (max-width: 780px) {
     .lw-dashboard-grid,
     .lw-achievement-grid {

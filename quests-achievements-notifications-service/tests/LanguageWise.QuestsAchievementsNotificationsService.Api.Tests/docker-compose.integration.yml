@@ -1,0 +1,25 @@
+services:
+  database:
+    build:
+      context: ../../database
+    environment:
+      POSTGRES_DB: quests_achievements_notifications
+      POSTGRES_USER: languagewise
+      POSTGRES_PASSWORD: languagewise
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U languagewise -d quests_achievements_notifications"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  postgrest:
+    image: postgrest/postgrest:v12.2.3
+    environment:
+      PGRST_DB_URI: postgres://languagewise:languagewise@database:5432/quests_achievements_notifications
+      PGRST_DB_SCHEMA: api
+      PGRST_DB_ANON_ROLE: web_anon
+    depends_on:
+      database:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1::3000"

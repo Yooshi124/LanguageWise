@@ -22,6 +22,9 @@ services:
   ollama:
     container_name: ollama
     image: ollama/ollama:0.33.1
+    gpus: all
+    environment:
+      OLLAMA_KEEP_ALIVE: -1
     volumes:
       - ollama-data:/root/.ollama
     networks: [languagewise]
@@ -38,7 +41,7 @@ services:
     environment:
       OLLAMA_HOST: http://ollama:11434
     entrypoint: ["/bin/sh", "-c"]
-    command: ["ollama pull gemma4:12b"]
+    command: ["ollama pull gemma4:e4b && ollama run gemma4:e4b \"\""]
     networks: [languagewise]
     depends_on:
       ollama:
@@ -204,10 +207,8 @@ services:
     environment:
       Services__Database: http://quests-achievements-notifications-service-db-api:3000
       Services__Ollama: http://ollama:11434
-      Ollama__Model: gemma4:12b
+      Ollama__Model: gemma4:e4b
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
-      Smtp__Host: smtp.gmail.com
-      Smtp__Port: 587
     secrets:
       - signing_public_key
     ports:

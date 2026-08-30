@@ -24,16 +24,10 @@ builder.Services.AddHttpClient<AppDataClient>(client =>
 var ollamaServiceUrl = builder.Configuration["Services:Ollama"] ?? "http://localhost:11434";
 builder.Services.Configure<OllamaOptions>(builder.Configuration.GetSection("Ollama"));
 builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection("Smtp"));
-builder.Services.PostConfigure<SmtpOptions>(options =>
-{
-    options.Username = builder.Configuration["SMTP_USERNAME"] ?? options.Username;
-    options.Password = builder.Configuration["SMTP_PASSWORD"] ?? options.Password;
-    options.FromName = builder.Configuration["SMTP_FROM_NAME"] ?? options.FromName;
-});
 builder.Services.AddHttpClient<IEmailContentGenerator, OllamaEmailGenerator>(client =>
 {
     client.BaseAddress = new Uri(ollamaServiceUrl.TrimEnd('/') + "/");
-    client.Timeout = TimeSpan.FromSeconds(90);
+    client.Timeout = TimeSpan.FromSeconds(15);
 });
 builder.Services.AddSingleton<ISmtpTransport, MailKitSmtpTransport>();
 builder.Services.AddSingleton<IEmailSender, GmailEmailSender>();
@@ -102,6 +96,7 @@ app.MapGet("/api/profile", async (
         var achievements = await client.GetAchievementsAsync(cancellationToken);
         var progress = (await client.GetUserAchievementsAsync(userId.Value, cancellationToken))
             .ToDictionary(item => item.AchievementId, item => item.Progress);
+        var notifications = await client.GetNotificationsAsync(userId.Value, cancellationToken);
         var view = achievements.Select(achievement => new AchievementProgress(
             achievement.AchievementId,
             achievement.Name,
@@ -122,7 +117,15 @@ app.MapGet("/api/profile", async (
                 preferences.NotifyStreaks,
                 preferences.NotifyAchievements
             },
-            achievements = view
+            achievements = view,
+            notifications = notifications.Select(notification => new
+            {
+                notification.NotificationId,
+                notification.Trigger,
+                notification.Time,
+                notification.EmailSubject,
+                notification.EmailBody
+            })
         });
     }
     catch (Exception exception)
@@ -219,102 +222,91 @@ app.MapPost("/api/events", async (
 
     try
     {
+        var achievements = await client.GetAchievementsByTriggerAsync(request.Trigger, cancellationToken);
+        if (achievements.Count == 0)
+        {
+            return Results.NotFound(new { error = "No achievements are configured for this trigger." });
+        }
+
+        var currentProgress = (await client.GetUserAchievementsAsync(request.RecipientUserId, cancellationToken))
+            .ToDictionary(item => item.AchievementId, item => item.Progress);
+        var achievementUpdates = achievements.Select(achievement =>
+        {
+            var progressUpdate = NotificationRules.CalculateProgress(
+                currentProgress.GetValueOrDefault(achievement.AchievementId),
+                achievement.ProgressNeeded);
+            return new AchievementUpdate(
+                achievement.AchievementId,
+                achievement.Name,
+                progressUpdate.Progress,
+                achievement.ProgressNeeded,
+                progressUpdate.NewlyAttained);
+        }).ToList();
+
+        var email = await emailGenerator.GenerateAsync(new EmailContext(
+            request.Trigger,
+            request.Subject,
+            achievementUpdates), cancellationToken);
+
+        await client.CreateNotificationAsync(new NotificationInput(
+            request.RecipientUserId,
+            request.Trigger,
+            DateTimeOffset.UtcNow,
+            email.Subject,
+            email.Body), cancellationToken);
+
+        await client.UpsertUserAchievementsAsync(achievementUpdates.Select(update => new UserAchievement(
+            request.RecipientUserId,
+            update.AchievementId,
+            update.Progress)).ToList(), cancellationToken);
+
         var preferences = await client.GetPreferencesAsync(request.RecipientUserId, cancellationToken);
-        if (preferences is null)
-        {
-            return Results.NotFound(new { error = "Recipient preferences were not found." });
-        }
-
-        if (string.IsNullOrWhiteSpace(preferences.Email))
-        {
-            return Results.Conflict(new { error = "Recipient notification email is not configured." });
-        }
-
-        var achievement = await client.GetAchievementAsync(request.AchievementId, cancellationToken);
-        if (achievement is null)
-        {
-            return Results.NotFound(new { error = "Achievement was not found." });
-        }
-
-        var current = (await client.GetUserAchievementsAsync(request.RecipientUserId, cancellationToken))
-            .SingleOrDefault(item => item.AchievementId == request.AchievementId);
-        var oldProgress = current?.Progress ?? 0;
-        var progressUpdate = NotificationRules.CalculateProgress(
-            oldProgress,
-            request.Value,
-            achievement.ProgressNeeded);
-        var newProgress = progressUpdate.Progress;
-        var newlyAttained = progressUpdate.NewlyAttained;
-
-        var created = await client.CreateNotificationAsync(new NotificationInput(
-            request.EventId.Trim(),
-            request.RecipientUserId,
-            request.EventType,
-            request.OccurredAt,
-            preferences.Email), cancellationToken);
-        if (!created)
-        {
-            return Results.Conflict(new { error = "The event has already been processed." });
-        }
-
-        await client.UpsertUserAchievementAsync(new UserAchievement(
-            request.RecipientUserId,
-            request.AchievementId,
-            newProgress), cancellationToken);
-
-        var shouldNotify = NotificationRules.ShouldNotify(preferences, request.EventType, newlyAttained);
+        var shouldNotify = preferences is not null && NotificationRules.ShouldNotify(
+            preferences,
+            request.Trigger,
+            achievementUpdates.Any(item => item.NewlyAttained));
         var emailSent = false;
-        var usedFallback = false;
         string? emailError = null;
 
-        if (shouldNotify && emailSender.IsConfigured)
+        if (shouldNotify
+            && !string.IsNullOrWhiteSpace(preferences!.Email)
+            && emailSender.IsConfigured)
         {
             try
             {
-                var email = await emailGenerator.GenerateAsync(new EmailContext(
-                    request.EventType,
-                    request.SubjectId,
-                    achievement.Name,
-                    newProgress,
-                    achievement.ProgressNeeded,
-                    newlyAttained), cancellationToken);
-                usedFallback = email.UsedFallback;
                 await emailSender.SendAsync(preferences.Email, email, cancellationToken);
                 emailSent = true;
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                app.Logger.LogError(exception, "Failed to send notification email for event {EventId}.", request.EventId);
+                app.Logger.LogError(exception, "Failed to send notification email for trigger {Trigger} and user {UserId}.", request.Trigger, request.RecipientUserId);
                 emailError = "Email delivery failed.";
             }
         }
 
         return Results.Ok(new
         {
-            eventId = request.EventId,
             actorUserId,
             recipientUserId = request.RecipientUserId,
-            achievement = new
+            achievements = achievementUpdates,
+            notification = new
             {
-                achievement.AchievementId,
-                achievement.Name,
-                progress = newProgress,
-                achievement.ProgressNeeded,
-                newlyAttained
+                email.Subject,
+                email.Body,
+                email.UsedFallback
             },
             shouldNotify,
             email = new
             {
                 sent = emailSent,
                 configured = emailSender.IsConfigured,
-                usedFallback,
                 error = emailError
             }
         });
     }
     catch (Exception exception)
     {
-        app.Logger.LogError(exception, "Failed to process event {EventId}.", request.EventId);
+        app.Logger.LogError(exception, "Failed to process trigger {Trigger} for user {UserId}.", request.Trigger, request.RecipientUserId);
 
         return Results.Problem(
             title: "The database microservice is unavailable.",

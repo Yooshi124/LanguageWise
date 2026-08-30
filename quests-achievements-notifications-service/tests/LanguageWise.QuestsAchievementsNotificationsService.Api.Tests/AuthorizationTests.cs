@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using LanguageWise.QuestsAchievementsNotificationsService.Api.Clients;
@@ -47,7 +48,19 @@ public sealed class AuthorizationTests
 
         var response = await client.GetAsync("/api/profile");
 
-        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var notifications = body.RootElement.GetProperty("notifications");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(notifications.GetArrayLength(), Is.EqualTo(1));
+            Assert.That(notifications[0].GetProperty("notificationId").GetInt64(), Is.EqualTo(12));
+            Assert.That(notifications[0].GetProperty("trigger").GetString(), Is.EqualTo("course-completion"));
+            Assert.That(notifications[0].GetProperty("emailSubject").GetString(), Is.EqualTo("Course complete"));
+            Assert.That(notifications[0].GetProperty("emailBody").GetString(), Is.EqualTo("You completed a course."));
+            Assert.That(notifications[0].TryGetProperty("userId", out _), Is.False);
+        });
     }
 
     [Test]
@@ -143,6 +156,7 @@ public sealed class AuthorizationTests
             var body = request.RequestUri?.AbsolutePath switch
             {
                 "/user_preferences" => "[{\"user_id\":1,\"email\":\"learner@example.com\",\"notify_all\":true,\"notify_post_engagement\":true,\"notify_course_completion\":true,\"notify_quiz_results\":true,\"notify_streaks\":true,\"notify_achievements\":true}]",
+                "/notifications" when request.RequestUri.Query.Contains("user_id=eq.1") => "[{\"notification_id\":12,\"user_id\":1,\"trigger\":\"course-completion\",\"time\":\"2026-08-29T10:00:00Z\",\"email_subject\":\"Course complete\",\"email_body\":\"You completed a course.\"}]",
                 _ => "[]"
             };
 

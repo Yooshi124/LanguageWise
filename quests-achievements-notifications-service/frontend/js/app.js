@@ -7,8 +7,20 @@
     var saveStatus = document.getElementById("save-status");
     var notifyAll = document.getElementById("notify-all");
     var notificationTypes = document.getElementById("notification-types");
+    var notificationDialog = document.getElementById("notification-dialog");
 
     notifyAll.addEventListener("change", syncNotificationTypes);
+    notificationDialog.addEventListener("click", function (event) {
+        if (event.target === notificationDialog) {
+            notificationDialog.close();
+        }
+    });
+    notificationDialog.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+            event.preventDefault();
+            notificationDialog.close();
+        }
+    });
 
     document.body.addEventListener("htmx:configRequest", function (event) {
         var path = event.detail.path;
@@ -66,6 +78,8 @@
         profile.achievements.forEach(function (achievement) {
             grid.appendChild(createAchievement(achievement));
         });
+
+        renderNotifications(profile.notifications || []);
     }
 
     function createAchievement(achievement) {
@@ -89,6 +103,49 @@
         progress.setAttribute("aria-label", achievement.name + " progress");
         fragment.querySelector(".lw-achievement__progress").textContent = achievement.progress + " / " + achievement.progressNeeded;
         return fragment;
+    }
+
+    function renderNotifications(notifications) {
+        var list = document.getElementById("notification-list");
+        var empty = document.getElementById("notification-empty");
+        list.replaceChildren();
+        empty.hidden = notifications.length !== 0;
+        document.getElementById("notification-count").textContent = notifications.length + (notifications.length === 1 ? " update" : " updates");
+
+        notifications.forEach(function (notification) {
+            var fragment = document.getElementById("notification-template").content.cloneNode(true);
+            fragment.querySelector(".lw-notification__subject").textContent = notification.emailSubject;
+            fragment.querySelector(".lw-notification__meta").textContent = formatTrigger(notification.trigger) + " · " + formatTime(notification.time);
+            fragment.querySelector("button").addEventListener("click", function () {
+                openNotification(notification);
+            });
+            list.appendChild(fragment);
+        });
+    }
+
+    function openNotification(notification) {
+        document.getElementById("notification-dialog-title").textContent = notification.emailSubject;
+        document.getElementById("notification-dialog-meta").textContent = formatTrigger(notification.trigger) + " · " + formatTime(notification.time);
+        document.getElementById("notification-dialog-body").textContent = notification.emailBody;
+        notificationDialog.showModal();
+    }
+
+    function formatTrigger(trigger) {
+        return trigger.split("-").map(function (word) {
+            return word.charAt(0).toUpperCase() + word.slice(1);
+        }).join(" ");
+    }
+
+    function formatTime(value) {
+        var date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+            return "Unknown time";
+        }
+
+        return new Intl.DateTimeFormat(undefined, {
+            dateStyle: "medium",
+            timeStyle: "short"
+        }).format(date);
     }
 
     function handlePreferences(xhr) {
