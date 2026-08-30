@@ -90,6 +90,27 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  mini-games-service-backend:
+    container_name: mini-games-service-backend
+    build:
+      context: ./mini-games-service/backend
+    ports:
+      - "127.0.0.1:5001:8080"
+    networks: [languagewise]
+    restart: unless-stopped
+
+  mini-games-service-frontend:
+    container_name: mini-games-service-frontend
+    build:
+      context: ./mini-games-service/frontend
+    ports:
+      - "127.0.0.1:3001:80"
+    networks: [languagewise]
+    depends_on:
+      mini-games-service-backend:
+        condition: service_healthy
+    restart: unless-stopped
+
   quizzes-courses-service-db:
     container_name: quizzes-courses-service-db
     build:
