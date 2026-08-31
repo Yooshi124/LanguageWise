@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import { useRoute } from 'vue-router';
+import { useAssistant } from '../composables/useAssistant.js';
 
 const services = [
     { name: 'Home', owner: 'Team', href: 'http://localhost:3000/' },
@@ -12,6 +13,7 @@ const services = [
 ];
 
 const route = useRoute();
+const { open: assistantOpen, toggle: toggleAssistant } = useAssistant();
 
 const browsingForums = computed(() => ['forums', 'forum', 'post', 'post-edit'].includes(route.name));
 const viewingMyPosts = computed(() => route.name === 'my-posts');
@@ -49,6 +51,13 @@ const viewingMyPosts = computed(() => route.name === 'my-posts');
             :class="{ 'cd-nav__link--current': viewingMyPosts }"
             :to="{ name: 'my-posts' }"
         >My Posts</RouterLink>
+        <button
+            type="button"
+            class="cd-nav__link cd-nav__link--ai"
+            :class="{ 'cd-nav__link--current': assistantOpen }"
+            :aria-pressed="assistantOpen"
+            @click="toggleAssistant"
+        >AI mode</button>
         <RouterLink class="cd-nav__link cd-nav__link--cta" :to="{ name: 'post-create' }">New post</RouterLink>
     </nav>
 </template>
@@ -83,7 +92,11 @@ const viewingMyPosts = computed(() => route.name === 'my-posts');
     color: #fff;
 }
 
-.cd-nav__link--cta {
+/* A button rather than a link, so it needs the resets an anchor gets for free. */
+.cd-nav__link--ai {
     margin-left: auto;
+    background: none;
+    font-family: inherit;
+    cursor: pointer;
 }
 </style>

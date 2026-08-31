@@ -105,7 +105,16 @@ export const api = {
     likePost: (id) => request(`/posts/${id}/likes`, { method: 'POST' }),
     unlikePost: (id) => request(`/posts/${id}/likes`, { method: 'DELETE' }),
     likeComment: (id) => request(`/comments/${id}/likes`, { method: 'POST' }),
-    unlikeComment: (id) => request(`/comments/${id}/likes`, { method: 'DELETE' })
+    unlikeComment: (id) => request(`/comments/${id}/likes`, { method: 'DELETE' }),
+
+    assistantChat: (message, history) =>
+        request('/assistant/chat', { method: 'POST', body: { message, history } })
 };
 
 export const PAGE_SIZE = 20;
+
+/** Matches AssistantRules.MaxMessageLength on the backend. */
+export const ASSISTANT_MAX_MESSAGE = 500;
+
+/** Matches AssistantRules.MaxHistoryTurns; older turns are dropped before sending. */
+export const ASSISTANT_MAX_HISTORY = 10;

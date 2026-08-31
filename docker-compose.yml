@@ -167,6 +167,8 @@ services:
       context: ./chat-discussion-service/backend
     environment:
       Services__Database: http://chat-discussion-service-db:8080
+      Services__Ollama: http://ollama:11434
+      Ollama__Model: gemma4:12b
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
     secrets:
       - signing_public_key
@@ -176,6 +178,8 @@ services:
     depends_on:
       chat-discussion-service-db:
         condition: service_healthy
+      ollama-model-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   chat-discussion-service-frontend:

@@ -113,3 +113,25 @@ Smtp__FromName=LanguageWise
 Use a Google app password rather than the account password. When these values
 are absent, events and achievement progress still work but email is skipped.
 The authenticated SMTP username is always used as the sender address.
+
+## Discussion forum AI mode
+
+The discussion forum has an **AI mode** button in its navigation bar that opens a
+help chatbot. It answers questions about the forum itself — *"how do I create a
+new post"*, *"how do I edit my post"*, how comments, likes and search work — and
+it shares the same `ollama` container and `gemma4:12b` model as the notification
+emails above, so there is no extra model to download.
+
+It is retrieval-grounded rather than free-running. The backend keeps a curated
+set of help topics in
+`chat-discussion-service/backend/LanguageWise.ChatDiscussionService.Api/HelpKnowledgeBase.cs`,
+picks the ones matching the question, and instructs the model to answer only
+from those. This is what stops it inventing buttons the site does not have.
+
+**When you rename or move a control in the forum frontend, update its article in
+`HelpKnowledgeBase.cs` too** — otherwise the assistant will keep confidently
+directing people to it.
+
+If Ollama is unreachable the assistant degrades rather than failing: it replies
+with the matched help text verbatim and marks the answer as coming from the help
+pages, so AI mode still answers the common questions with no model running.

@@ -19,6 +19,17 @@ builder.Services.AddHttpClient<DiscussionClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(10);
 });
 
+// AI mode. The model runs in the shared 'ollama' container; a generous timeout
+// because a cold first token on a 12B model is slow, and OllamaHelpAssistant
+// falls back to the help text rather than failing when it is not there at all.
+var ollamaServiceUrl = builder.Configuration["Services:Ollama"] ?? "http://localhost:11434";
+builder.Services.Configure<OllamaOptions>(builder.Configuration.GetSection("Ollama"));
+builder.Services.AddHttpClient<IHelpAssistant, OllamaHelpAssistant>(client =>
+{
+    client.BaseAddress = new Uri(ollamaServiceUrl.TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromSeconds(90);
+});
+
 // Tokens are minted by shared-backend and signed with the private half of this
 // key pair. This service only ever verifies them.
 var verificationKeyPath = builder.Configuration["Auth:VerificationKeyPath"] ?? "/run/secrets/signing_public_key";
@@ -479,6 +490,43 @@ app.MapDelete("/api/comments/{id:int}/likes", (
             ? Results.NoContent()
             : Results.NotFound();
     }, "unlike comment"))
+    .RequireAuthorization();
+
+// ---------------------------------------------------------------------------
+// AI mode. A help chatbot that answers questions about the forum itself, such
+// as how to create or edit a post.
+//
+// Sign-in is required: not because the answers are private, but because the
+// model is a shared, expensive resource and every other route already redirects
+// signed-out visitors to the login page.
+//
+// Guard is deliberately not used here. It reports an unreachable *database*,
+// which is the wrong thing to say about the assistant, and OllamaHelpAssistant
+// already turns an unreachable model into a fallback answer of its own.
+// ---------------------------------------------------------------------------
+
+app.MapGet("/api/assistant/topics", () =>
+    Results.Ok(HelpKnowledgeBase.Articles.Select(article => new { article.Id, article.Title })))
+    .RequireAuthorization();
+
+app.MapPost("/api/assistant/chat", async (
+    AssistantRequest? request,
+    IHelpAssistant assistant,
+    CancellationToken cancellationToken) =>
+{
+    var errors = AssistantRules.ValidateChat(request);
+    if (errors.Count > 0)
+    {
+        return Results.ValidationProblem(errors);
+    }
+
+    var reply = await assistant.AnswerAsync(
+        request!.Message!.Trim(),
+        AssistantRules.SanitiseHistory(request.History),
+        cancellationToken);
+
+    return Results.Ok(reply);
+})
     .RequireAuthorization();
 
 // TODO: when the notification contract with the quests service is agreed, a
