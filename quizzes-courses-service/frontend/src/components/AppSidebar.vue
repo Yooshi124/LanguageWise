@@ -1,10 +1,31 @@
 <script setup lang="ts">
-import { onBeforeUnmount } from 'vue'
-import { serviceNavigation, sharedHomeHref, utilityNavigation } from '../config/navigation'
+import { computed, onBeforeUnmount, ref } from 'vue'
+import { useAuth } from '../composables/useAuth'
+import { serviceNavigation, sharedHomeHref } from '../config/navigation'
 import AppIcon from './AppIcon.vue'
 import SidebarNavItem from './SidebarNavItem.vue'
 
 const brandIconUrl = `${import.meta.env.BASE_URL}languagewise-icon.png`
+const auth = useAuth()
+const loggingOut = ref(false)
+const logoutError = ref('')
+
+const accountLabel = computed(() => {
+  if (auth.status.value === 'authenticated') {
+    return auth.user.value?.username ?? 'Logged in'
+  }
+  if (auth.status.value === 'signed-out') {
+    return 'Not logged in'
+  }
+  if (auth.status.value === 'error') {
+    return 'Unable to verify login'
+  }
+  return 'Checking login'
+})
+
+const accountHref = computed(() =>
+  auth.status.value === 'signed-out' ? auth.loginUrl() : undefined,
+)
 
 const props = defineProps<{
   expanded: boolean
@@ -32,6 +53,18 @@ function handleFocusOut(event: FocusEvent) {
   const sidebar = event.currentTarget as HTMLElement
   if (!sidebar.contains(event.relatedTarget as Node | null)) {
     setExpanded(false)
+  }
+}
+
+async function handleLogout() {
+  loggingOut.value = true
+  logoutError.value = ''
+
+  try {
+    await auth.logout()
+  } catch (error) {
+    logoutError.value = error instanceof Error ? error.message : 'Unable to log out'
+    loggingOut.value = false
   }
 }
 
@@ -82,13 +115,21 @@ onBeforeUnmount(() => clearTimeout(hoverTimer))
 
     <nav class="sidebar-utilities" aria-label="Account">
       <SidebarNavItem
-        v-for="item in utilityNavigation"
-        :key="item.label"
-        :label="item.label"
-        :icon="item.icon"
-        :disabled="item.disabled"
+        :label="accountLabel"
+        icon="profile"
+        :href="accountHref"
+        :static="!accountHref"
         :show-label="expanded || mobileOpen"
       />
+      <SidebarNavItem
+        v-if="auth.isAuthenticated.value"
+        :label="loggingOut ? 'Logging out' : 'Logout'"
+        icon="logout"
+        :disabled="loggingOut"
+        :show-label="expanded || mobileOpen"
+        @click="handleLogout"
+      />
+      <p v-if="logoutError" class="sidebar-account-error" role="alert">{{ logoutError }}</p>
     </nav>
   </aside>
 </template>

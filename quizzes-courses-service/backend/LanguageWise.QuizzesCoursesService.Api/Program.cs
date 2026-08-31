@@ -1,4 +1,9 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Cryptography;
 using LanguageWise.QuizzesCoursesService.Api.Clients;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.IdentityModel.Tokens;
 
 const string ServiceName = "quizzes-courses-service-backend";
 
@@ -11,9 +16,62 @@ builder.Services.AddHttpClient<CatalogClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(10);
 });
 
+var verificationKeyPath = builder.Configuration["Auth:VerificationKeyPath"] ?? "/run/secrets/signing_public_key";
+var rsa = RSA.Create();
+rsa.ImportFromPem(File.ReadAllText(verificationKeyPath));
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new RsaSecurityKey(rsa),
+            ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
+            NameClaimType = JwtRegisteredClaimNames.Name,
+            ClockSkew = TimeSpan.Zero
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                if (string.IsNullOrEmpty(context.Token))
+                {
+                    context.Token = context.Request.Cookies["token"];
+                }
+
+                return Task.CompletedTask;
+            }
+        };
+    });
+
+builder.Services.AddAuthorizationBuilder()
+    .SetFallbackPolicy(new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build());
+
 var app = builder.Build();
 
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = ServiceName }));
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = ServiceName }))
+    .AllowAnonymous();
+
+app.MapGet("/api/me", (HttpContext context) =>
+{
+    var subject = context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+    var username = context.User.Identity?.Name;
+
+    return int.TryParse(subject, out var userId) && !string.IsNullOrWhiteSpace(username)
+        ? Results.Ok(new { id = userId, username })
+        : Results.Unauthorized();
+});
 
 app.MapGet("/api/courses", async (CatalogClient client, CancellationToken cancellationToken) =>
     await ExecuteAsync(

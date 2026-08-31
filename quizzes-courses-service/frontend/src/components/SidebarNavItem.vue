@@ -9,6 +9,11 @@ defineProps<{
   href?: string
   active?: boolean
   disabled?: boolean
+  static?: boolean
+}>()
+
+const emit = defineEmits<{
+  click: []
 }>()
 </script>
 
@@ -28,17 +33,26 @@ defineProps<{
         <span v-if="showLabel">{{ label }}</span>
       </a>
       <button
-        v-else
+        v-else-if="!static"
         v-bind="props"
         type="button"
         class="sidebar-nav-item"
-        disabled
-        :aria-label="showLabel ? undefined : `${label} (coming soon)`"
+        :disabled="disabled"
+        :aria-label="showLabel ? undefined : label"
+        @click="emit('click')"
       >
         <AppIcon :name="icon" />
         <span v-if="showLabel">{{ label }}</span>
-        <span v-if="showLabel" class="sr-only">(coming soon)</span>
       </button>
+      <div
+        v-else
+        v-bind="props"
+        class="sidebar-nav-item sidebar-nav-item-static"
+        :aria-label="showLabel ? undefined : label"
+      >
+        <AppIcon :name="icon" />
+        <span v-if="showLabel">{{ label }}</span>
+      </div>
     </template>
   </v-tooltip>
 </template>
