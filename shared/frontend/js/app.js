@@ -9,7 +9,7 @@
         { name: "Discussion Forum", owner: "Lachlan", frontend: 3002, backend: 5002, database: 6002, available: true },
         { name: "Quizzes & Courses", owner: "Justin", frontend: 3003, backend: 5003, database: 6003, available: true },
         { name: "Quests & Achievements", owner: "Amber", frontend: 3000, frontendPath: "/quests-and-achievements/", backend: 5004, database: 6004, available: true },
-        { name: "Leaderboard & Analytics", owner: "Roan", frontend: 3005, backend: 5005, database: 6005, available: false }
+        { name: "Leaderboard & Analytics", owner: "Roan", frontend: 3000, frontendPath: "/analytics/", backend: 5005, database: 6005, available: true }
     ];
 
     function link(port, path) {
