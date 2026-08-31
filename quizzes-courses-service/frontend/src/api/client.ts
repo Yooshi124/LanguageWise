@@ -1,9 +1,17 @@
 import type { Course, Flashcard, Lesson, LessonSummary, Quiz } from '../models/api'
+import { markSignedOut } from '../composables/useAuth'
 
 const apiBase = `${import.meta.env.BASE_URL}api`
 
 async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(path, { signal, headers: { Accept: 'application/json' } })
+  const response = await fetch(path, {
+    signal,
+    credentials: 'same-origin',
+    headers: { Accept: 'application/json' },
+  })
+  if (response.status === 401) {
+    markSignedOut()
+  }
   if (!response.ok) {
     throw new Error(`Request failed (${response.status} ${response.statusText})`)
   }

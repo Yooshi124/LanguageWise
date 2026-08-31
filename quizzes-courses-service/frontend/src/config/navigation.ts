@@ -20,12 +20,6 @@ export interface ServiceNavigationItem {
   disabled?: boolean
 }
 
-export interface UtilityNavigationItem {
-  label: string
-  icon: AppIconName
-  disabled: true
-}
-
 const sharedFrontend = `${window.location.protocol}//${window.location.hostname}:3000`
 export const sharedHomeHref = `${sharedFrontend}/`
 
@@ -53,9 +47,4 @@ export const serviceNavigation: readonly ServiceNavigationItem[] = [
     icon: 'analytics',
     disabled: true,
   },
-]
-
-export const utilityNavigation: readonly UtilityNavigationItem[] = [
-  { label: 'Profile', icon: 'profile', disabled: true },
-  { label: 'Logout', icon: 'logout', disabled: true },
 ]
