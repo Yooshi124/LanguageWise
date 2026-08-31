@@ -1,29 +1,25 @@
 using System.Text.Json;
 
-namespace LanguageWise.QuizzesCoursesService.Api.Models;
+namespace LanguageWise.QuizzesCoursesService.Db.Models;
 
-public sealed record Course(int Id, string Code, string Title, string Description);
+public enum DomainErrorKind
+{
+    Validation,
+    NotFound,
+    Conflict
+}
 
-public sealed record LessonSummary(int Id, string Slug, string Title, int SortOrder);
+public sealed record DomainError(DomainErrorKind Kind, string Code, string Message);
 
-public sealed record VocabularyWord(string Word, string Meaning);
+public sealed record DomainResult<T>(T? Value, DomainError? Error)
+{
+    public bool IsSuccess => Error is null;
 
-public sealed record LessonDetail(
-    int Id,
-    Course Course,
-    string Slug,
-    string Title,
-    int SortOrder,
-    string ContentMarkdown,
-    IReadOnlyList<VocabularyWord> Vocabulary);
+    public static DomainResult<T> Success(T value) => new(value, null);
 
-public sealed record QuizSummary(
-    int Id,
-    string Title,
-    int LessonId,
-    string LessonSlug,
-    string LessonTitle,
-    int LessonSortOrder);
+    public static DomainResult<T> Failure(DomainErrorKind kind, string code, string message) =>
+        new(default, new DomainError(kind, code, message));
+}
 
 public sealed record QuizQuestion(
     int Id,
@@ -41,17 +37,12 @@ public sealed record QuizDetail(
     int LessonSortOrder,
     IReadOnlyList<QuizQuestion> Questions);
 
-public sealed record QuizAttempt(int Id, int QuizId, DateTimeOffset StartedAt);
+public sealed record QuizAttempt(
+    int Id,
+    int QuizId,
+    DateTimeOffset StartedAt);
 
-public sealed record QuizAnswerSubmission(int QuestionId, string Response);
-
-public sealed record SubmitQuizAttemptRequest(IReadOnlyList<QuizAnswerSubmission> Answers);
-
-public sealed record InternalStartQuizAttemptRequest(int UserId);
-
-public sealed record InternalSubmitQuizAttemptRequest(
-    int UserId,
-    IReadOnlyList<QuizAnswerSubmission> Answers);
+public sealed record QuizResponse(int QuestionId, string Response);
 
 public sealed record QuizAnswerReview(
     int QuestionId,
@@ -68,14 +59,14 @@ public sealed record QuizAttemptResult(
     DateTimeOffset CompletedAt,
     IReadOnlyList<QuizAnswerReview> Answers);
 
+public sealed record Flashcard(int Id, string FrontText, string BackText);
+
 public sealed record FlashcardDeckSummary(
     int LessonId,
     string LessonSlug,
     string LessonTitle,
     int LessonSortOrder,
     int CardCount);
-
-public sealed record Flashcard(int Id, string FrontText, string BackText);
 
 public sealed record FlashcardDeck(
     int LessonId,
@@ -84,8 +75,6 @@ public sealed record FlashcardDeck(
     int LessonSortOrder,
     IReadOnlyList<Flashcard> Cards);
 
-public sealed record LessonProgress(int LessonId, bool Completed);
-
 public sealed record QuizProgress(
     int QuizId,
     int LessonId,
@@ -93,8 +82,18 @@ public sealed record QuizProgress(
     int? BestScore,
     int TotalQuestions);
 
+public sealed record LessonProgress(
+    int LessonId,
+    bool Completed);
+
 public sealed record CourseProgress(
     bool CourseCompleted,
     bool CourseEligible,
     IReadOnlyList<LessonProgress> Lessons,
     IReadOnlyList<QuizProgress> Quizzes);
+
+public sealed record MilestoneState(bool Completed);
+
+public sealed record StartQuizAttemptRequest(int UserId);
+
+public sealed record SubmitQuizAttemptRequest(int UserId, IReadOnlyList<QuizResponse> Answers);

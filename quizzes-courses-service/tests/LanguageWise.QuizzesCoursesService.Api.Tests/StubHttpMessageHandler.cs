@@ -10,17 +10,23 @@ internal sealed class StubHttpMessageHandler(HttpStatusCode statusCode, string r
     : HttpMessageHandler
 {
     public Uri? LastRequestUri { get; private set; }
+    public HttpMethod? LastRequestMethod { get; private set; }
+    public string? LastRequestBody { get; private set; }
 
-    protected override Task<HttpResponseMessage> SendAsync(
+    protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
         LastRequestUri = request.RequestUri;
+        LastRequestMethod = request.Method;
+        LastRequestBody = request.Content is null
+            ? null
+            : await request.Content.ReadAsStringAsync(cancellationToken);
 
-        return Task.FromResult(new HttpResponseMessage(statusCode)
+        return new HttpResponseMessage(statusCode)
         {
             Content = new StringContent(responseBody, Encoding.UTF8, "application/json"),
             RequestMessage = request
-        });
+        };
     }
 }

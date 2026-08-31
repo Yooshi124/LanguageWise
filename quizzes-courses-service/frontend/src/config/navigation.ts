@@ -5,11 +5,13 @@ export type AppIconName =
   | 'close'
   | 'courses'
   | 'discussion'
+  | 'flashcards'
   | 'games'
   | 'home'
   | 'logout'
   | 'menu'
   | 'profile'
+  | 'quizzes'
   | 'quests'
 
 export interface ServiceNavigationItem {

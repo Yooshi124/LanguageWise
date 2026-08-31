@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
+import AppIcon from '../components/AppIcon.vue'
 import LanguageCourseCard from '../components/LanguageCourseCard.vue'
 import { useCourses } from '../composables/useCourses'
 import { languageOptions } from '../config/languages'
@@ -51,15 +52,41 @@ onMounted(() => store.load())
 
       <v-row class="mt-8">
         <v-col cols="12" md="6">
-          <v-card to="/quizzes" rounded="xl" variant="tonal" color="primary" class="pa-3">
-            <v-card-title>Quizzes <v-chip size="small">Coming soon</v-chip></v-card-title>
-            <v-card-text>Check your progress with short, focused challenges.</v-card-text>
+          <v-card
+            :to="{ name: 'quizzes' }"
+            rounded="xl"
+            variant="tonal"
+            color="primary"
+            class="home-feature-card pa-3"
+            aria-label="Open quizzes"
+          >
+            <div class="home-feature-icon" aria-hidden="true">
+              <AppIcon name="quizzes" :size="38" />
+            </div>
+            <div class="home-feature-copy">
+              <v-card-title>Quizzes</v-card-title>
+              <v-card-text>Check your progress with short, focused challenges.</v-card-text>
+            </div>
+            <AppIcon class="home-feature-arrow" name="arrow-right" aria-hidden="true" />
           </v-card>
         </v-col>
         <v-col cols="12" md="6">
-          <v-card to="/flashcards" rounded="xl" variant="tonal" color="secondary" class="pa-3">
-            <v-card-title>Flashcards <v-chip size="small">Coming soon</v-chip></v-card-title>
-            <v-card-text>Build a vocabulary that sticks with active recall.</v-card-text>
+          <v-card
+            :to="{ name: 'flashcards' }"
+            rounded="xl"
+            variant="tonal"
+            color="secondary"
+            class="home-feature-card pa-3"
+            aria-label="Open flashcards"
+          >
+            <div class="home-feature-icon" aria-hidden="true">
+              <AppIcon name="flashcards" :size="38" />
+            </div>
+            <div class="home-feature-copy">
+              <v-card-title>Flashcards</v-card-title>
+              <v-card-text>Build a vocabulary that sticks with active recall.</v-card-text>
+            </div>
+            <AppIcon class="home-feature-arrow" name="arrow-right" aria-hidden="true" />
           </v-card>
         </v-col>
       </v-row>

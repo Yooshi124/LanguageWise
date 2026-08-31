@@ -1,7 +1,10 @@
 using LanguageWise.QuizzesCoursesService.Db.Data;
 using LanguageWise.QuizzesCoursesService.Db.Models;
+using Microsoft.AspNetCore.Routing;
+using System.Text.Json.Serialization;
 
 const string ServiceName = "quizzes-courses-service-db";
+const string PublicCatalogError = "The SQLite catalog health check failed.";
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,6 +17,7 @@ var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
 }.ToString();
 
 builder.Services.AddSingleton(new CatalogRepository(connectionString));
+builder.Services.AddSingleton(new LearningRepository(connectionString));
 builder.Services.AddSingleton(serviceProvider => new DatabaseInitializer(
     connectionString,
     Path.Combine(AppContext.BaseDirectory, "sql"),
@@ -23,16 +27,38 @@ var app = builder.Build();
 
 app.Services.GetRequiredService<DatabaseInitializer>().Initialise();
 
-app.MapGet("/health", (CatalogRepository repository) =>
+app.MapGet("/health", (CatalogRepository repository, EndpointDataSource endpointDataSource) =>
 {
+    var endpoints = GetRegisteredEndpoints(endpointDataSource);
+
     try
     {
-        return Results.Ok(new { status = "healthy", service = ServiceName, courses = repository.CountCourses() });
+        var courses = repository.CountCourses();
+        return Results.Ok(new DatabaseServiceHealth(
+            "healthy",
+            ServiceName,
+            courses,
+            null,
+            new Dictionary<string, DatabaseDependencyHealth>
+            {
+                ["catalog"] = new("healthy", "sqlite", courses)
+            },
+            endpoints));
     }
     catch (Exception exception)
     {
+        app.Logger.LogError(exception, "The SQLite catalog health check failed.");
         return Results.Json(
-            new { status = "unhealthy", service = ServiceName, error = exception.Message },
+            new DatabaseServiceHealth(
+                "unhealthy",
+                ServiceName,
+                null,
+                PublicCatalogError,
+                new Dictionary<string, DatabaseDependencyHealth>
+                {
+                    ["catalog"] = new("unhealthy", "sqlite", Error: PublicCatalogError)
+                },
+                endpoints),
             statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 });
@@ -51,14 +77,126 @@ app.MapGet("/api/courses/{code}/lessons", (string code, CatalogRepository reposi
 app.MapGet("/api/courses/{code}/lessons/{slug}", (string code, string slug, CatalogRepository repository) =>
     repository.GetLesson(code, slug) is { } lesson ? Results.Ok(lesson) : Results.NotFound());
 
-app.MapGet("/api/courses/{code}/quizzes", (string code, CatalogRepository repository) =>
-    repository.GetCourse(code) is null
+app.MapGet("/api/courses/{code}/quizzes", (
+    string code,
+    CatalogRepository catalog,
+    LearningRepository learning) =>
+    catalog.GetCourse(code) is null
         ? Results.NotFound()
-        : Results.Ok(repository.GetQuizzes(code)));
+        : Results.Ok(learning.GetQuizSummaries(code)));
 
-app.MapGet("/api/courses/{code}/flashcards", (string code, CatalogRepository repository) =>
-    repository.GetCourse(code) is null
+app.MapGet("/api/quizzes/{quizId:int}", (int quizId, LearningRepository repository) =>
+    repository.GetQuiz(quizId) is { } quiz ? Results.Ok(quiz) : Results.NotFound());
+
+app.MapPost("/api/quizzes/{quizId:int}/attempts", (
+    int quizId,
+    StartQuizAttemptRequest request,
+    LearningRepository repository) =>
+{
+    var result = repository.StartAttempt(quizId, request.UserId);
+    return result.IsSuccess
+        ? Results.Created($"/api/quiz-attempts/{result.Value!.Id}", result.Value)
+        : ToHttpResult(result);
+});
+
+app.MapPost("/api/quiz-attempts/{attemptId:int}/submit", (
+    int attemptId,
+    SubmitQuizAttemptRequest request,
+    LearningRepository repository) =>
+    ToHttpResult(repository.SubmitAttempt(attemptId, request.UserId, request.Answers)));
+
+app.MapGet("/api/courses/{code}/flashcard-decks", (
+    string code,
+    CatalogRepository catalog,
+    LearningRepository learning) =>
+    catalog.GetCourse(code) is null
         ? Results.NotFound()
-        : Results.Ok(repository.GetFlashcards(code)));
+        : Results.Ok(learning.GetFlashcardDecks(code)));
+
+app.MapGet("/api/courses/{code}/flashcard-decks/{lessonSlug}", (
+    string code,
+    string lessonSlug,
+    LearningRepository repository) =>
+    repository.GetFlashcardDeck(code, lessonSlug) is { } deck
+        ? Results.Ok(deck)
+        : Results.NotFound());
+
+app.MapGet("/api/courses/{code}/progress/{userId:int}", (
+    string code,
+    int userId,
+    LearningRepository repository) =>
+    ToHttpResult(repository.GetCourseProgress(code, userId)));
+
+app.MapPut("/api/lessons/{lessonId:int}/milestones/{userId:int}", (
+    int lessonId,
+    int userId,
+    LearningRepository repository) =>
+    ToHttpResult(repository.CompleteLesson(lessonId, userId)));
+
+app.MapDelete("/api/lessons/{lessonId:int}/milestones/{userId:int}", (
+    int lessonId,
+    int userId,
+    LearningRepository repository) =>
+    ToHttpResult(repository.UncompleteLesson(lessonId, userId)));
+
+app.MapPut("/api/courses/{code}/milestones/{userId:int}", (
+    string code,
+    int userId,
+    LearningRepository repository) =>
+    ToHttpResult(repository.CompleteCourse(code, userId)));
+
+app.MapDelete("/api/courses/{code}/milestones/{userId:int}", (
+    string code,
+    int userId,
+    LearningRepository repository) =>
+    ToHttpResult(repository.UncompleteCourse(code, userId)));
 
 app.Run();
+
+static IResult ToHttpResult<T>(DomainResult<T> result)
+{
+    if (result.IsSuccess)
+    {
+        return Results.Ok(result.Value);
+    }
+
+    var error = result.Error!;
+    var body = new { error = error.Code, message = error.Message };
+    return error.Kind switch
+    {
+        DomainErrorKind.Validation => Results.BadRequest(body),
+        DomainErrorKind.NotFound => Results.NotFound(body),
+        DomainErrorKind.Conflict => Results.Conflict(body),
+        _ => throw new ArgumentOutOfRangeException(nameof(error.Kind))
+    };
+}
+
+static IReadOnlyList<RegisteredEndpoint> GetRegisteredEndpoints(
+    EndpointDataSource endpointDataSource) =>
+    endpointDataSource.Endpoints
+        .OfType<RouteEndpoint>()
+        .SelectMany(endpoint =>
+        {
+            var methods = endpoint.Metadata.GetMetadata<IHttpMethodMetadata>()?.HttpMethods ?? ["*"];
+            var route = endpoint.RoutePattern.RawText ?? endpoint.RoutePattern.ToString() ?? string.Empty;
+            return methods.Select(method => new RegisteredEndpoint(method, route, "registered"));
+        })
+        .OrderBy(endpoint => endpoint.Route, StringComparer.Ordinal)
+        .ThenBy(endpoint => endpoint.Method, StringComparer.Ordinal)
+        .ToArray();
+
+internal sealed record DatabaseServiceHealth(
+    string Status,
+    string Service,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? Courses,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Error,
+    IReadOnlyDictionary<string, DatabaseDependencyHealth> Dependencies,
+    IReadOnlyList<RegisteredEndpoint> Endpoints);
+
+internal sealed record DatabaseDependencyHealth(
+    string Status,
+    string Type,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? Courses = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Error = null);
+
+internal sealed record RegisteredEndpoint(string Method, string Route, string Status);

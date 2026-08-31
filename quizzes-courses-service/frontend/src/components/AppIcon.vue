@@ -4,7 +4,9 @@ import {
   mdiArrowLeft,
   mdiArrowRight,
   mdiBookOpenPageVariantOutline,
+  mdiCardsOutline,
   mdiChartBoxOutline,
+  mdiClipboardCheckOutline,
   mdiClose,
   mdiControllerClassicOutline,
   mdiForumOutline,
@@ -27,11 +29,13 @@ const icons: Record<AppIconName, string> = {
   close: mdiClose,
   courses: mdiBookOpenPageVariantOutline,
   discussion: mdiForumOutline,
+  flashcards: mdiCardsOutline,
   games: mdiControllerClassicOutline,
   home: mdiHomeOutline,
   logout: mdiLogoutVariant,
   menu: mdiMenu,
   profile: mdiAccountCircleOutline,
+  quizzes: mdiClipboardCheckOutline,
   quests: mdiTrophyOutline,
 }
 </script>

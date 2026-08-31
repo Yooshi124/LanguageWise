@@ -15,6 +15,10 @@ public sealed record LessonDetail(
     string ContentMarkdown,
     IReadOnlyList<VocabularyWord> Vocabulary);
 
-public sealed record QuizSummary(int Id, int CourseId, string Title, bool IsAi);
-
-public sealed record Flashcard(int Id, int CourseId, string FrontText, string BackText, bool IsAi);
+public sealed record QuizSummary(
+    int Id,
+    string Title,
+    int LessonId,
+    string LessonSlug,
+    string LessonTitle,
+    int LessonSortOrder);
