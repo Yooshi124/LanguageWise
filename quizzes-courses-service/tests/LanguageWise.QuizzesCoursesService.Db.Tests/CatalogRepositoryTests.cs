@@ -38,7 +38,9 @@ public sealed class CatalogRepositoryTests
     [SetUp]
     public void SetUp()
     {
-        databasePath = Path.Combine(Path.GetTempPath(), $"languagewise-{Guid.NewGuid():N}.db");
+        databasePath = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            $"languagewise-catalog-{Guid.NewGuid():N}.db");
         connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = databasePath,

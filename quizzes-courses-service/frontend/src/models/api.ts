@@ -27,17 +27,90 @@ export interface Lesson {
   vocabulary: VocabularyItem[]
 }
 
-export interface Quiz {
+export interface QuizSummary {
   id: number
-  courseId: number
   title: string
-  isAi: boolean
+  lessonId: number
+  lessonSlug: string
+  lessonTitle: string
+  lessonSortOrder: number
+}
+
+export type QuizQuestionType = 'multiple_choice' | 'word_ordering' | 'free_text' | string
+
+export interface QuizQuestion {
+  id: number
+  sortOrder: number
+  content: string
+  type: QuizQuestionType
+  questionData: {
+    options?: readonly string[]
+    tokens?: readonly string[]
+    [key: string]: unknown
+  }
+}
+
+export interface QuizDetail extends QuizSummary {
+  questions: QuizQuestion[]
+}
+
+export interface QuizAttempt {
+  id: number
+  quizId: number
+  startedAt: string
+}
+
+export interface QuizSubmissionAnswer {
+  questionId: number
+  studentResponse: string
+  isCorrect: boolean
+  correctAnswer: string
+}
+
+export interface QuizSubmission {
+  attemptId: number
+  quizId: number
+  score: number
+  totalQuestions: number
+  passed: boolean
+  completedAt: string
+  answers: QuizSubmissionAnswer[]
+}
+
+export interface FlashcardDeckSummary {
+  lessonId: number
+  lessonSlug: string
+  lessonTitle: string
+  lessonSortOrder: number
+  cardCount: number
 }
 
 export interface Flashcard {
   id: number
-  courseId: number
   frontText: string
   backText: string
-  isAi: boolean
+}
+
+export interface FlashcardDeck extends Omit<FlashcardDeckSummary, 'cardCount'> {
+  cards: Flashcard[]
+}
+
+export interface LessonProgress {
+  lessonId: number
+  completed: boolean
+}
+
+export interface QuizProgress {
+  quizId: number
+  lessonId: number
+  completed: boolean
+  bestScore: number | null
+  totalQuestions: number
+}
+
+export interface CourseProgress {
+  courseCompleted: boolean
+  courseEligible: boolean
+  lessons: LessonProgress[]
+  quizzes: QuizProgress[]
 }

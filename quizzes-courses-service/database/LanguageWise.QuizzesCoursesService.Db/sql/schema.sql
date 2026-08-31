@@ -28,20 +28,21 @@ CREATE TABLE IF NOT EXISTS LessonVocabulary (
 
 CREATE TABLE IF NOT EXISTS Quizzes (
     Id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    CourseId INTEGER NOT NULL,
+    LessonId INTEGER NOT NULL UNIQUE,
     Title    TEXT NOT NULL,
-    IsAi     INTEGER NOT NULL DEFAULT 0 CHECK (IsAi IN (0, 1)),
-    FOREIGN KEY (CourseId) REFERENCES Courses(Id) ON DELETE CASCADE
+    FOREIGN KEY (LessonId) REFERENCES Lessons(Id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS QuizQuestions (
     Id            INTEGER PRIMARY KEY AUTOINCREMENT,
     QuizId        INTEGER NOT NULL,
+    SortOrder     INTEGER NOT NULL CHECK (SortOrder > 0),
     Content       TEXT NOT NULL,
-    Type          TEXT NOT NULL CHECK (Type IN ('word_ordering', 'matching', 'multiple_choice')),
+    Type          TEXT NOT NULL CHECK (Type IN ('multiple_choice', 'word_ordering', 'free_text')),
     QuestionData  TEXT NOT NULL CHECK (json_valid(QuestionData)),
     CorrectAnswer TEXT NOT NULL,
-    FOREIGN KEY (QuizId) REFERENCES Quizzes(Id) ON DELETE CASCADE
+    FOREIGN KEY (QuizId) REFERENCES Quizzes(Id) ON DELETE CASCADE,
+    UNIQUE (QuizId, SortOrder)
 );
 
 CREATE TABLE IF NOT EXISTS QuizAttempts (
@@ -49,7 +50,7 @@ CREATE TABLE IF NOT EXISTS QuizAttempts (
     UserId         INTEGER NOT NULL CHECK (UserId > 0),
     QuizId         INTEGER NOT NULL,
     Score          INTEGER NOT NULL DEFAULT 0 CHECK (Score >= 0 AND Score <= TotalQuestions),
-    TotalQuestions INTEGER NOT NULL CHECK (TotalQuestions >= 0),
+    TotalQuestions INTEGER NOT NULL CHECK (TotalQuestions > 0),
     StartedAt      TEXT NOT NULL,
     CompletedAt    TEXT,
     FOREIGN KEY (QuizId) REFERENCES Quizzes(Id) ON DELETE CASCADE
@@ -65,15 +66,6 @@ CREATE TABLE IF NOT EXISTS QuizAnswers (
     FOREIGN KEY (AttemptId) REFERENCES QuizAttempts(Id) ON DELETE CASCADE,
     FOREIGN KEY (QuestionId) REFERENCES QuizQuestions(Id) ON DELETE CASCADE,
     UNIQUE (AttemptId, QuestionId)
-);
-
-CREATE TABLE IF NOT EXISTS Flashcards (
-    Id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    CourseId  INTEGER NOT NULL,
-    FrontText TEXT NOT NULL,
-    BackText  TEXT NOT NULL,
-    IsAi      INTEGER NOT NULL DEFAULT 0 CHECK (IsAi IN (0, 1)),
-    FOREIGN KEY (CourseId) REFERENCES Courses(Id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS Milestones (
@@ -97,7 +89,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS UX_Milestones_User_Quiz
     ON Milestones(UserId, QuizId) WHERE QuizId IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS IX_Lessons_CourseId ON Lessons(CourseId);
-CREATE INDEX IF NOT EXISTS IX_Quizzes_CourseId ON Quizzes(CourseId);
 CREATE INDEX IF NOT EXISTS IX_QuizQuestions_QuizId ON QuizQuestions(QuizId);
 CREATE INDEX IF NOT EXISTS IX_QuizAttempts_UserId ON QuizAttempts(UserId);
-CREATE INDEX IF NOT EXISTS IX_Flashcards_CourseId ON Flashcards(CourseId);
+CREATE INDEX IF NOT EXISTS IX_QuizAttempts_QuizId_UserId ON QuizAttempts(QuizId, UserId);
