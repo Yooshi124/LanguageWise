@@ -10,6 +10,7 @@ volumes:
   chat-discussion-service-db-data:
   quests-achievements-notifications-service-db-data:
   mini-games-service-db-data:
+  leaderboard-analytics-service-db-data:
   ollama-data:
 
 # Generate using tools/gen-signing-key/gen-signing-key.ps1
@@ -283,5 +284,42 @@ services:
     networks: [languagewise]
     depends_on:
       quests-achievements-notifications-service-backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  leaderboard-analytics-service-db:
+    container_name: leaderboard-analytics-service-db
+    build:
+      context: ./leaderboard-analytics-service/database
+    environment:
+      Database__Path: /data/leaderboard-analytics-service.db
+    volumes:
+      - leaderboard-analytics-service-db-data:/data
+    ports:
+      - "127.0.0.1:6005:8080"
+    networks: [languagewise]
+    restart: unless-stopped
+
+  leaderboard-analytics-service-backend:
+    container_name: leaderboard-analytics-service-backend
+    build:
+      context: ./leaderboard-analytics-service/backend
+    environment:
+      Services__Database: http://leaderboard-analytics-service-db:8080
+    ports:
+      - "127.0.0.1:5005:8080"
+    networks: [languagewise]
+    depends_on:
+      leaderboard-analytics-service-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  leaderboard-analytics-service-frontend:
+    container_name: leaderboard-analytics-service-frontend
+    build:
+      context: ./leaderboard-analytics-service/frontend
+    networks: [languagewise]
+    depends_on:
+      leaderboard-analytics-service-backend:
         condition: service_healthy
     restart: unless-stopped
