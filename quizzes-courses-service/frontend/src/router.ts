@@ -2,8 +2,9 @@ import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from './views/HomeView.vue'
 import CourseView from './views/CourseView.vue'
 import WorkInProgressView from './views/WorkInProgressView.vue'
+import { ensureAuthenticated } from './composables/useAuth'
 
-export default createRouter({
+const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/', name: 'home', component: HomeView },
@@ -28,3 +29,15 @@ export default createRouter({
   ],
   scrollBehavior: () => ({ top: 0 }),
 })
+
+router.beforeEach(async () => {
+  try {
+    await ensureAuthenticated()
+  } catch (error) {
+    console.error('Unable to verify the current login.', error)
+  }
+
+  return true
+})
+
+export default router

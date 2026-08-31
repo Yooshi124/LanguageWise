@@ -130,6 +130,9 @@ services:
       context: ./quizzes-courses-service/backend
     environment:
       Services__Database: http://quizzes-courses-service-db:8080
+      Auth__VerificationKeyPath: /run/secrets/signing_public_key
+    secrets:
+      - signing_public_key
     ports:
       - "127.0.0.1:5003:8080"
     networks: [languagewise]

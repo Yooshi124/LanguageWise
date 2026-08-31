@@ -45,6 +45,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .sidebar-services, .sidebar-utilities { display: flex; flex-direction: column; gap: 7px; }
 .sidebar-services { margin-top: 56px; }
 .sidebar-utilities { margin-top: auto; }
+.sidebar-account-error { margin: 4px 8px 0; color: #fda4af; font-size: .75rem; line-height: 1.35; }
+.app-sidebar:not(.expanded) .sidebar-account-error { display: none; }
 .sidebar-nav-item {
   display: flex;
   width: 100%;
@@ -66,6 +68,8 @@ button, a { -webkit-tap-highlight-color: transparent; }
 }
 .app-sidebar:not(.expanded) .sidebar-nav-item { justify-content: center; padding-inline: 0; }
 .sidebar-nav-item:hover { color: white; background: rgba(255, 255, 255, .08); }
+.sidebar-nav-item-static { cursor: default; }
+.sidebar-nav-item-static:hover { color: #cbd1e4; background: transparent; }
 .sidebar-nav-item.active { color: #312e81; background: white; box-shadow: 0 7px 20px rgba(0, 0, 0, .15); }
 .sidebar-nav-item:disabled { color: #858da7; cursor: not-allowed; opacity: .62; }
 .sidebar-nav-item:disabled:hover { background: transparent; }
@@ -137,6 +141,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .wip-page { height: calc(100vh - 64px); min-height: 0; display: grid; place-items: center; padding: 24px; overflow: hidden; }
 .wip-card { border: 1px solid #e1e5ee; background: linear-gradient(145deg, white, #f1f3ff) !important; }
 .wip-icon { font-size: 4rem; color: #4f46e5; }
+.login-required-icon { margin: 0 auto 16px; color: #4f46e5; }
 .wip-card h1 { font-size: 2.4rem; margin-bottom: 15px; }
 .wip-card p { max-width: 500px; margin: 0 auto 30px; color: #667085; font-size: 1.1rem; line-height: 1.7; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
