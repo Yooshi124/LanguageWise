@@ -3,11 +3,21 @@ using Microsoft.Data.Sqlite;
 namespace LanguageWise.QuizzesCoursesService.Db.Data;
 
 /// <summary>
-/// Applies the schema on every start-up and seeds the catalog the first time it is empty,
-/// so that a brand new Docker volume always comes up with usable data.
+/// Applies the development schema and its exact ordered seed manifest.
 /// </summary>
 public sealed class DatabaseInitializer(string connectionString, string sqlDirectory, ILogger<DatabaseInitializer> logger)
 {
+    private static readonly string[] SeedManifest =
+    [
+        "00-courses.sql",
+        "10-de.sql",
+        "20-fr.sql",
+        "30-it.sql",
+        "40-nl.sql",
+        "50-es.sql",
+        "60-pl.sql"
+    ];
+
     public void Initialise()
     {
         EnsureDatabaseDirectoryExists();
@@ -15,13 +25,61 @@ public sealed class DatabaseInitializer(string connectionString, string sqlDirec
         using var connection = new SqliteConnection(connectionString);
         connection.Open();
 
-        Execute(connection, ReadSqlFile("schema.sql"));
-        logger.LogInformation("Schema applied to {ConnectionString}.", connectionString);
+        var schemaPath = Path.Combine(sqlDirectory, "schema.sql");
 
-        if (CountCourses(connection) == 0)
+        try
         {
-            Execute(connection, ReadSqlFile("seed.sql"));
-            logger.LogInformation("Seeded {Count} courses.", CountCourses(connection));
+            Execute(connection, transaction: null, ReadSqlFile(schemaPath));
+            logger.LogInformation("Applied schema script {SchemaScript}.", Path.GetFileName(schemaPath));
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(
+                exception,
+                "Failed to apply schema script {SchemaScript} from {SchemaPath}.",
+                Path.GetFileName(schemaPath),
+                schemaPath);
+            throw;
+        }
+
+        string[] seedPaths;
+
+        try
+        {
+            seedPaths = ValidateSeedManifest();
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(
+                exception,
+                "Failed to validate the seed manifest under {SeedsDirectory}.",
+                Path.Combine(sqlDirectory, "seeds"));
+            throw;
+        }
+
+        var seedContext = "starting seed transaction";
+
+        try
+        {
+            using var transaction = connection.BeginTransaction();
+
+            foreach (var seedPath in seedPaths)
+            {
+                seedContext = seedPath;
+                Execute(connection, transaction, File.ReadAllText(seedPath));
+                logger.LogInformation("Executed seed script {SeedScript}.", Path.GetFileName(seedPath));
+            }
+
+            seedContext = "committing seed transaction";
+            transaction.Commit();
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(
+                exception,
+                "Seed initialization failed while processing {SeedContext}; the seed transaction was not committed.",
+                seedContext);
+            throw;
         }
     }
 
@@ -36,29 +94,64 @@ public sealed class DatabaseInitializer(string connectionString, string sqlDirec
         }
     }
 
-    private string ReadSqlFile(string fileName)
+    private static string ReadSqlFile(string path)
     {
-        var path = Path.Combine(sqlDirectory, fileName);
-
         if (!File.Exists(path))
         {
-            throw new FileNotFoundException($"Required SQL script '{fileName}' was not found.", path);
+            throw new FileNotFoundException(
+                $"Required SQL script '{Path.GetFileName(path)}' was not found at '{path}'.",
+                path);
         }
 
         return File.ReadAllText(path);
     }
 
-    private static void Execute(SqliteConnection connection, string sql)
+    private string[] ValidateSeedManifest()
     {
-        using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        command.ExecuteNonQuery();
+        var seedsDirectory = Path.Combine(sqlDirectory, "seeds");
+
+        if (!Directory.Exists(seedsDirectory))
+        {
+            throw new DirectoryNotFoundException(
+                $"Required seed SQL directory was not found: '{seedsDirectory}'.");
+        }
+
+        var actualFileNames = Directory
+            .EnumerateFiles(seedsDirectory, "*", SearchOption.TopDirectoryOnly)
+            .Where(path => string.Equals(Path.GetExtension(path), ".sql", StringComparison.OrdinalIgnoreCase))
+            .Select(Path.GetFileName)
+            .OfType<string>()
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        var missingFileNames = SeedManifest
+            .Except(actualFileNames, StringComparer.Ordinal)
+            .ToArray();
+        var unexpectedFileNames = actualFileNames
+            .Except(SeedManifest, StringComparer.Ordinal)
+            .ToArray();
+
+        if (missingFileNames.Length > 0 || unexpectedFileNames.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"Seed SQL manifest mismatch in '{seedsDirectory}'. " +
+                $"Missing: {FormatFileList(missingFileNames)}. " +
+                $"Unexpected: {FormatFileList(unexpectedFileNames)}.");
+        }
+
+        return SeedManifest
+            .Select(fileName => Path.Combine(seedsDirectory, fileName))
+            .ToArray();
     }
 
-    private static long CountCourses(SqliteConnection connection)
+    private static string FormatFileList(string[] fileNames) =>
+        fileNames.Length == 0 ? "(none)" : string.Join(", ", fileNames);
+
+    private static void Execute(SqliteConnection connection, SqliteTransaction? transaction, string sql)
     {
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM Courses;";
-        return Convert.ToInt64(command.ExecuteScalar());
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        command.ExecuteNonQuery();
     }
 }

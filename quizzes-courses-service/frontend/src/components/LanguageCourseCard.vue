@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Course } from '../models/api'
-import AppIcon from './AppIcon.vue'
+import CardAction from './CardAction.vue'
 
 defineProps<{
   code: string
@@ -25,7 +25,7 @@ defineProps<{
       <h2>{{ course?.title || name }}</h2>
       <p>{{ course?.description || `Start your ${name} learning journey.` }}</p>
       <div class="card-action" :style="{ color }">
-        Explore course <AppIcon class="course-action-arrow" name="arrow-right" :size="46" />
+        <CardAction label="Explore course" :size="46" />
       </div>
     </v-card-text>
   </v-card>

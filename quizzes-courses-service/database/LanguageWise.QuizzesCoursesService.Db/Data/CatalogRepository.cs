@@ -98,63 +98,6 @@ public sealed class CatalogRepository(string connectionString)
             vocabulary);
     }
 
-    public IReadOnlyList<QuizSummary> GetQuizzes(string courseCode)
-    {
-        using var connection = Open();
-        using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            SELECT q.Id, q.CourseId, q.Title, q.IsAi
-            FROM Quizzes q
-            INNER JOIN Courses c ON c.Id = q.CourseId
-            WHERE c.Code = $code
-            ORDER BY q.Id;
-            """;
-        command.Parameters.AddWithValue("$code", courseCode);
-
-        var quizzes = new List<QuizSummary>();
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
-        {
-            quizzes.Add(new QuizSummary(
-                reader.GetInt32(0),
-                reader.GetInt32(1),
-                reader.GetString(2),
-                reader.GetBoolean(3)));
-        }
-
-        return quizzes;
-    }
-
-    public IReadOnlyList<Flashcard> GetFlashcards(string courseCode)
-    {
-        using var connection = Open();
-        using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            SELECT f.Id, f.CourseId, f.FrontText, f.BackText, f.IsAi
-            FROM Flashcards f
-            INNER JOIN Courses c ON c.Id = f.CourseId
-            WHERE c.Code = $code
-            ORDER BY f.Id;
-            """;
-        command.Parameters.AddWithValue("$code", courseCode);
-
-        var flashcards = new List<Flashcard>();
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
-        {
-            flashcards.Add(new Flashcard(
-                reader.GetInt32(0),
-                reader.GetInt32(1),
-                reader.GetString(2),
-                reader.GetString(3),
-                reader.GetBoolean(4)));
-        }
-
-        return flashcards;
-    }
-
     public long CountCourses()
     {
         using var connection = Open();

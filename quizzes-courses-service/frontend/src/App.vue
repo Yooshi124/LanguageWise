@@ -11,7 +11,9 @@ const route = useRoute()
 const auth = useAuth()
 const sidebarExpanded = ref(false)
 const mobileSidebarOpen = ref(false)
-const showTopBar = computed(() => route.name !== 'course' && route.name !== 'lesson')
+const showTopBar = computed(
+  () => route.name !== 'course' && route.name !== 'lesson' && !route.meta.hideTopBar,
+)
 </script>
 
 <template>
