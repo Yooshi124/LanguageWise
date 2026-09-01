@@ -1,8 +1,5 @@
 namespace LanguageWise.MiniGamesService.Api.Feature.GuessTheWord;
 
-using System.Globalization;
-using System.Text;
-
 public sealed class GuessTheWordGame
 {
     private const int WordLength = 5;
@@ -134,18 +131,61 @@ public sealed class GuessTheWordGame
             : new string(trimmed.Select(char.ToUpperInvariant).ToArray());
     }
 
-    /// <summary>Strip diacritics so accented letters compare equal to their base letter (Ä → A).</summary>
-    private static char FoldLetter(char letter)
+    /// <summary>
+    /// Fold accented letters onto their base letter (Ä → A) so players can type
+    /// plain ASCII. ß is NOT a diacritic variant and deliberately stays its own
+    /// letter. Implemented with an explicit table rather than Unicode
+    /// normalization because the app runs with InvariantGlobalization, where
+    /// NFD decomposition / Unicode categories are unavailable.
+    /// </summary>
+    private static char FoldLetter(char letter) => letter switch
     {
-        var decomposed = letter.ToString().Normalize(NormalizationForm.FormD);
-        foreach (var character in decomposed)
-        {
-            if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
-            {
-                return character;
-            }
-        }
+        >= 'A' and <= 'Z' => letter,
 
-        return letter;
-    }
+        // A-family
+        'À' or 'Á' or 'Â' or 'Ã' or 'Ä' or 'Å' or 'Ā' or 'Ă' or 'Ą' => 'A',
+        // AE ligature
+        'Æ' => 'A',
+        // C-family
+        'Ç' or 'Ć' or 'Ĉ' or 'Ċ' or 'Č' => 'C',
+        // D-family
+        'Ď' or 'Đ' => 'D',
+        // E-family
+        'È' or 'É' or 'Ê' or 'Ë' or 'Ē' or 'Ĕ' or 'Ė' or 'Ę' or 'Ě' => 'E',
+        // G-family
+        'Ĝ' or 'Ğ' or 'Ġ' or 'Ģ' => 'G',
+        // H-family
+        'Ĥ' or 'Ħ' => 'H',
+        // I-family
+        'Ì' or 'Í' or 'Î' or 'Ï' or 'Ĩ' or 'Ī' or 'Ĭ' or 'Į' or 'İ' => 'I',
+        // J
+        'Ĵ' => 'J',
+        // K
+        'Ķ' => 'K',
+        // L-family (Ł is deliberately folded to L so plain typing works)
+        'Ĺ' or 'Ļ' or 'Ľ' or 'Ŀ' or 'Ł' => 'L',
+        // N-family
+        'Ñ' or 'Ń' or 'Ņ' or 'Ň' => 'N',
+        // O-family
+        'Ò' or 'Ó' or 'Ô' or 'Õ' or 'Ö' or 'Ø' or 'Ō' or 'Ŏ' or 'Ő' => 'O',
+        // OE ligature
+        'Œ' => 'O',
+        // R-family
+        'Ŕ' or 'Ŗ' or 'Ř' => 'R',
+        // S-family
+        'Ś' or 'Ŝ' or 'Ş' or 'Š' => 'S',
+        // T-family
+        'Ţ' or 'Ť' or 'Ŧ' => 'T',
+        // U-family
+        'Ù' or 'Ú' or 'Û' or 'Ü' or 'Ũ' or 'Ū' or 'Ŭ' or 'Ů' or 'Ű' or 'Ų' => 'U',
+        // W
+        'Ŵ' => 'W',
+        // Y-family
+        'Ý' or 'Þ' or 'Ÿ' or 'Ŷ' => 'Y',
+        // Z-family
+        'Ź' or 'Ż' or 'Ž' => 'Z',
+
+        // Anything else (including ß) is kept as its own letter.
+        _ => letter,
+    };
 }

@@ -37,22 +37,21 @@ public class GuessTheWordGameTests
     [Test]
     public void SubmitGuess_PreservesEszettAsASingleLetter()
     {
-        var game = new GuessTheWordGame("German", ["GRÜßE", "VOCAB"]);
-        var state = game.GetState();
+        // Single-candidate list keeps the answer deterministic. If ß were
+        // expanded to SS this word would be six letters and the game would
+        // reject it as a candidate, so constructing the game itself proves the
+        // letter was preserved.
+        var game = new GuessTheWordGame("German", ["GRÜßE"]);
 
-        // The answer must keep ß as one letter instead of expanding to SS.
-        var answer = state.CorrectAnswer ?? string.Empty;
-        if (state.IsComplete)
-        {
-            Assert.That(answer.Length, Is.EqualTo(5));
-        }
-
-        var result = game.SubmitGuess("grüße");
+        // Typing the word with Ü folded to U (and ß kept as itself) must win,
+        // and the revealed answer must still contain ß as one letter.
+        var result = game.SubmitGuess("GRUßE");
 
         Assert.Multiple(() =>
         {
             Assert.That(result.Colours.All(colour => colour == 'G'), Is.True);
             Assert.That(result.IsCorrect, Is.True);
+            Assert.That(game.GetState().CorrectAnswer, Is.EqualTo("GRÜßE"));
         });
     }
 
