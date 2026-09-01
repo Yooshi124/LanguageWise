@@ -1,6 +1,7 @@
 <template>
 	<main class="game-page">
 		<a class="back-button" :href="gameHome" aria-label="Return to the main game page">Back</a>
+		<GameHelp :steps="howToPlay" />
 		<header class="game-header">
 			<p class="eyebrow">Find the connection</p>
 			<h1>Word Search</h1>
@@ -64,9 +65,17 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { initializeGame, submitWordSearchWord, useWordSearchHint, giveUpWordSearch, resetGame, isNoVocabularyError, NO_VOCABULARY_MESSAGE } from './api.js';
+import GameHelp from './components/GameHelp.vue';
 
 // App base path ('/mini-games/' through the gateway, '/' in local dev).
 const gameHome = `${import.meta.env.BASE_URL}game`;
+
+const howToPlay = [
+	'Words from your course vocabulary are hidden as a chain of connected letters in the grid.',
+	'Press and drag from letter to letter to trace a word, then release to submit it.',
+	'Found words stay highlighted on the board and are ticked off in the list.',
+	'Stuck? Spend a hint to reveal the start of a word — you only get a few.'
+];
 
 const board = ref([]);
 const rows = ref(8);

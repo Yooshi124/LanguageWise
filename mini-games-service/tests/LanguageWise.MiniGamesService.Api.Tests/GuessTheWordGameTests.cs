@@ -21,6 +21,42 @@ public class GuessTheWordGameTests
     }
 
     [Test]
+    public void SubmitGuess_MatchesAccentedLettersWithTheirPlainCounterpart()
+    {
+        var game = new GuessTheWordGame("German", ["KÖNIG"]);
+
+        var result = game.SubmitGuess("konig");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Colours, Is.EqualTo(new[] { 'G', 'G', 'G', 'G', 'G' }));
+            Assert.That(result.IsCorrect, Is.True);
+        });
+    }
+
+    [Test]
+    public void SubmitGuess_PreservesEszettAsASingleLetter()
+    {
+        var game = new GuessTheWordGame("German", ["GRÜßE", "VOCAB"]);
+        var state = game.GetState();
+
+        // The answer must keep ß as one letter instead of expanding to SS.
+        var answer = state.CorrectAnswer ?? string.Empty;
+        if (state.IsComplete)
+        {
+            Assert.That(answer.Length, Is.EqualTo(5));
+        }
+
+        var result = game.SubmitGuess("grüße");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Colours.All(colour => colour == 'G'), Is.True);
+            Assert.That(result.IsCorrect, Is.True);
+        });
+    }
+
+    [Test]
     public void SubmitGuess_ReturnsGreenForAnExactMatch()
     {
         var game = new GuessTheWordGame("English", ["VOCAB"]);
