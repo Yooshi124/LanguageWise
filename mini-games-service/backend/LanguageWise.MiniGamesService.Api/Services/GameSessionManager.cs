@@ -19,9 +19,9 @@ public sealed class GameSessionManager(IVocabularyProvider vocabularyProvider, I
     // ------------------------------------------------------------ Guess the Word
 
     /// <summary>Create and store a new Guess the Word game for the user.</summary>
-    public async Task<GuessTheWordState> StartGuessTheWordGameAsync(int userId, string courseCode)
+    public async Task<GuessTheWordState> StartGuessTheWordGameAsync(int userId, string? courseCode, string? accessToken)
     {
-        var vocabulary = await vocabularyProvider.GetVocabularyAsync(courseCode, userId);
+        var vocabulary = await vocabularyProvider.GetVocabularyAsync(courseCode, accessToken);
         var candidates = vocabulary.Where(word => word.Length == GuessTheWordLength).ToList();
         if (candidates.Count == 0)
         {
@@ -57,9 +57,9 @@ public sealed class GameSessionManager(IVocabularyProvider vocabularyProvider, I
     // ---------------------------------------------------------------- Word Search
 
     /// <summary>Create and store a new Word Search game for the user.</summary>
-    public async Task<WordSearchState> StartWordSearchGameAsync(int userId, string courseCode)
+    public async Task<WordSearchState> StartWordSearchGameAsync(int userId, string? courseCode, string? accessToken)
     {
-        var groups = await vocabularyProvider.GetVocabularyGroupsAsync(courseCode, userId);
+        var groups = await vocabularyProvider.GetVocabularyGroupsAsync(courseCode, accessToken);
         var words = groups.SelectMany(group => group.Words).Distinct().ToList();
         if (words.Count < MinimumWordSearchWords)
         {
@@ -104,9 +104,9 @@ public sealed class GameSessionManager(IVocabularyProvider vocabularyProvider, I
     // ---------------------------------------------------------------- Associations
 
     /// <summary>Create and store a new Associations game for the user.</summary>
-    public async Task<AssociationsState> StartAssociationsGameAsync(int userId, string courseCode)
+    public async Task<AssociationsState> StartAssociationsGameAsync(int userId, string? courseCode, string? accessToken)
     {
-        var groups = await vocabularyProvider.GetVocabularyGroupsAsync(courseCode, userId);
+        var groups = await vocabularyProvider.GetVocabularyGroupsAsync(courseCode, accessToken);
 
         // One association group per completed lesson; a word may only appear in one group.
         var seenWords = new HashSet<string>();

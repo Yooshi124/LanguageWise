@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 
@@ -6,79 +7,55 @@ namespace LanguageWise.MiniGamesService.Api.Clients;
 /// <summary>Represents vocabulary from course content.</summary>
 public sealed record VocabularyWord(string Word, string Meaning);
 
-/// <summary>Represents a lesson with vocabulary.</summary>
-public sealed record LessonDetail(
-    int Id,
+/// <summary>Vocabulary from one milestone-completed lesson.</summary>
+public sealed record LessonVocabulary(
+    int LessonId,
     string Slug,
     string Title,
-    int SortOrder,
-    string ContentMarkdown,
     IReadOnlyList<VocabularyWord> Vocabulary);
 
-/// <summary>Represents course progress for a user.</summary>
-public sealed record CourseProgress(
-    bool CourseCompleted,
-    bool CourseEligible,
-    IReadOnlyList<LessonProgress> Lessons,
-    IReadOnlyList<QuizProgress> Quizzes);
+/// <summary>Vocabulary unlocked in one started course.</summary>
+public sealed record CourseVocabulary(
+    string Code,
+    string Title,
+    IReadOnlyList<LessonVocabulary> Lessons);
 
-public sealed record LessonProgress(int LessonId, bool Completed);
-public sealed record QuizProgress(int QuizId, int LessonId, bool Completed, int? BestScore, int TotalQuestions);
+/// <summary>All vocabulary the user has unlocked across the courses they have started.</summary>
+public sealed record UserVocabulary(IReadOnlyList<CourseVocabulary> Courses);
 
-/// <summary>Client for accessing course content and vocabulary from the quizzes-courses service.</summary>
+/// <summary>
+/// Client for the quizzes-courses API. Vocabulary is user-scoped, so requests forward the
+/// caller's JWT as a bearer token and the API resolves the user from it.
+/// </summary>
 public sealed class CourseVocabularyClient(HttpClient httpClient)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    /// <summary>Get a lesson with its vocabulary content.</summary>
-    public async Task<LessonDetail?> GetLessonAsync(
-        string courseCode,
-        string lessonSlug,
+    /// <summary>
+    /// Vocabulary unlocked by the authenticated user: the courses they have started, limited to
+    /// lessons whose milestone they have achieved. Null when the token is missing or the
+    /// quizzes-courses service cannot fulfil the request.
+    /// </summary>
+    public async Task<UserVocabulary?> GetUserVocabularyAsync(
+        string? accessToken,
         CancellationToken cancellationToken = default)
     {
-        try
-        {
-            return await httpClient.GetFromJsonAsync<LessonDetail>(
-                $"api/courses/{Uri.EscapeDataString(courseCode)}/lessons/{Uri.EscapeDataString(lessonSlug)}",
-                JsonOptions,
-                cancellationToken);
-        }
-        catch (HttpRequestException)
+        if (string.IsNullOrWhiteSpace(accessToken))
         {
             return null;
         }
-    }
 
-    /// <summary>Get course progress for a user, which includes completed milestones.</summary>
-    public async Task<CourseProgress?> GetCourseProgressAsync(
-        string courseCode,
-        int userId,
-        CancellationToken cancellationToken = default)
-    {
         try
         {
-            return await httpClient.GetFromJsonAsync<CourseProgress>(
-                $"api/courses/{Uri.EscapeDataString(courseCode)}/progress/{userId}",
-                JsonOptions,
-                cancellationToken);
-        }
-        catch (HttpRequestException)
-        {
-            return null;
-        }
-    }
+            using var request = new HttpRequestMessage(HttpMethod.Get, "api/me/vocabulary");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            using var response = await httpClient.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
 
-    /// <summary>Get all lessons for a course.</summary>
-    public async Task<IReadOnlyList<LessonSummary>?> GetLessonsAsync(
-        string courseCode,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            return await httpClient.GetFromJsonAsync<List<LessonSummary>>(
-                $"api/courses/{Uri.EscapeDataString(courseCode)}/lessons",
-                JsonOptions,
-                cancellationToken) as IReadOnlyList<LessonSummary>;
+            return await response.Content.ReadFromJsonAsync<UserVocabulary>(JsonOptions, cancellationToken);
         }
         catch (HttpRequestException)
         {
@@ -86,5 +63,3 @@ public sealed class CourseVocabularyClient(HttpClient httpClient)
         }
     }
 }
-
-public sealed record LessonSummary(int Id, string Slug, string Title, int SortOrder);

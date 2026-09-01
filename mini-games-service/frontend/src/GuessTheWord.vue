@@ -56,19 +56,15 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue';
-import { submitGuessTheWordGuess, resetGame, initializeGame, getCourseCode, isNoVocabularyError, NO_VOCABULARY_MESSAGE } from './api.js';
+import { submitGuessTheWordGuess, resetGame, initializeGame, isNoVocabularyError, NO_VOCABULARY_MESSAGE } from './api.js';
 import GameHelp from './components/GameHelp.vue';
 
 // App base path ('/mini-games/' through the gateway, '/' in local dev).
 const gameHome = `${import.meta.env.BASE_URL}game`;
 
-// Letters in course languages that aren't accented variants of English
-// letters (those — Ä, Ö, Ü, Ñ, Ł… — are matched by typing the plain letter).
-// Only letters that genuinely can't be typed as an English letter get a button.
-const specialLettersByCourse = {
-	de: ['ß'],
-};
-const specialLetters = specialLettersByCourse[getCourseCode()] ?? [];
+// Letters in the game's word pool that can't be typed as a plain English letter
+// (ß — unlike Ä, Ö, Ü, Ñ, Ł… — has no ASCII stand-in), provided by the backend.
+const specialLetters = ref([]);
 
 const howToPlay = [
 	'Find the hidden five-letter word within six guesses.',
@@ -178,6 +174,7 @@ onMounted(async () => {
 		gameComplete.value = state?.isComplete ?? false;
 		isWon.value = state?.isWon ?? false;
 		correctAnswer.value = state?.correctAnswer ?? '';
+		specialLetters.value = state?.specialLetters ?? [];
 	} catch (exception) {
 		if (isNoVocabularyError(exception)) {
 			noVocabulary.value = true;

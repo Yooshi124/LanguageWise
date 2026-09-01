@@ -6,6 +6,7 @@ public sealed class GuessTheWordGame
     private const int MaximumAttempts = 6;
     private readonly string language;
     private readonly IReadOnlyList<string> candidateWords;
+    private readonly IReadOnlyList<string> specialLetters;
     private readonly List<GuessTheWordGuessResult> guesses = [];
     private string answer;
     private int attempts = 0;
@@ -17,11 +18,21 @@ public sealed class GuessTheWordGame
     {
         this.language = language;
         this.candidateWords = candidateWords;
+        specialLetters = candidateWords
+            .SelectMany(word => word)
+            .Select(char.ToUpperInvariant)
+            .Distinct()
+            // Letters that fold onto A-Z (Ä, Ñ, Ł…) can be typed as the plain letter;
+            // only letters that survive folding untypeable (ß…) need a button.
+            .Where(letter => FoldLetter(letter) is < 'A' or > 'Z')
+            .OrderBy(letter => letter)
+            .Select(letter => letter.ToString())
+            .ToArray();
         answer = SelectAnswer(this.candidateWords);
     }
 
     public GuessTheWordState GetState() =>
-        new(language, attempts, isComplete, isWon, guesses.ToArray(), isComplete ? answer : null);
+        new(language, attempts, isComplete, isWon, guesses.ToArray(), isComplete ? answer : null, specialLetters);
 
     public GuessTheWordGuessResult SubmitGuess(string guess)
     {

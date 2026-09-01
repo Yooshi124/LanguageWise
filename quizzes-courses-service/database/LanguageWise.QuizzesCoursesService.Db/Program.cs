@@ -127,6 +127,11 @@ app.MapGet("/api/courses/{code}/progress/{userId:int}", (
     LearningRepository repository) =>
     ToHttpResult(repository.GetCourseProgress(code, userId)));
 
+app.MapGet("/api/users/{userId:int}/course-progress", (
+    int userId,
+    LearningRepository repository) =>
+    ToHttpResult(repository.GetStartedCoursesProgress(userId)));
+
 app.MapPut("/api/lessons/{lessonId:int}/milestones/{userId:int}", (
     int lessonId,
     int userId,

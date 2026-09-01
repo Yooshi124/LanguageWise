@@ -98,3 +98,31 @@ public sealed record CourseProgress(
     bool CourseEligible,
     IReadOnlyList<LessonProgress> Lessons,
     IReadOnlyList<QuizProgress> Quizzes);
+
+public sealed record LessonMilestone(
+    int LessonId,
+    string Slug,
+    string Title,
+    int SortOrder,
+    bool Completed);
+
+public sealed record StartedCourseProgress(
+    string CourseCode,
+    string CourseTitle,
+    IReadOnlyList<LessonMilestone> Lessons);
+
+/// <summary>Vocabulary from one milestone-completed lesson.</summary>
+public sealed record LessonVocabulary(
+    int LessonId,
+    string Slug,
+    string Title,
+    IReadOnlyList<VocabularyWord> Vocabulary);
+
+/// <summary>Vocabulary unlocked in one started course.</summary>
+public sealed record CourseVocabulary(
+    string Code,
+    string Title,
+    IReadOnlyList<LessonVocabulary> Lessons);
+
+/// <summary>All vocabulary the user has unlocked across the courses they have started.</summary>
+public sealed record UserVocabulary(IReadOnlyList<CourseVocabulary> Courses);

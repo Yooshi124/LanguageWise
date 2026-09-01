@@ -6,7 +6,8 @@ public sealed record GuessTheWordState(
     bool IsComplete,
     bool IsWon,
     IReadOnlyList<GuessTheWordGuessResult> Guesses,
-    string? CorrectAnswer);
+    string? CorrectAnswer,
+    IReadOnlyList<string> SpecialLetters);
 
 public sealed record GuessTheWordGuessResult(
     string Guess,

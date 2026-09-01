@@ -42,10 +42,11 @@ export function setUserId(userId) {
 }
 
 /**
- * Get the course code (default: 'de' for German).
+ * Get the course code used to restrict a game's vocabulary.
+ * Null when unset: call ensureCourseCode() to resolve one from the user's started courses.
  */
 export function getCourseCode() {
-  return localStorage.getItem(COURSE_CODE_STORAGE_KEY) || 'de';
+  return localStorage.getItem(COURSE_CODE_STORAGE_KEY);
 }
 
 /**
@@ -53,6 +54,46 @@ export function getCourseCode() {
  */
 export function setCourseCode(courseCode) {
   localStorage.setItem(COURSE_CODE_STORAGE_KEY, courseCode);
+}
+
+/**
+ * Languages the user has unlocked vocabulary in (started courses with completed lessons),
+ * as seen by the backend for the logged-in user. Empty when signed out or nothing unlocked.
+ * @returns {Promise<Array<{code: string, title: string}>>}
+ */
+export async function fetchGameLanguages() {
+  const response = await fetch(`${API_BASE}/game-languages`, {
+    method: 'GET',
+    headers: { Accept: 'application/json' }
+  });
+
+  if (!response.ok) {
+    throw await toApiError(response, 'Failed to load your languages');
+  }
+
+  return response.json();
+}
+
+/**
+ * Resolve the single course the games should use: the stored selection when it is still
+ * one of the user's unlocked languages, otherwise the first unlocked language (persisted
+ * so every game uses the same one). Null when the user has no unlocked vocabulary.
+ */
+export async function ensureCourseCode() {
+  try {
+    const languages = await fetchGameLanguages();
+    const stored = getCourseCode();
+    if (stored && languages.some((language) => language.code === stored)) {
+      return stored;
+    }
+    if (languages.length > 0) {
+      setCourseCode(languages[0].code);
+      return languages[0].code;
+    }
+  } catch {
+    // Signed out or the service is unreachable — fall back to the stored value, if any.
+  }
+  return getCourseCode();
 }
 
 /**
@@ -89,12 +130,15 @@ async function post(path, body) {
  * Initialize a game.
  * @param {string} gameType - 'guess-the-word', 'word-search', or 'associations'
  * @param {number} userId - Optional user ID (uses stored or default if not provided)
- * @param {string} courseCode - Optional course code (uses stored or default if not provided)
+ * @param {string} courseCode - Optional course code; when omitted the stored selection is
+ *   used, defaulting to the user's first unlocked language, so a game only ever draws words
+ *   from a single course.
  */
 export async function initializeGame(gameType, userId, courseCode) {
   const id = userId ?? getUserId();
-  const code = courseCode ?? getCourseCode();
-  return post(`${API_BASE}/${gameType}/init?userId=${id}&courseCode=${encodeURIComponent(code)}`);
+  const code = courseCode ?? await ensureCourseCode();
+  const query = code ? `?userId=${id}&courseCode=${encodeURIComponent(code)}` : `?userId=${id}`;
+  return post(`${API_BASE}/${gameType}/init${query}`);
 }
 
 /**
