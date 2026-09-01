@@ -1,6 +1,7 @@
 <template>
 	<main class="game-page">
 		<a class="back-button" :href="gameHome" aria-label="Return to the main game page">Back</a>
+		<GameHelp :steps="howToPlay" />
 		<header class="game-header">
 			<p class="eyebrow">Make the associations</p>
 			<h1>Associations</h1>
@@ -64,9 +65,17 @@
  <script setup>
  import { onMounted, ref } from 'vue';
  import { initializeGame, submitAssociationsGuess, resetGame, isNoVocabularyError, NO_VOCABULARY_MESSAGE } from './api.js';
+ import GameHelp from './components/GameHelp.vue';
 
  // App base path ('/mini-games/' through the gateway, '/' in local dev).
  const gameHome = `${import.meta.env.BASE_URL}game`;
+
+ const howToPlay = [
+ 	'All sixteen words secretly belong to four groups of four.',
+ 	'Tap four words you think belong together, then press Submit group.',
+ 	'A wrong group costs one mistake — the dots above the board show how many you have left.',
+ 	'Find all four groups before running out of mistakes to win.'
+ ];
 
  const words = ref([]);
  const selectedWords = ref([]);
@@ -177,7 +186,7 @@ const isWon = ref(false);
  .group-bar strong { display: block; font-size: 1rem; }
  .group-bar span { display: block; margin-top: 0.2rem; font-size: 0.78rem; opacity: 0.9; }
  .game-grid { display: grid; grid-template-columns: repeat(4, minmax(3rem, 1fr)); gap: 0.75rem; }
- .word-box { min-height: 4.5rem; padding: 0.5rem; color: #263557; border: 2px solid #aab4e3; border-radius: 0.75rem; background: rgba(255, 255, 255, 0.88); font: inherit; font-weight: 800; cursor: pointer; transition: 120ms ease; }
+ .word-box { min-height: 4.5rem; padding: 0.5rem; color: #263557; border: 2px solid #aab4e3; border-radius: 0.75rem; background: rgba(255, 255, 255, 0.88); font: inherit; font-size: 0.9rem; font-weight: 800; line-height: 1.25; overflow-wrap: anywhere; word-break: break-word; white-space: normal; cursor: pointer; transition: 120ms ease; }
  .word-box:hover, .word-box:focus-visible { border-color: #4254a4; outline: 3px solid rgba(66, 84, 164, 0.18); }
  .word-box.selected { color: #fff; border-color: #293b82; background: #4254a4; }
  .word-box:disabled { cursor: default; }
@@ -196,5 +205,5 @@ const isWon = ref(false);
  .reset-button { margin-left: 0.5rem; color: #1c2b45; background: #fff; }
  .back-button { position: absolute; top: 2rem; left: 2rem; padding: 0.5rem 0.75rem; color: #1c2b45; border: 1px solid #aab4e3; border-radius: 6px; text-decoration: none; background: #fff; }
  .back-button:hover, .back-button:focus-visible { border-color: #4254a4; outline: 3px solid rgba(66, 84, 164, 0.18); }
- @media (max-width: 520px) { .game-page { padding-inline: 1rem; } .back-button { position: static; display: inline-block; } .game-header { margin-top: 1.5rem; } .board-shell { padding: 1rem; } .game-grid { gap: 0.45rem; } .word-box { min-height: 4rem; font-size: 0.8rem; } }
+ @media (max-width: 520px) { .game-page { padding-inline: 1rem; } .back-button { position: static; display: inline-block; } .game-header { margin-top: 1.5rem; } .board-shell { padding: 1rem; } .game-grid { gap: 0.45rem; } .word-box { min-height: 4rem; font-size: 0.75rem; } }
  </style>
