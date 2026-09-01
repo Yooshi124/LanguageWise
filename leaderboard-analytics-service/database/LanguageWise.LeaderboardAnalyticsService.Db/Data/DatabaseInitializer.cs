@@ -54,7 +54,7 @@ public sealed class DatabaseInitializer(string connectionString, string sqlDirec
     private static long CountItems(SqliteConnection connection)
     {
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM SampleItems;";
+        command.CommandText = "SELECT COUNT(*) FROM LanguageRanking;";
         return Convert.ToInt64(command.ExecuteScalar());
     }
 }
