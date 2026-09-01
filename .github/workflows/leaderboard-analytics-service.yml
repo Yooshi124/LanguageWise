@@ -1,0 +1,74 @@
+name: leaderboard-analytics-service
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: leaderboard-analytics-service-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  SOLUTION: leaderboard-analytics-service/LanguageWise.LeaderboardAnalyticsService.BE.slnx
+
+jobs:
+  leaderboard-analytics-service-build-and-test:
+    name: leaderboard-analytics-service-build-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-leaderboard-analytics-service-${{ hashFiles('leaderboard-analytics-service/**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-leaderboard-analytics-service-
+            nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore "${{ env.SOLUTION }}"
+
+      - name: Build
+        run: dotnet build "${{ env.SOLUTION }}" -c Release --no-restore
+
+      - name: Run NUnit tests
+        run: >
+          dotnet test "${{ env.SOLUTION }}"
+          -c Release --no-build
+          --logger "trx;LogFileName=leaderboard-analytics-service.trx"
+          --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: leaderboard-analytics-service-test-results
+          path: TestResults/
+          if-no-files-found: warn
+
+      - name: Build the database image
+        run: docker build -t languagewise/leaderboard-analytics-service-db:ci ./leaderboard-analytics-service/database
+
+      - name: Build the backend image
+        run: docker build -t languagewise/leaderboard-analytics-service-backend:ci ./leaderboard-analytics-service/backend
+
+      - name: Build the frontend image
+        run: docker build -t languagewise/leaderboard-analytics-service-frontend:ci ./leaderboard-analytics-service/frontend
