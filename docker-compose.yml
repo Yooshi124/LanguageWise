@@ -9,6 +9,7 @@ volumes:
   quizzes-courses-service-db-data:
   chat-discussion-service-db-data:
   quests-achievements-notifications-service-db-data:
+  mini-games-service-db-data:
   ollama-data:
 
 # Generate using tools/gen-signing-key/gen-signing-key.ps1
@@ -90,21 +91,39 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  mini-games-service-db:
+    container_name: mini-games-service-db
+    build:
+      context: ./mini-games-service/database
+    environment:
+      Database__Path: /data/mini-games-service.db
+    volumes:
+      - mini-games-service-db-data:/data
+    ports:
+      - "127.0.0.1:6005:8080"
+    networks: [languagewise]
+    restart: unless-stopped
+
   mini-games-service-backend:
     container_name: mini-games-service-backend
     build:
       context: ./mini-games-service/backend
+    environment:
+      Services__Database: http://mini-games-service-db:8080
+      Services__Courses: http://quizzes-courses-service-db:8080
     ports:
       - "127.0.0.1:5001:8080"
     networks: [languagewise]
+    depends_on:
+      mini-games-service-db:
+        condition: service_started
     restart: unless-stopped
 
   mini-games-service-frontend:
     container_name: mini-games-service-frontend
     build:
       context: ./mini-games-service/frontend
-    ports:
-      - "127.0.0.1:3001:80"
+    # No host port: reached through the shared-frontend gateway at /mini-games/.
     networks: [languagewise]
     depends_on:
       mini-games-service-backend:

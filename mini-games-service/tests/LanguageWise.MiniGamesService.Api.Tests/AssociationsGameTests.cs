@@ -57,4 +57,28 @@ public class AssociationsGameTests
             Assert.That(game.GetState().RevealedGroups, Has.Count.EqualTo(4));
         });
     }
+
+    [Test]
+    public void ConstructorRejectsCatalogsWithTooFewGroups()
+    {
+        Assert.Throws<ArgumentException>(() => new AssociationsGame("English", TestGroups.Take(3).ToArray()));
+    }
+
+    [Test]
+    public void ConstructorRejectsGroupsWithTooFewWords()
+    {
+        var groups = TestGroups.Take(3).Append(new AssociationGroup("Small", ["ONLY", "TWO"])).ToArray();
+
+        Assert.Throws<ArgumentException>(() => new AssociationsGame("English", groups));
+    }
+
+    [Test]
+    public void ConstructorRejectsWordsSharedAcrossGroups()
+    {
+        var groups = TestGroups.Take(3)
+            .Append(new AssociationGroup("Copycat", ["APPLE", "PLUM", "PEAR", "FIGS"]))
+            .ToArray();
+
+        Assert.Throws<ArgumentException>(() => new AssociationsGame("English", groups));
+    }
 }
