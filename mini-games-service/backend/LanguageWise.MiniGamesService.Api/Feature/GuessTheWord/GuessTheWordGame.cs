@@ -12,10 +12,11 @@ public sealed class GuessTheWordGame
     private bool isComplete = false;
     private bool isWon = false;
 
-    public GuessTheWordGame(string language, IReadOnlyList<string>? candidateWords = null)
+    /// <summary>Create a game whose answer is drawn from the user's course vocabulary.</summary>
+    public GuessTheWordGame(string language, IReadOnlyList<string> candidateWords)
     {
         this.language = language;
-        this.candidateWords = candidateWords ?? ["VOCAB"];
+        this.candidateWords = candidateWords;
         answer = SelectAnswer(this.candidateWords);
     }
 
@@ -27,7 +28,7 @@ public sealed class GuessTheWordGame
         var normalisedGuess = guess?.Trim().ToUpperInvariant();
         if (string.IsNullOrWhiteSpace(normalisedGuess) ||
             normalisedGuess.Length != WordLength ||
-            normalisedGuess.Any(character => character is < 'A' or > 'Z'))
+            normalisedGuess.Any(character => !char.IsLetter(character)))
         {
             throw new ArgumentException("The guess must contain exactly five letters.", nameof(guess));
         }
@@ -68,8 +69,7 @@ public sealed class GuessTheWordGame
     {
         var validAnswers = candidateWords
             .Select(candidate => candidate.Trim().ToUpperInvariant())
-            .Where(candidate => candidate.Length == WordLength &&
-                candidate.All(character => character is >= 'A' and <= 'Z'))
+            .Where(candidate => candidate.Length == WordLength && candidate.All(char.IsLetter))
             .ToArray();
 
         if (validAnswers.Length == 0)

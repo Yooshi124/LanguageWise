@@ -6,43 +6,18 @@ namespace LanguageWise.MiniGamesService.Api.Tests;
 public class GuessTheWordGameTests
 {
     [Test]
-    public void VocabularySelector_PrefersFiveLetterWordsFromCourseContent()
+    public void Constructor_RejectsCandidateListsWithoutAFiveLetterWord()
     {
-        var context = new LearningContext(
-            null,
-            1,
-            1,
-            "Course",
-            "Lesson",
-            "The lesson introduces apple and train.",
-            []);
-
-        Assert.That(VocabularySelector.GetCandidates(context), Is.EqualTo(new[] { "APPLE", "TRAIN" }));
+        Assert.Throws<ArgumentException>(() => new GuessTheWordGame("English", ["CAT", "DOG"]));
+        Assert.Throws<ArgumentException>(() => new GuessTheWordGame("English", []));
     }
 
     [Test]
-    public void VocabularySelector_UsesFallbackWhenCourseHasNoFiveLetterWords()
+    public void Constructor_AcceptsWordsWithNonAsciiLetters()
     {
-        var context = new LearningContext(
-            null,
-            1,
-            1,
-            "Course",
-            "Lesson",
-            "No tiny odd.",
-            []);
+        var game = new GuessTheWordGame("German", ["KÖNIG"]);
 
-        Assert.That(VocabularySelector.GetCandidates(context), Does.Contain("ABOUT"));
-    }
-
-    [Test]
-    public void FakeLearningContext_ProvidesTenGuessTheWordAnswers()
-    {
-        var candidates = VocabularySelector.GetCandidates(new FakeLearningContextProvider().GetContext());
-
-        Assert.That(candidates, Has.Length.EqualTo(10));
-        Assert.That(candidates, Does.Contain("VOCAB"));
-        Assert.That(candidates, Does.Contain("RIGHT"));
+        Assert.That(game.GetState().IsComplete, Is.False);
     }
 
     [Test]

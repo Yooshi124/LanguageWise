@@ -1,12 +1,15 @@
 <template>
 	<main class="game-page">
-		<a class="back-button" href="/game" aria-label="Return to the main game page">Back</a>
+		<a class="back-button" :href="gameHome" aria-label="Return to the main game page">Back</a>
 		<header class="game-header">
 			<p class="eyebrow">Find the connection</p>
 			<h1>Word Search</h1>
 			<p>Drag through every letter in a hidden theme.</p>
 		</header>
-		<div class="game-layout">
+		<section v-if="noVocabulary" class="board-shell empty-state" role="status">
+			<p class="empty-state__message">{{ NO_VOCABULARY_MESSAGE }}</p>
+		</section>
+		<div v-else class="game-layout">
 			<section class="board-shell" aria-label="Word Search game board">
 				<div class="scoreline" aria-live="polite">
 					<strong>{{ foundWords.length }} / {{ totalWords }}</strong>
@@ -43,7 +46,7 @@
 						{{ hintWord ? 'Show order' : `Hint (${maximumHints - hintsUsed} left)` }}
 					</button>
 					<button type="button" :disabled="gameComplete || hintBusy" @click="giveUp">Give up</button>
-					<button v-if="gameComplete" type="button" @click="resetGame">Play again</button>
+					<button v-if="gameComplete" type="button" @click="resetGameHandler">Play again</button>
 				</div>
 			</section>
 
@@ -60,6 +63,10 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { initializeGame, submitWordSearchWord, useWordSearchHint, giveUpWordSearch, resetGame, isNoVocabularyError, NO_VOCABULARY_MESSAGE } from './api.js';
+
+// App base path ('/mini-games/' through the gateway, '/' in local dev).
+const gameHome = `${import.meta.env.BASE_URL}game`;
 
 const board = ref([]);
 const rows = ref(8);
@@ -83,6 +90,7 @@ const hintBusy = ref(false);
 const hintPulseIndexes = ref([]);
 const message = ref('');
 const error = ref(false);
+const noVocabulary = ref(false);
 
 const selection = computed(() => selectedIndexes.value.map((index) => board.value[index]).join(''));
 const foundIndexes = computed(() => foundWords.value.flatMap((word) => wordPaths.value[word] ?? []));
@@ -107,12 +115,6 @@ const cellClass = (index) => ({
 const wordStatus = (word) => ({ foundWord: foundWords.value.includes(word), missedWord: revealedWords.value.includes(word) });
 const pathPoints = (indices) => (indices ?? []).map((index) => `${(index % columns.value) + 0.5},${Math.floor(index / columns.value) + 0.5}`).join(' ');
 
-const readResponse = async (response) => {
-	const body = await response.text();
-	if (!body) return null;
-	try { return JSON.parse(body); } catch { throw new Error(`The game backend returned an unexpected response (${response.status}).`); }
-};
-
 const applyState = (state) => {
 	board.value = state.board;
 	rows.value = state.rows;
@@ -132,9 +134,7 @@ const applyState = (state) => {
 };
 
 const loadGame = async () => {
-	const response = await fetch('/api/word-search');
-	const state = await readResponse(response);
-	if (!response.ok) throw new Error('Unable to load the word search.');
+	const state = await initializeGame('word-search');
 	applyState(state);
 };
 
@@ -168,11 +168,7 @@ const finishSelection = async () => {
 	if (word.length < 3) return;
 	loading.value = true;
 	try {
-		const response = await fetch('/api/word-search/guess', {
-			method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ word, indices })
-		});
-		const result = await readResponse(response);
-		if (!response.ok) throw new Error(result?.error ?? result?.errors?.word?.[0] ?? 'That guess could not be checked.');
+		const result = await submitWordSearchWord(word, indices);
 		applyState(result.state);
 		message.value = result.isValid ? `${word} found` : `${word} is not one of the hidden words.`;
 		error.value = !result.isValid;
@@ -201,9 +197,7 @@ const useHint = async () => {
 			return;
 		}
 		if (hintsUsed.value >= maximumHints.value) return;
-		const response = await fetch('/api/word-search/hint', { method: 'POST' });
-		const result = await readResponse(response);
-		if (!response.ok) throw new Error(result?.error ?? 'Unable to use a hint.');
+		const result = await useWordSearchHint();
 		hintWord.value = result.word;
 		hintPath.value = result.path;
 		hintsUsed.value = result.state.hintsUsed;
@@ -216,22 +210,46 @@ const useHint = async () => {
 };
 
 const giveUp = async () => {
-	const response = await fetch('/api/word-search/give-up', { method: 'POST' });
-	const state = await readResponse(response);
-	if (!response.ok) { message.value = 'Unable to reveal the remaining words.'; error.value = true; return; }
-	applyState(state);
-	message.value = 'All words are shown. Missed words are marked in red.';
-	error.value = false;
+	try {
+		const state = await giveUpWordSearch();
+		applyState(state);
+		message.value = 'All words are shown. Missed words are marked in red.';
+		error.value = false;
+	} catch (requestError) {
+		message.value = 'Unable to reveal the remaining words.';
+		error.value = true;
+	}
 };
 
-const resetGame = async () => {
-	await fetch('/api/word-search/reset', { method: 'POST' });
-	message.value = '';
-	hintPulseIndexes.value = [];
-	await loadGame();
+const resetGameHandler = async () => {
+	try {
+		await resetGame('word-search');
+		message.value = '';
+		hintPulseIndexes.value = [];
+		await loadGame();
+	} catch (requestError) {
+		if (isNoVocabularyError(requestError)) {
+			noVocabulary.value = true;
+		} else {
+			message.value = requestError.message;
+			error.value = true;
+		}
+	}
 };
 
-onMounted(() => { loadGame().catch((requestError) => { message.value = requestError.message; error.value = true; }); window.addEventListener('pointerup', finishSelection); });
+onMounted(async () => {
+	try {
+		await loadGame();
+	} catch (requestError) {
+		if (isNoVocabularyError(requestError)) {
+			noVocabulary.value = true;
+		} else {
+			message.value = requestError.message;
+			error.value = true;
+		}
+	}
+	window.addEventListener('pointerup', finishSelection);
+});
 onUnmounted(() => window.removeEventListener('pointerup', finishSelection));
 </script>
 
@@ -244,6 +262,8 @@ h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.25rem); }
 .game-header p:last-child { margin: 0.65rem 0 0; color: #806f5d; }
 .game-layout { display: flex; align-items: center; justify-content: center; gap: clamp(1.5rem, 5vw, 4rem); margin: 0 auto; }
 .board-shell { padding: 1.25rem; background: rgba(255, 255, 255, 0.7); border: 1px solid rgba(189, 106, 37, 0.24); border-radius: 10px; box-shadow: 0 12px 32px rgba(118, 77, 31, 0.12); }
+.empty-state { text-align: center; }
+.empty-state__message { margin: 1rem 0; color: #65709d; font-weight: 600; line-height: 1.6; }
 .scoreline { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 0.75rem; color: #806f5d; }
 .scoreline strong { color: #1c2b45; font-size: 1.5rem; }
 .game-grid { position: relative; display: grid; grid-template-columns: repeat(var(--columns), minmax(2rem, 1fr)); grid-template-rows: repeat(var(--rows), minmax(2rem, 1fr)); gap: 0.15rem; width: min(70vw, 30rem); aspect-ratio: 6 / 8; touch-action: none; user-select: none; }

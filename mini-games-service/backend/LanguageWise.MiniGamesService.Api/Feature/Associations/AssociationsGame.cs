@@ -15,10 +15,22 @@ public sealed class AssociationsGame
     private bool isComplete = false;
     private bool isWon = false;
 
-    public AssociationsGame(string language, IReadOnlyList<AssociationGroup>? associationCatalog = null)
+    /// <summary>Create a game whose groups come from the user's course vocabulary (one group per lesson).</summary>
+    public AssociationsGame(string language, IReadOnlyList<AssociationGroup> associationCatalog)
     {
         this.language = language;
-        this.associationCatalog = associationCatalog ?? DefaultGroups;
+        this.associationCatalog = associationCatalog
+            .Select(group => group with { Words = group.Words.Distinct().Take(GroupSize).ToArray() })
+            .ToArray();
+
+        if (this.associationCatalog.Count < GroupCount ||
+            this.associationCatalog.Any(group => group.Words.Count < GroupSize) ||
+            this.associationCatalog.SelectMany(group => group.Words).Distinct().Count() < GroupCount * GroupSize)
+        {
+            throw new ArgumentException(
+                $"At least {GroupCount} groups of {GroupSize} distinct words are required.", nameof(associationCatalog));
+        }
+
         Reset();
     }
 
@@ -87,18 +99,4 @@ public sealed class AssociationsGame
         isComplete = false;
         isWon = false;
     }
-
-    private static readonly AssociationGroup[] DefaultGroups =
-    [
-        new("Fruit", ["APPLE", "MANGO", "PEACH", "GRAPE"]),
-        new("Things in a classroom", ["DESK", "CHAIR", "BOARD", "PENCIL"]),
-        new("Modes of transport", ["TRAIN", "PLANE", "BOAT", "TRUCK"]),
-        new("Weather", ["CLOUD", "RAINY", "STORM", "SUNNY"]),
-        new("Kitchen items", ["SPOON", "KNIFE", "PLATE", "OVEN"]),
-        new("Body parts", ["HEART", "BRAIN", "MOUTH", "TEETH"]),
-        new("Musical instruments", ["PIANO", "DRUMS", "FLUTE", "GUITAR"]),
-        new("Outdoor activities", ["HIKE", "CAMP", "SWIM", "CLIMB"]),
-        new("Colours", ["GREEN", "BLACK", "WHITE", "BROWN"]),
-        new("Things that shine", ["LIGHT", "STARS", "CROWN", "JEWEL"])
-    ];
 }

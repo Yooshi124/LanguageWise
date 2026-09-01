@@ -1,12 +1,15 @@
 <template>
 	<main class="guess-the-word">
-		<a class="back-button" href="/game" aria-label="Return to the main game page">Back</a>
+		<a class="back-button" :href="gameHome" aria-label="Return to the main game page">Back</a>
 		<header class="game-header">
 			<p class="eyebrow">Daily vocabulary challenge</p>
 			<h1>Guess the word</h1>
 			<p>Find the hidden five-letter word in six guesses.</p>
 		</header>
-		<section class="board-shell" aria-label="GuessTheWord game board">
+		<section v-if="noVocabulary" class="board-shell empty-state" role="status">
+			<p class="empty-state__message">{{ NO_VOCABULARY_MESSAGE }}</p>
+		</section>
+		<section v-else class="board-shell" aria-label="GuessTheWord game board">
 			<div class="game-grid">
 				<div v-for="(box, index) in boxes" :key="index" class="grid-box" :class="colourClass(box.colour)">
 					{{ box.letter }}
@@ -35,19 +38,24 @@
 				<span>The answer was <b>{{ correctAnswer }}</b>. Start a new round to play again.</span>
 			</div>
 		<p v-if="message" class="game-message" :class="{ 'is-error': error }">{{ message }}</p>
-		<button v-if="gameComplete" class="reset-button" type="button" @click="resetGame">Play again</button>
+		<button v-if="gameComplete" class="reset-button" type="button" @click="resetGameHandler">Play again</button>
 		</section>
 	</main>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue';
+import { submitGuessTheWordGuess, resetGame, initializeGame, isNoVocabularyError, NO_VOCABULARY_MESSAGE } from './api.js';
+
+// App base path ('/mini-games/' through the gateway, '/' in local dev).
+const gameHome = `${import.meta.env.BASE_URL}game`;
 
 const guess = ref('');
 const guesses = ref([]);
 const loading = ref(false);
 const message = ref('');
 const error = ref(false);
+const noVocabulary = ref(false);
 const gameComplete = ref(false);
 const isWon = ref(false);
 const correctAnswer = ref('');
@@ -88,19 +96,6 @@ const letterStatuses = computed(() => {
 	}));
 });
 
-const readResponse = async (response) => {
-		const body = await response.text();
-		if (!body) {
-			return null;
-		}
-
-		try {
-			return JSON.parse(body);
-		} catch {
-			throw new Error(`The game backend returned an unexpected response (${response.status}).`);
-		}
-};
-
 const submitGuess = async () => {
 	if (guess.value.trim().length !== 5) {
 		message.value = 'Enter a five-letter guess.';
@@ -112,16 +107,7 @@ const submitGuess = async () => {
 	message.value = '';
 	error.value = false;
 	try {
-		const response = await fetch('/api/guess-the-word/guess', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ guess: guess.value })
-		});
-		const result = await readResponse(response);
-		if (!response.ok) {
-			throw new Error(result?.errors?.guess?.[0] ?? result?.error ?? `Unable to submit guess (${response.status}).`);
-		}
-
+		const result = await submitGuessTheWordGuess(guess.value);
 		guesses.value.push(result);
 		guess.value = '';
 		gameComplete.value = result.isCorrect || guesses.value.length >= 6;
@@ -136,13 +122,9 @@ const submitGuess = async () => {
 	}
 };
 
-const resetGame = async () => {
+const resetGameHandler = async () => {
 	try {
-		const response = await fetch('/api/guess-the-word/reset', { method: 'POST' });
-		if (!response.ok) {
-			throw new Error(`Unable to reset the game (${response.status}).`);
-		}
-
+		await resetGame('guess-the-word');
 		guesses.value = [];
 		gameComplete.value = false;
 		isWon.value = false;
@@ -157,19 +139,18 @@ const resetGame = async () => {
 
 onMounted(async () => {
 	try {
-		const response = await fetch('/api/guess-the-word');
-		const state = await readResponse(response);
-		if (!response.ok) {
-			throw new Error(`Unable to load the game (${response.status}).`);
-		}
-
+		const state = await initializeGame('guess-the-word');
 		guesses.value = state?.guesses ?? [];
 		gameComplete.value = state?.isComplete ?? false;
 		isWon.value = state?.isWon ?? false;
 		correctAnswer.value = state?.correctAnswer ?? '';
 	} catch (exception) {
-		message.value = exception.message;
-		error.value = true;
+		if (isNoVocabularyError(exception)) {
+			noVocabulary.value = true;
+		} else {
+			message.value = 'Could not start game: ' + exception.message;
+			error.value = true;
+		}
 	}
 });
 </script>
@@ -236,6 +217,9 @@ h1 {
 	border-radius: 10px;
 	box-shadow: 0 12px 32px rgba(28, 85, 78, 0.12);
 }
+
+.empty-state { text-align: center; }
+.empty-state__message { margin: 1rem 0; color: #5b6b85; font-weight: 600; line-height: 1.6; }
 
 .attempts { display: flex; justify-content: center; gap: 0.55rem; margin-bottom: 1rem; }
 .attempt-icon { width: 0.8rem; height: 0.8rem; border: 2px solid #10897a; border-radius: 50%; background: #b8e4dc; }
