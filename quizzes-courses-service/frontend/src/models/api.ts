@@ -114,3 +114,23 @@ export interface CourseProgress {
   lessons: LessonProgress[]
   quizzes: QuizProgress[]
 }
+
+export type AssistantRole = 'user' | 'assistant'
+
+export interface AssistantMessage {
+  id: string
+  role: AssistantRole
+  content: string
+}
+
+export interface AssistantRouteContext {
+  routeName: string
+  courseCode?: string
+  lessonSlug?: string
+}
+
+export interface AssistantMessageRequest {
+  message: string
+  history: Pick<AssistantMessage, 'role' | 'content'>[]
+  context: AssistantRouteContext
+}

@@ -147,6 +147,9 @@ services:
     container_name: quizzes-courses-service-backend
     build:
       context: ./quizzes-courses-service/backend
+    env_file:
+      - path: ./quizzes-courses-service/backend/.env
+        required: false
     environment:
       Services__Database: http://quizzes-courses-service-db:8080
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
