@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import AppIcon from './components/AppIcon.vue'
 import AppSidebar from './components/AppSidebar.vue'
 import AppTopBar from './components/AppTopBar.vue'
+import GarryAssistant from './components/GarryAssistant.vue'
 import LoginRequiredView from './views/LoginRequiredView.vue'
 import { useAuth } from './composables/useAuth'
 
@@ -13,6 +14,9 @@ const sidebarExpanded = ref(false)
 const mobileSidebarOpen = ref(false)
 const showTopBar = computed(
   () => route.name !== 'course' && route.name !== 'lesson' && !route.meta.hideTopBar,
+)
+const showAssistant = computed(
+  () => auth.status.value === 'authenticated' && !route.meta.hideAssistant,
 )
 </script>
 
@@ -44,5 +48,10 @@ const showTopBar = computed(
         <router-view v-else />
       </v-main>
     </div>
+    <GarryAssistant
+      v-if="showAssistant && auth.user.value"
+      :key="auth.user.value.id"
+      :user-id="auth.user.value.id"
+    />
   </v-app>
 </template>

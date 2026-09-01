@@ -26,7 +26,12 @@ const router = createRouter({
       props: { kind: 'quizzes' },
     },
     { path: '/quizzes/:courseCode', name: 'quiz-list', component: QuizListView },
-    { path: '/quizzes/:courseCode/:quizId', name: 'quiz-runner', component: QuizRunnerView },
+    {
+      path: '/quizzes/:courseCode/:quizId',
+      name: 'quiz-runner',
+      component: QuizRunnerView,
+      meta: { hideAssistant: true },
+    },
     {
       path: '/flashcards',
       name: 'flashcards',

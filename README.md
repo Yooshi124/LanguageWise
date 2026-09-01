@@ -113,3 +113,27 @@ Smtp__FromName=LanguageWise
 Use a Google app password rather than the account password. When these values
 are absent, events and achievement progress still work but email is skipped.
 The authenticated SMTP username is always used as the sender address.
+
+## Garry assistant configuration
+
+The quizzes and courses service includes Garry, a language-learning assistant
+powered through OpenRouter. The backend owns Garry's prompt, course and lesson
+context, model settings, and provider credentials. The browser only renders the
+streamed response and keeps a bounded transcript in `sessionStorage`; chats are
+not written to the database.
+
+Copy the example environment file and add an OpenRouter API key:
+
+```powershell
+Copy-Item quizzes-courses-service\backend\.env.example quizzes-courses-service\backend\.env
+```
+
+```text
+OpenRouter__ApiKey=your-openrouter-api-key
+```
+
+Docker Compose loads this ignored file into the quizzes and courses backend.
+The default model is `google/gemma-4-26b-a4b-it`; override
+`OpenRouter__Model` in the same file if the model identifier changes. When no
+key is configured, the rest of the service remains available and Garry returns
+a clear unavailable response without exposing configuration details.
