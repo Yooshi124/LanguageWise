@@ -7,6 +7,24 @@
 				<p>Three quick vocabulary workouts built from the words you have already unlocked in your courses.</p>
 			</div>
 
+			<section v-if="languages.length > 0" class="language-picker" aria-label="Language your games use">
+				<span class="language-picker__label">Practising</span>
+				<div class="language-picker__options" role="group">
+					<button
+						v-for="language in languages"
+						:key="language.code"
+						type="button"
+						class="language-picker__option"
+						:class="{ 'is-active': language.code === selectedLanguage }"
+						:aria-pressed="language.code === selectedLanguage"
+						@click="selectLanguage(language.code)"
+					>
+						{{ language.title }}
+					</button>
+				</div>
+				<p class="language-picker__hint">Games only use words from the selected language. Complete lessons in other courses to unlock more.</p>
+			</section>
+
 			<ul class="game-list">
 				<li v-for="game in games" :key="game.name">
 					<a class="game-card" :class="`game-card--${game.theme}`" :href="game.link">
@@ -40,6 +58,30 @@
 </template>
 
 <script setup>
+import { onMounted, ref } from 'vue';
+import { ensureCourseCode, fetchGameLanguages, getCourseCode, setCourseCode } from './api.js';
+
+// Languages the user has unlocked vocabulary in; the selected one scopes every game.
+const languages = ref([]);
+const selectedLanguage = ref(null);
+
+function selectLanguage(code) {
+	setCourseCode(code);
+	selectedLanguage.value = code;
+}
+
+onMounted(async () => {
+	try {
+		languages.value = await fetchGameLanguages();
+	} catch {
+		languages.value = [];
+	}
+
+	// Resolve (and persist) a valid selection: the stored one when still unlocked,
+	// otherwise the first unlocked language.
+	selectedLanguage.value = languages.value.length > 0 ? await ensureCourseCode() : getCourseCode();
+});
+
 // Relative links resolve correctly both under the gateway base (/mini-games/)
 // and when served at the root in local dev.
 const games = [
@@ -110,6 +152,65 @@ const games = [
 	color: #667085;
 	font-size: 1.2rem;
 	line-height: 1.7;
+}
+
+.language-picker {
+	margin: 28px 0 0;
+	padding: 16px 20px;
+	border: 1px solid #e7e9f0;
+	border-radius: 18px;
+	background: white;
+}
+
+.language-picker__label {
+	display: block;
+	margin-bottom: 10px;
+	color: #4338ca;
+	font-size: 0.78rem;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+.language-picker__options {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.language-picker__option {
+	padding: 8px 18px;
+	border: 1.5px solid #d6dae6;
+	border-radius: 999px;
+	color: #475467;
+	background: #f8f9fc;
+	font-size: 0.95rem;
+	font-weight: 600;
+	cursor: pointer;
+	transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.language-picker__option:hover,
+.language-picker__option:focus-visible {
+	border-color: #4f46e5;
+	color: #4338ca;
+}
+
+.language-picker__option:focus-visible {
+	outline: 3px solid rgba(79, 70, 229, 0.28);
+	outline-offset: 2px;
+}
+
+.language-picker__option.is-active {
+	border-color: #4f46e5;
+	color: white;
+	background: #4f46e5;
+}
+
+.language-picker__hint {
+	margin: 12px 0 0;
+	color: #98a2b3;
+	font-size: 0.85rem;
 }
 
 .game-list {

@@ -92,6 +92,18 @@ public sealed record CourseProgress(
     IReadOnlyList<LessonProgress> Lessons,
     IReadOnlyList<QuizProgress> Quizzes);
 
+public sealed record LessonMilestone(
+    int LessonId,
+    string Slug,
+    string Title,
+    int SortOrder,
+    bool Completed);
+
+public sealed record StartedCourseProgress(
+    string CourseCode,
+    string CourseTitle,
+    IReadOnlyList<LessonMilestone> Lessons);
+
 public sealed record MilestoneState(bool Completed);
 
 public sealed record StartQuizAttemptRequest(int UserId);
