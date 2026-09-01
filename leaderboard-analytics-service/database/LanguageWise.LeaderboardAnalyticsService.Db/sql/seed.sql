@@ -1,7 +1,3 @@
-INSERT INTO SampleItems (Name, Description, CreatedAt) VALUES
-    ('Language leaderboard',  'Ranks users by quiz and course scores per language.', '2026-02-02T09:00:00Z'),
-    ('Discussion leaderboard','Ranks users by forum activity.',                      '2026-02-03T09:15:00Z');
-
 -- UserId values match the Users seeded by the shared database service:
 --   1 = amber, 2 = lachlan, 3 = roan, 4 = justin, 5 = kyan
 INSERT INTO LanguageRanking (UserId, Language, Score, Rank, UpdatedAt) VALUES
