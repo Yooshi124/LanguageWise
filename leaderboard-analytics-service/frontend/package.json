@@ -9,8 +9,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mdi/js": "^7.4.47",
     "@tanstack/vue-query": "^5.102.8",
-    "vue": "^3.5.18"
+    "vue": "^3.5.18",
+    "vuetify": "^3.9.4"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.1",
