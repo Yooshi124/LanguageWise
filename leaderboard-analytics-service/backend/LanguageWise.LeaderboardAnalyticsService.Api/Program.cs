@@ -2,7 +2,7 @@ using LanguageWise.LeaderboardAnalyticsService.Api.Clients;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var databaseServiceUrl = builder.Configuration["Services:Database"] ?? "http://localhost:6005";
+var databaseServiceUrl = builder.Configuration["Services:Database"] ?? "http://localhost:5006";
 
 builder.Services.AddHttpClient<LeaderboardClient>(client =>
 {
