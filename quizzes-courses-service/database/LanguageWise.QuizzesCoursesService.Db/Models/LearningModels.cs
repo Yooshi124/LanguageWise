@@ -106,6 +106,14 @@ public sealed record StartedCourseProgress(
 
 public sealed record MilestoneState(bool Completed);
 
+public sealed record Milestone(
+    int Id,
+    int UserId,
+    int? CourseId,
+    int? LessonId,
+    int? QuizId,
+    DateTimeOffset CompletedAt);
+
 public sealed record StartQuizAttemptRequest(int UserId);
 
 public sealed record SubmitQuizAttemptRequest(int UserId, IReadOnlyList<QuizResponse> Answers);

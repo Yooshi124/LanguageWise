@@ -581,6 +581,33 @@ public sealed class LearningRepository(string connectionString)
         return DomainResult<MilestoneState>.Success(new MilestoneState(false));
     }
 
+    public IReadOnlyList<Milestone> GetMilestones()
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT Id, UserId, CourseId, LessonId, QuizId, CompletedAt
+            FROM Milestones
+            ORDER BY Id;
+            """;
+
+        var milestones = new List<Milestone>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            milestones.Add(new Milestone(
+                reader.GetInt32(0),
+                reader.GetInt32(1),
+                reader.IsDBNull(2) ? null : reader.GetInt32(2),
+                reader.IsDBNull(3) ? null : reader.GetInt32(3),
+                reader.IsDBNull(4) ? null : reader.GetInt32(4),
+                DateTimeOffset.Parse(reader.GetString(5), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind)));
+        }
+
+        return milestones;
+    }
+
     private SqliteConnection Open()
     {
         var connection = new SqliteConnection(connectionString);
