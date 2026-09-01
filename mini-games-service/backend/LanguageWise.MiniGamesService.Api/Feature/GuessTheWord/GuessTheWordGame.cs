@@ -1,5 +1,8 @@
 namespace LanguageWise.MiniGamesService.Api.Feature.GuessTheWord;
 
+using System.Globalization;
+using System.Text;
+
 public sealed class GuessTheWordGame
 {
     private const int WordLength = 5;
@@ -25,7 +28,7 @@ public sealed class GuessTheWordGame
 
     public GuessTheWordGuessResult SubmitGuess(string guess)
     {
-        var normalisedGuess = guess?.Trim().ToUpperInvariant();
+        var normalisedGuess = NormalizeWord(guess);
         if (string.IsNullOrWhiteSpace(normalisedGuess) ||
             normalisedGuess.Length != WordLength ||
             normalisedGuess.Any(character => !char.IsLetter(character)))
@@ -68,7 +71,7 @@ public sealed class GuessTheWordGame
     private static string SelectAnswer(IReadOnlyList<string> candidateWords)
     {
         var validAnswers = candidateWords
-            .Select(candidate => candidate.Trim().ToUpperInvariant())
+            .Select(NormalizeWord)
             .Where(candidate => candidate.Length == WordLength && candidate.All(char.IsLetter))
             .ToArray();
 
@@ -82,12 +85,17 @@ public sealed class GuessTheWordGame
 
     private char[] GetGuessColours(string guess)
     {
+        // Compare letters with diacritics folded away, so typing A still
+        // matches Ä in the answer. ß is not a diacritic variant and stays
+        // its own letter.
+        var guessLetters = guess.Select(FoldLetter).ToArray();
+        var answerLetters = answer.Select(FoldLetter).ToArray();
         var colours = Enumerable.Repeat('R', WordLength).ToArray();
-        var remainingAnswerLetters = answer.ToCharArray();
+        var remainingAnswerLetters = answerLetters.ToArray();
 
         for (var index = 0; index < WordLength; index++)
         {
-            if (guess[index] != answer[index])
+            if (guessLetters[index] != answerLetters[index])
             {
                 continue;
             }
@@ -103,7 +111,7 @@ public sealed class GuessTheWordGame
                 continue;
             }
 
-            var matchingIndex = Array.IndexOf(remainingAnswerLetters, guess[index]);
+            var matchingIndex = Array.IndexOf(remainingAnswerLetters, guessLetters[index]);
             if (matchingIndex >= 0)
             {
                 colours[index] = 'O';
@@ -112,5 +120,32 @@ public sealed class GuessTheWordGame
         }
 
         return colours;
+    }
+
+    /// <summary>
+    /// Trim and uppercase per character (rather than with string.ToUpperInvariant,
+    /// which would expand ß into SS and corrupt five-letter words containing it).
+    /// </summary>
+    private static string NormalizeWord(string? word)
+    {
+        var trimmed = word?.Trim();
+        return string.IsNullOrEmpty(trimmed)
+            ? string.Empty
+            : new string(trimmed.Select(char.ToUpperInvariant).ToArray());
+    }
+
+    /// <summary>Strip diacritics so accented letters compare equal to their base letter (Ä → A).</summary>
+    private static char FoldLetter(char letter)
+    {
+        var decomposed = letter.ToString().Normalize(NormalizationForm.FormD);
+        foreach (var character in decomposed)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
+            {
+                return character;
+            }
+        }
+
+        return letter;
     }
 }
