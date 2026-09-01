@@ -63,10 +63,10 @@ import GameHelp from './components/GameHelp.vue';
 const gameHome = `${import.meta.env.BASE_URL}game`;
 
 // Letters in course languages that aren't accented variants of English
-// letters (those — Ä, Ö, Ü, Ñ… — are matched by typing the plain letter).
+// letters (those — Ä, Ö, Ü, Ñ, Ł… — are matched by typing the plain letter).
+// Only letters that genuinely can't be typed as an English letter get a button.
 const specialLettersByCourse = {
 	de: ['ß'],
-	pl: ['Ł'],
 };
 const specialLetters = specialLettersByCourse[getCourseCode()] ?? [];
 
