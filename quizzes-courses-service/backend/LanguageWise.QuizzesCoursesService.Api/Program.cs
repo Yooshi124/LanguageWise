@@ -424,6 +424,39 @@ app.MapGet("/api/courses/{code}/progress", async (
         return progress is null ? Results.NotFound() : Results.Ok(progress);
     }, app.Logger));
 
+// Vocabulary the user has unlocked: every course they have started, limited to the
+// lessons whose milestone they have achieved. Other services (e.g. mini-games) call
+// this endpoint with the user's token instead of reaching into the database service.
+app.MapGet("/api/me/vocabulary", async (
+    HttpContext context,
+    CatalogClient client,
+    CancellationToken cancellationToken) =>
+    await ExecuteForUserAsync(context, async userId =>
+    {
+        var startedCourses = await client.GetStartedCourseProgressAsync(userId, cancellationToken);
+        var courses = new List<CourseVocabulary>();
+
+        foreach (var course in startedCourses)
+        {
+            var lessons = new List<LessonVocabulary>();
+            foreach (var lesson in course.Lessons.Where(lesson => lesson.Completed).OrderBy(lesson => lesson.SortOrder))
+            {
+                var detail = await client.GetLessonAsync(course.CourseCode, lesson.Slug, cancellationToken);
+                if (detail?.Vocabulary is { Count: > 0 } vocabulary)
+                {
+                    lessons.Add(new LessonVocabulary(lesson.LessonId, lesson.Slug, lesson.Title, vocabulary));
+                }
+            }
+
+            if (lessons.Count > 0)
+            {
+                courses.Add(new CourseVocabulary(course.CourseCode, course.CourseTitle, lessons));
+            }
+        }
+
+        return Results.Ok(new UserVocabulary(courses));
+    }, app.Logger));
+
 app.MapPut("/api/lessons/{lessonId:int}/milestone", async (
     int lessonId,
     HttpContext context,

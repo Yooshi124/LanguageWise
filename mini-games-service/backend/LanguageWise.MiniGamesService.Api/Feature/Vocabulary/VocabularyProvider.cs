@@ -8,11 +8,15 @@ public sealed record VocabularyGroup(string Title, IReadOnlyList<string> Words);
 /// <summary>Provides vocabulary words from course content based on the user's completed milestones.</summary>
 public interface IVocabularyProvider
 {
-    /// <summary>All playable vocabulary from the lessons the user has completed. Empty when the user has completed nothing.</summary>
-    Task<IReadOnlyList<string>> GetVocabularyAsync(string courseCode, int userId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// All playable vocabulary from the lessons the user has completed in the courses they have
+    /// started. Empty when the user has completed nothing. When <paramref name="courseCode"/> is
+    /// given, only that course's vocabulary is included.
+    /// </summary>
+    Task<IReadOnlyList<string>> GetVocabularyAsync(string? courseCode, string? accessToken, CancellationToken cancellationToken = default);
 
     /// <summary>Playable vocabulary grouped by the lesson it came from (completed lessons only).</summary>
-    Task<IReadOnlyList<VocabularyGroup>> GetVocabularyGroupsAsync(string courseCode, int userId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<VocabularyGroup>> GetVocabularyGroupsAsync(string? courseCode, string? accessToken, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Thrown when a game cannot start because the user has no playable vocabulary yet.</summary>
@@ -88,58 +92,58 @@ public static class PlayableWords
     }
 }
 
-/// <summary>Vocabulary provider that resolves the user's completed milestones from the courses service.</summary>
+/// <summary>
+/// Vocabulary provider that resolves the user's unlocked vocabulary from the quizzes-courses API:
+/// the courses they have started, limited to lessons whose milestone they have achieved.
+/// </summary>
 public sealed class CourseVocabularyProvider(CourseVocabularyClient courseClient, ILogger<CourseVocabularyProvider> logger) : IVocabularyProvider
 {
-    public async Task<IReadOnlyList<string>> GetVocabularyAsync(string courseCode, int userId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<string>> GetVocabularyAsync(string? courseCode, string? accessToken, CancellationToken cancellationToken = default)
     {
-        var groups = await GetVocabularyGroupsAsync(courseCode, userId, cancellationToken);
+        var groups = await GetVocabularyGroupsAsync(courseCode, accessToken, cancellationToken);
         return groups.SelectMany(group => group.Words).Distinct().ToList();
     }
 
-    public async Task<IReadOnlyList<VocabularyGroup>> GetVocabularyGroupsAsync(string courseCode, int userId, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<VocabularyGroup>> GetVocabularyGroupsAsync(string? courseCode, string? accessToken, CancellationToken cancellationToken = default)
     {
         try
         {
-            var progress = await courseClient.GetCourseProgressAsync(courseCode, userId, cancellationToken);
-            var lessons = await courseClient.GetLessonsAsync(courseCode, cancellationToken);
-            if (progress is null || lessons is null)
+            var vocabulary = await courseClient.GetUserVocabularyAsync(accessToken, cancellationToken);
+            if (vocabulary is null)
             {
-                logger.LogWarning("Course data unavailable for user {UserId} in course {CourseCode}", userId, courseCode);
+                logger.LogWarning("User vocabulary unavailable from the courses service (course filter: {CourseCode})", courseCode ?? "none");
                 return [];
             }
 
-            var completedLessonIds = progress.Lessons
-                .Where(lesson => lesson.Completed)
-                .Select(lesson => lesson.LessonId)
-                .ToHashSet();
+            var courses = vocabulary.Courses.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(courseCode))
+            {
+                courses = courses.Where(course => string.Equals(course.Code, courseCode, StringComparison.OrdinalIgnoreCase));
+            }
 
             var groups = new List<VocabularyGroup>();
-            foreach (var lesson in lessons.Where(lesson => completedLessonIds.Contains(lesson.Id)).OrderBy(lesson => lesson.SortOrder))
+            foreach (var course in courses)
             {
-                var detail = await courseClient.GetLessonAsync(courseCode, lesson.Slug, cancellationToken);
-                if (detail?.Vocabulary is null)
+                foreach (var lesson in course.Lessons)
                 {
-                    continue;
-                }
-
-                var words = PlayableWords.Extract(detail.Vocabulary.Select(entry => entry.Word));
-                if (words.Count > 0)
-                {
-                    groups.Add(new VocabularyGroup(detail.Title, words));
+                    var words = PlayableWords.Extract(lesson.Vocabulary.Select(entry => entry.Word));
+                    if (words.Count > 0)
+                    {
+                        groups.Add(new VocabularyGroup($"{course.Title} — {lesson.Title}", words));
+                    }
                 }
             }
 
             if (groups.Count == 0)
             {
-                logger.LogInformation("No completed-lesson vocabulary for user {UserId} in course {CourseCode}", userId, courseCode);
+                logger.LogInformation("No unlocked vocabulary for the user (course filter: {CourseCode})", courseCode ?? "none");
             }
 
             return groups;
         }
         catch (Exception exception)
         {
-            logger.LogError(exception, "Error retrieving vocabulary for user {UserId} in course {CourseCode}", userId, courseCode);
+            logger.LogError(exception, "Error retrieving vocabulary from the courses service (course filter: {CourseCode})", courseCode ?? "none");
             return [];
         }
     }

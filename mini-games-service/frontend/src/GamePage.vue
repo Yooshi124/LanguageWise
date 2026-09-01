@@ -1,41 +1,87 @@
 <template>
-	<main class="game-page lw-shell">
-		<section class="intro" aria-labelledby="games-title">
-			<p class="eyebrow">Choose your challenge</p>
-			<h1 id="games-title">Learn by playing.</h1>
-			<p class="intro__copy">Short vocabulary games for a sharper memory and a little friendly competition.</p>
-		</section>
+	<main class="games-home">
+		<div class="games-home__container">
+			<div class="games-hero">
+				<span class="games-chip">Train a little every day</span>
+				<h1>Pick a game.<br /><span>Make it stick.</span></h1>
+				<p>Three quick vocabulary workouts built from the words you have already unlocked in your courses.</p>
+			</div>
 
-		<ul class="game-list">
-			<li v-for="game in games" :key="game.name" class="game-card">
-				<a class="game-card__link" :href="game.link">
-					<div class="game-card__preview" :class="`game-card__preview--${game.theme}`" aria-hidden="true">
-						<div v-if="game.theme === 'vocab'" class="vocab-preview">
-							<span v-for="cell in 10" :key="cell" class="vocab-preview__cell" :class="{ 'is-filled': cell === 2 || cell === 7 }"></span>
-						</div>
-						<div v-else-if="game.theme === 'strings'" class="strings-preview">
-							<span v-for="cell in 48" :key="cell" class="strings-preview__cell" :class="{ 'is-filled': cell === 5 || cell === 18 || cell === 31 || cell === 44 }"></span>
-						</div>
-						<div v-else class="associations-preview">
-							<span v-for="cell in 16" :key="cell" class="associations-preview__cell" :class="{ 'is-filled': cell === 6 || cell === 11 }"></span>
-						</div>
-					</div>
+			<section v-if="languages.length > 0" class="language-picker" aria-label="Language your games use">
+				<span class="language-picker__label">Practising</span>
+				<div class="language-picker__options" role="group">
+					<button
+						v-for="language in languages"
+						:key="language.code"
+						type="button"
+						class="language-picker__option"
+						:class="{ 'is-active': language.code === selectedLanguage }"
+						:aria-pressed="language.code === selectedLanguage"
+						@click="selectLanguage(language.code)"
+					>
+						{{ language.title }}
+					</button>
+				</div>
+				<p class="language-picker__hint">Games only use words from the selected language. Complete lessons in other courses to unlock more.</p>
+			</section>
 
-					<div class="game-card__body">
-						<div class="game-card__heading">
-							<span class="game-card__number">0{{ game.id }}</span>
+			<ul class="game-list">
+				<li v-for="game in games" :key="game.name">
+					<a class="game-card" :class="`game-card--${game.theme}`" :href="game.link">
+						<div class="game-card__preview" :class="`game-card__preview--${game.theme}`" aria-hidden="true">
+							<div v-if="game.theme === 'vocab'" class="vocab-preview">
+								<span v-for="cell in 10" :key="cell" class="vocab-preview__cell" :class="{ 'is-filled': cell === 2 || cell === 7 }"></span>
+							</div>
+							<div v-else-if="game.theme === 'strings'" class="strings-preview">
+								<span v-for="cell in 48" :key="cell" class="strings-preview__cell" :class="{ 'is-filled': cell === 5 || cell === 18 || cell === 31 || cell === 44 }"></span>
+							</div>
+							<div v-else class="associations-preview">
+								<span v-for="cell in 16" :key="cell" class="associations-preview__cell" :class="{ 'is-filled': cell === 6 || cell === 11 }"></span>
+							</div>
+						</div>
+
+						<div class="game-card__body">
+							<span class="game-card__meta">Game {{ String(game.id).padStart(2, '0') }}</span>
 							<h2>{{ game.name }}</h2>
+							<p>{{ game.description }}</p>
+							<span class="game-card__action">
+								<span class="game-card__action-content">
+									Play now <span aria-hidden="true">&#8594;</span>
+								</span>
+							</span>
 						</div>
-						<p>{{ game.description }}</p>
-						<span class="play-link">Play now <span aria-hidden="true">&#8594;</span></span>
-					</div>
-				</a>
-			</li>
-		</ul>
+					</a>
+				</li>
+			</ul>
+		</div>
 	</main>
 </template>
 
 <script setup>
+import { onMounted, ref } from 'vue';
+import { ensureCourseCode, fetchGameLanguages, getCourseCode, setCourseCode } from './api.js';
+
+// Languages the user has unlocked vocabulary in; the selected one scopes every game.
+const languages = ref([]);
+const selectedLanguage = ref(null);
+
+function selectLanguage(code) {
+	setCourseCode(code);
+	selectedLanguage.value = code;
+}
+
+onMounted(async () => {
+	try {
+		languages.value = await fetchGameLanguages();
+	} catch {
+		languages.value = [];
+	}
+
+	// Resolve (and persist) a valid selection: the stored one when still unlocked,
+	// otherwise the first unlocked language.
+	selectedLanguage.value = languages.value.length > 0 ? await ensureCourseCode() : getCourseCode();
+});
+
 // Relative links resolve correctly both under the gateway base (/mini-games/)
 // and when served at the root in local dev.
 const games = [
@@ -64,89 +110,152 @@ const games = [
 </script>
 
 <style scoped>
-.game-page {
-	--page-ink: #1c2b45;
-	--page-muted: #5b6b85;
-	--page-border: #d9e0ee;
-	--page-surface: #fff;
-	padding-top: 3.5rem;
-	padding-bottom: 4rem;
+.games-home {
+	min-height: 100vh;
+	background: radial-gradient(circle at 85% 8%, #e0e7ff 0, transparent 30%), #f6f7fb;
 }
 
-.intro {
-	max-width: 42rem;
-	margin-bottom: 2.5rem;
+.games-home__container {
+	padding: 38px clamp(24px, 3.5vw, 50px) 42px;
 }
 
-.eyebrow {
-	margin: 0 0 0.75rem;
-	color: #10897a;
+.games-hero {
+	max-width: 780px;
+}
+
+.games-chip {
+	display: inline-block;
+	margin-bottom: 20px;
+	padding: 6px 14px;
+	border-radius: 999px;
+	color: #4338ca;
+	background: #eef2ff;
+	font-size: 0.82rem;
+	font-weight: 650;
+}
+
+.games-hero h1 {
+	margin: 0;
+	font-size: clamp(2.8rem, 6vw, 5rem);
+	font-weight: 800;
+	line-height: 1.03;
+	letter-spacing: -0.055em;
+}
+
+.games-hero h1 span {
+	color: #4f46e5;
+}
+
+.games-hero p {
+	max-width: 630px;
+	margin: 24px 0 0;
+	color: #667085;
+	font-size: 1.2rem;
+	line-height: 1.7;
+}
+
+.language-picker {
+	margin: 28px 0 0;
+	padding: 16px 20px;
+	border: 1px solid #e7e9f0;
+	border-radius: 18px;
+	background: white;
+}
+
+.language-picker__label {
+	display: block;
+	margin-bottom: 10px;
+	color: #4338ca;
 	font-size: 0.78rem;
 	font-weight: 700;
-	letter-spacing: 0.12em;
+	letter-spacing: 0.08em;
 	text-transform: uppercase;
 }
 
-.intro h1 {
-	margin: 0;
-	color: var(--page-ink);
-	font-size: clamp(2.5rem, 7vw, 4.5rem);
-	font-weight: 800;
-	letter-spacing: -0.04em;
-	line-height: 0.98;
+.language-picker__options {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
 }
 
-.intro__copy {
-	max-width: 32rem;
-	margin: 1.25rem 0 0;
-	color: var(--page-muted);
-	font-size: 1.1rem;
+.language-picker__option {
+	padding: 8px 18px;
+	border: 1.5px solid #d6dae6;
+	border-radius: 999px;
+	color: #475467;
+	background: #f8f9fc;
+	font-size: 0.95rem;
+	font-weight: 600;
+	cursor: pointer;
+	transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.language-picker__option:hover,
+.language-picker__option:focus-visible {
+	border-color: #4f46e5;
+	color: #4338ca;
+}
+
+.language-picker__option:focus-visible {
+	outline: 3px solid rgba(79, 70, 229, 0.28);
+	outline-offset: 2px;
+}
+
+.language-picker__option.is-active {
+	border-color: #4f46e5;
+	color: white;
+	background: #4f46e5;
+}
+
+.language-picker__hint {
+	margin: 12px 0 0;
+	color: #98a2b3;
+	font-size: 0.85rem;
 }
 
 .game-list {
 	display: grid;
 	grid-template-columns: repeat(3, minmax(0, 1fr));
-	gap: 1.25rem;
-	margin: 0;
+	gap: 20px;
+	margin: 42px 0 0;
 	padding: 0;
 	list-style: none;
 }
 
-.game-card {
+.game-list li {
 	min-width: 0;
 }
 
-.game-card__link {
+.game-card {
+	position: relative;
 	display: flex;
 	height: 100%;
 	flex-direction: column;
-	color: inherit;
-	text-decoration: none;
-	background: var(--page-surface);
-	border: 1px solid var(--page-border);
-	border-radius: 10px;
-	box-shadow: 0 1px 3px rgba(28, 43, 69, 0.08), 0 8px 24px rgba(28, 43, 69, 0.06);
 	overflow: hidden;
-	transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+	border: 1px solid #e7e9f0;
+	border-radius: 24px;
+	color: inherit;
+	background: white;
+	text-decoration: none;
+	transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.game-card__link:hover,
-.game-card__link:focus-visible {
-	border-color: #1f6feb;
-	box-shadow: 0 4px 8px rgba(28, 43, 69, 0.1), 0 14px 30px rgba(28, 43, 69, 0.1);
-	transform: translateY(-4px);
+.game-card:hover,
+.game-card:focus-visible {
+	box-shadow: 0 18px 40px rgba(31, 41, 55, 0.1);
+	transform: translateY(-6px);
 }
 
-.game-card__link:focus-visible {
-	outline: 3px solid rgba(31, 111, 235, 0.28);
+.game-card:focus-visible {
+	outline: 3px solid rgba(79, 70, 229, 0.28);
 	outline-offset: 3px;
 }
 
 .game-card__preview {
 	display: grid;
-	place-items: center;
-	min-height: 14rem;
+	min-height: 13rem;
 	padding: 1.5rem;
+	place-items: center;
 }
 
 .game-card__preview--vocab {
@@ -168,14 +277,12 @@ const games = [
 	gap: 0.4rem;
 }
 
-.vocab-preview__cell,
-.strings-preview__cell {
+.vocab-preview__cell {
 	border: 2px solid #1c2b45;
 	background: rgba(255, 255, 255, 0.7);
 }
 
-.vocab-preview__cell.is-filled,
-.strings-preview__cell.is-filled {
+.vocab-preview__cell.is-filled {
 	border-color: #10897a;
 	background: #10897a;
 }
@@ -189,7 +296,7 @@ const games = [
 }
 
 .strings-preview__cell {
-	border-color: #9d6a28;
+	border: 2px solid #9d6a28;
 	background: rgba(255, 255, 255, 0.75);
 }
 
@@ -220,79 +327,88 @@ const games = [
 	display: flex;
 	flex: 1;
 	flex-direction: column;
-	padding: 1.35rem 1.5rem 1.5rem;
+	padding: 24px;
 }
 
-.game-card__heading {
-	display: flex;
-	align-items: baseline;
-	gap: 0.7rem;
-}
-
-.game-card__number {
-	color: #10897a;
-	font-size: 0.75rem;
+.game-card__meta {
+	color: #6366f1;
+	font-size: 0.78rem;
 	font-weight: 800;
 	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+/* Each card picks up the accent colour of the game page it links to. */
+.game-card--vocab .game-card__meta,
+.game-card--vocab .game-card__action-content {
+	color: #10897a;
+}
+
+.game-card--strings .game-card__meta,
+.game-card--strings .game-card__action-content {
+	color: #b45309;
+}
+
+.game-card--associations .game-card__meta,
+.game-card--associations .game-card__action-content {
+	color: #4254a4;
 }
 
 .game-card h2 {
-	margin: 0;
-	color: var(--page-ink);
-	font-size: 1.35rem;
+	margin: 14px 0 8px;
+	font-size: 1.5rem;
 }
 
 .game-card__body p {
-	margin: 0.75rem 0 1.5rem;
-	color: var(--page-muted);
-	font-size: 0.92rem;
+	margin: 0;
+	min-height: 48px;
+	color: #667085;
+	line-height: 1.5;
 }
 
-.play-link {
-	margin-top: auto;
-	color: #1f6feb;
-	font-size: 0.9rem;
+.game-card__action {
+	display: flex;
+	margin-top: 26px;
+	align-items: center;
+	justify-content: space-between;
 	font-weight: 700;
 }
 
-.play-link span {
-	display: inline-block;
-	margin-left: 0.25rem;
-	transition: transform 160ms ease;
+.game-card__action-content {
+	display: inline-flex;
+	width: 100%;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
 }
 
-.game-card__link:hover .play-link span,
-.game-card__link:focus-visible .play-link span {
+.game-card__action-content span {
+	display: inline-block;
+	transition: transform 0.16s ease;
+}
+
+.game-card:hover .game-card__action-content span,
+.game-card:focus-visible .game-card__action-content span {
 	transform: translateX(0.25rem);
 }
 
-@media (max-width: 52rem) {
+@media (max-width: 1100px) {
 	.game-list {
-		grid-template-columns: 1fr;
-	}
-
-	.game-card__link {
-		flex-direction: row;
-	}
-
-	.game-card__preview {
-		width: 42%;
-		min-height: 13rem;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 }
 
-@media (max-width: 36rem) {
-	.game-page {
-		padding-top: 2rem;
+@media (max-width: 600px) {
+	.games-hero h1 {
+		font-size: 2.7rem;
 	}
 
-	.game-card__link {
-		flex-direction: column;
+	.game-list {
+		grid-template-columns: minmax(0, 1fr);
 	}
 
 	.game-card__preview {
-		width: 100%;
-		min-height: 12rem;
+		min-height: 11rem;
 	}
 }
 </style>

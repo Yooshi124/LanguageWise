@@ -96,6 +96,14 @@ public sealed class CatalogClient(HttpClient httpClient)
             $"api/courses/{Uri.EscapeDataString(courseCode)}/progress/{userId}",
             cancellationToken);
 
+    /// <summary>Progress for every course the user has started, with per-lesson milestone state.</summary>
+    public async Task<IReadOnlyList<StartedCourseProgress>> GetStartedCourseProgressAsync(
+        int userId,
+        CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<List<StartedCourseProgress>>(
+            $"api/users/{userId}/course-progress",
+            cancellationToken) ?? [];
+
     public Task<DatabaseResponse<QuizAttempt>> StartQuizAttemptAsync(
         int quizId,
         int userId,

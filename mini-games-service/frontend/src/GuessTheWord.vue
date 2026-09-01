@@ -1,6 +1,7 @@
 <template>
 	<main class="guess-the-word">
 		<a class="back-button" :href="gameHome" aria-label="Return to the main game page">Back</a>
+		<GameHelp :steps="howToPlay" />
 		<header class="game-header">
 			<p class="eyebrow">Daily vocabulary challenge</p>
 			<h1>Guess the word</h1>
@@ -31,8 +32,18 @@
 			<div class="guess-controls">
 				<input id="guess" v-model="guess" maxlength="5" minlength="5" autocomplete="off" :disabled="gameComplete || loading" placeholder="5 letters" />
 				<button type="submit" :disabled="gameComplete || loading">{{ loading ? 'Checking' : 'Guess' }}</button>
-			</div>
-		</form>
+			</div>		<div v-if="specialLetters.length" class="special-letters" aria-label="Special letters for this language">
+			<button
+				v-for="letter in specialLetters"
+				:key="letter"
+				type="button"
+				class="special-letter"
+				:disabled="gameComplete || loading || guess.length >= 5"
+				@click="insertLetter(letter)"
+			>
+				{{ letter }}
+			</button>
+		</div>		</form>
 			<div v-if="gameComplete && !isWon" class="failure-banner" role="alert">
 				<strong>Out of guesses</strong>
 				<span>The answer was <b>{{ correctAnswer }}</b>. Start a new round to play again.</span>
@@ -46,9 +57,21 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import { submitGuessTheWordGuess, resetGame, initializeGame, isNoVocabularyError, NO_VOCABULARY_MESSAGE } from './api.js';
+import GameHelp from './components/GameHelp.vue';
 
 // App base path ('/mini-games/' through the gateway, '/' in local dev).
 const gameHome = `${import.meta.env.BASE_URL}game`;
+
+// Letters in the game's word pool that can't be typed as a plain English letter
+// (ß — unlike Ä, Ö, Ü, Ñ, Ł… — has no ASCII stand-in), provided by the backend.
+const specialLetters = ref([]);
+
+const howToPlay = [
+	'Find the hidden five-letter word within six guesses.',
+	'Type a guess and press Guess — every letter is checked against the answer.',
+	'A tile shows when a letter is in the right spot, in the word but in the wrong spot, or not in the word at all.',
+	'Use the alphabet row below the board to keep track of the letters you have already tried.'
+];
 
 const guess = ref('');
 const guesses = ref([]);
@@ -95,6 +118,13 @@ const letterStatuses = computed(() => {
 		statusLabel: statusLabels[statuses[value]] ?? ''
 	}));
 });
+
+const insertLetter = (letter) => {
+	if (guess.value.length < 5) {
+		guess.value += letter;
+	}
+	document.getElementById('guess')?.focus();
+};
 
 const submitGuess = async () => {
 	if (guess.value.trim().length !== 5) {
@@ -144,6 +174,7 @@ onMounted(async () => {
 		gameComplete.value = state?.isComplete ?? false;
 		isWon.value = state?.isWon ?? false;
 		correctAnswer.value = state?.correctAnswer ?? '';
+		specialLetters.value = state?.specialLetters ?? [];
 	} catch (exception) {
 		if (isNoVocabularyError(exception)) {
 			noVocabulary.value = true;
@@ -315,6 +346,36 @@ h1 {
 .guess-controls {
 	display: flex;
 	gap: 0.5rem;
+}
+
+.special-letters {
+	display: flex;
+	gap: 0.4rem;
+	margin-top: 0.5rem;
+}
+
+.special-letter {
+	min-width: 2.25rem;
+	padding: 0.4rem 0.6rem;
+	color: #1c2b45;
+	border: 1px solid #9acbc4;
+	border-radius: 6px;
+	background: #fff;
+	font: inherit;
+	font-weight: 700;
+	cursor: pointer;
+	transition: border-color 120ms ease, background 120ms ease;
+}
+
+.special-letter:hover:not(:disabled),
+.special-letter:focus-visible {
+	border-color: #10897a;
+	background: #e6f3f2;
+}
+
+.special-letter:disabled {
+	opacity: 0.45;
+	cursor: default;
 }
 
 .guess-controls input {

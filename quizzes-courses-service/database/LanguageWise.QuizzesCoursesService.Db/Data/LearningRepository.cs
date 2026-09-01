@@ -425,6 +425,84 @@ public sealed class LearningRepository(string connectionString)
             quizzes));
     }
 
+    /// <summary>
+    /// Progress for every course the user has started. A course counts as started once the user
+    /// has any milestone (course, lesson, or quiz) or any quiz attempt in it. Each entry lists all
+    /// of the course's lessons with the user's milestone state, so callers can unlock content as
+    /// the user progresses.
+    /// </summary>
+    public DomainResult<IReadOnlyList<StartedCourseProgress>> GetStartedCoursesProgress(int userId)
+    {
+        if (userId <= 0)
+        {
+            return InvalidUser<IReadOnlyList<StartedCourseProgress>>();
+        }
+
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT c.Code, c.Title, l.Id, l.Slug, l.Title, l.SortOrder,
+                   EXISTS(
+                       SELECT 1 FROM Milestones m
+                       WHERE m.UserId = $userId AND m.LessonId = l.Id
+                   )
+            FROM Courses c
+            INNER JOIN Lessons l ON l.CourseId = c.Id
+            WHERE EXISTS(
+                      SELECT 1 FROM Milestones m
+                      WHERE m.UserId = $userId AND m.CourseId = c.Id)
+               OR EXISTS(
+                      SELECT 1 FROM Milestones m
+                      INNER JOIN Lessons ml ON ml.Id = m.LessonId
+                      WHERE m.UserId = $userId AND ml.CourseId = c.Id)
+               OR EXISTS(
+                      SELECT 1 FROM Milestones m
+                      INNER JOIN Quizzes mq ON mq.Id = m.QuizId
+                      INNER JOIN Lessons ql ON ql.Id = mq.LessonId
+                      WHERE m.UserId = $userId AND ql.CourseId = c.Id)
+               OR EXISTS(
+                      SELECT 1 FROM QuizAttempts a
+                      INNER JOIN Quizzes aq ON aq.Id = a.QuizId
+                      INNER JOIN Lessons al ON al.Id = aq.LessonId
+                      WHERE a.UserId = $userId AND al.CourseId = c.Id)
+            ORDER BY c.Code, l.SortOrder;
+            """;
+        command.Parameters.AddWithValue("$userId", userId);
+
+        var courses = new List<StartedCourseProgress>();
+        var lessons = new List<LessonMilestone>();
+        string? currentCode = null;
+        string? currentTitle = null;
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var code = reader.GetString(0);
+            if (currentCode is not null && code != currentCode)
+            {
+                courses.Add(new StartedCourseProgress(currentCode, currentTitle!, lessons.ToArray()));
+                lessons.Clear();
+            }
+
+            currentCode = code;
+            currentTitle = reader.GetString(1);
+            lessons.Add(new LessonMilestone(
+                reader.GetInt32(2),
+                reader.GetString(3),
+                reader.GetString(4),
+                reader.GetInt32(5),
+                reader.GetBoolean(6)));
+        }
+
+        if (currentCode is not null)
+        {
+            courses.Add(new StartedCourseProgress(currentCode, currentTitle!, lessons.ToArray()));
+        }
+
+        return DomainResult<IReadOnlyList<StartedCourseProgress>>.Success(courses);
+    }
+
     public DomainResult<MilestoneState> CompleteLesson(int lessonId, int userId)
     {
         if (userId <= 0)
