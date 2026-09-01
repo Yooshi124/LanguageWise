@@ -1,11 +1,16 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Security.Cryptography;
+using System.Text.Json;
+using System.Threading.RateLimiting;
 using System.Text.Json.Serialization;
 using LanguageWise.QuizzesCoursesService.Api.Clients;
 using LanguageWise.QuizzesCoursesService.Api.Models;
+using LanguageWise.QuizzesCoursesService.Api.Options;
+using LanguageWise.QuizzesCoursesService.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Extensions.Options;
@@ -19,6 +24,55 @@ builder.Services.AddHttpClient<CatalogClient>(client =>
 {
     client.BaseAddress = new Uri(databaseServiceUrl.TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(10);
+});
+
+builder.Services
+    .AddOptions<OpenRouterOptions>()
+    .Bind(builder.Configuration.GetSection(OpenRouterOptions.SectionName))
+    .Validate(
+        options => Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out _),
+        "OpenRouter:BaseUrl must be an absolute URL.")
+    .Validate(
+        options => !string.IsNullOrWhiteSpace(options.Model),
+        "OpenRouter:Model is required.")
+    .Validate(
+        options => options.MaxOutputTokens is > 0 and <= 8192,
+        "OpenRouter:MaxOutputTokens must be between 1 and 8192.")
+    .ValidateOnStart();
+builder.Services.AddHttpClient<IAssistantCompletionClient, OpenRouterAssistantClient>(
+    (services, client) =>
+    {
+        var options = services.GetRequiredService<IOptions<OpenRouterOptions>>().Value;
+        client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
+        client.Timeout = Timeout.InfiniteTimeSpan;
+    });
+builder.Services.AddSingleton<AssistantRequestValidator>();
+builder.Services.AddSingleton<IAssistantPromptBuilder, AssistantPromptBuilder>();
+builder.Services.AddScoped<IAssistantContextService, AssistantContextService>();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        if (!context.HttpContext.Response.HasStarted)
+        {
+            await Results.Problem(
+                title: "Too many assistant requests.",
+                detail: "Please wait before sending another assistant message.",
+                statusCode: StatusCodes.Status429TooManyRequests)
+                .ExecuteAsync(context.HttpContext);
+        }
+    };
+    options.AddPolicy("assistant-per-user", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value ?? "anonymous",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
 });
 
 var verificationKeyPath = builder.Configuration["Auth:VerificationKeyPath"] ?? "/run/secrets/signing_public_key";
@@ -64,6 +118,7 @@ var app = builder.Build();
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapGet("/health", async (
     CatalogClient client,
@@ -138,6 +193,118 @@ app.MapGet("/api/me", (HttpContext context) =>
         ? Results.Ok(new { id = userId, username })
         : Results.Unauthorized();
 });
+
+app.MapPost("/api/assistant/messages", async (
+    AssistantMessageRequest request,
+    AssistantRequestValidator validator,
+    IAssistantContextService contextService,
+    IAssistantPromptBuilder promptBuilder,
+    IAssistantCompletionClient completionClient,
+    IOptions<OpenRouterOptions> openRouterOptions,
+    ILoggerFactory loggerFactory,
+    CancellationToken cancellationToken) =>
+{
+    var validation = validator.Validate(request);
+    if (validation.Request is null)
+    {
+        return Results.ValidationProblem(
+            validation.Errors.ToDictionary(error => error.Key, error => error.Value));
+    }
+
+    if (string.IsNullOrWhiteSpace(openRouterOptions.Value.ApiKey))
+    {
+        return Results.Problem(
+            title: "The assistant is not configured.",
+            detail: "The assistant service is temporarily unavailable.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    AssistantContextResult assistantContext;
+    try
+    {
+        assistantContext = await contextService.GetContextAsync(
+            validation.Request.Context,
+            cancellationToken);
+    }
+    catch (HttpRequestException exception)
+    {
+        app.Logger.LogWarning(
+            "Assistant catalog lookup failed with HTTP request error type {ErrorType}.",
+            exception.GetType().Name);
+        return Results.Problem(
+            title: "The course catalog is unavailable.",
+            detail: "The assistant could not load current LanguageWise content.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+    catch (JsonException exception)
+    {
+        app.Logger.LogWarning(
+            "Assistant catalog lookup returned invalid data of error type {ErrorType}.",
+            exception.GetType().Name);
+        return Results.Problem(
+            title: "The course catalog is unavailable.",
+            detail: "The assistant could not load current LanguageWise content.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+    catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+    {
+        app.Logger.LogWarning(
+            "Assistant catalog lookup timed out with error type {ErrorType}.",
+            exception.GetType().Name);
+        return Results.Problem(
+            title: "The course catalog is unavailable.",
+            detail: "The assistant could not load current LanguageWise content.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    if (!assistantContext.IsFound)
+    {
+        return Results.Problem(
+            title: "Assistant context was not found.",
+            detail: assistantContext.NotFoundMessage,
+            statusCode: StatusCodes.Status404NotFound);
+    }
+
+    try
+    {
+        var messages = promptBuilder.BuildMessages(
+            validation.Request,
+            assistantContext.CanonicalContext!);
+        var completion = await completionClient.StartCompletionAsync(messages, cancellationToken);
+        return new AssistantSseResult(
+            completion,
+            loggerFactory.CreateLogger<AssistantSseResult>());
+    }
+    catch (AssistantProviderException exception)
+    {
+        app.Logger.LogWarning(
+            "Assistant provider rejected a request with HTTP status {HttpStatus}.",
+            (int)exception.StatusCode);
+        if (exception.StatusCode == HttpStatusCode.TooManyRequests)
+        {
+            return Results.Problem(
+                title: "Garry is temporarily rate limited.",
+                detail: "OpenRouter's free model is busy or its request allowance has been reached. Please wait and try again.",
+                statusCode: StatusCodes.Status429TooManyRequests);
+        }
+
+        return Results.Problem(
+            title: "The assistant provider is unavailable.",
+            detail: "The assistant could not start a response. Please try again.",
+            statusCode: StatusCodes.Status502BadGateway);
+    }
+    catch (HttpRequestException exception)
+    {
+        app.Logger.LogWarning(
+            "Assistant provider request failed with error type {ErrorType}.",
+            exception.GetType().Name);
+        return Results.Problem(
+            title: "The assistant provider is unavailable.",
+            detail: "The assistant could not start a response. Please try again.",
+            statusCode: StatusCodes.Status502BadGateway);
+    }
+})
+    .RequireRateLimiting("assistant-per-user");
 
 app.MapGet("/api/courses", async (CatalogClient client, CancellationToken cancellationToken) =>
     await ExecuteAsync(

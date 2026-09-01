@@ -44,6 +44,11 @@ public sealed class AuthorizationTests
                 endpoint.GetProperty("route").GetString() == "/api/quizzes/{quizId:int}/attempts" &&
                 endpoint.GetProperty("status").GetString() == "registered" &&
                 endpoint.GetProperty("authRequired").GetBoolean()));
+            Assert.That(endpoints, Has.Some.Matches<JsonElement>(endpoint =>
+                endpoint.GetProperty("method").GetString() == "POST" &&
+                endpoint.GetProperty("route").GetString() == "/api/assistant/messages" &&
+                endpoint.GetProperty("status").GetString() == "registered" &&
+                endpoint.GetProperty("authRequired").GetBoolean()));
         });
     }
 

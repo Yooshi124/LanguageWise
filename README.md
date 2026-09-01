@@ -114,54 +114,26 @@ Use a Google app password rather than the account password. When these values
 are absent, events and achievement progress still work but email is skipped.
 The authenticated SMTP username is always used as the sender address.
 
-## Discussion forum AI mode
+## Garry assistant configuration
 
-The discussion forum has an **AI mode** button in its navigation bar that opens a
-help chatbot. It answers questions about the forum itself — *"how do I create a
-new post"*, *"how do I edit my post"*, how comments, likes and search work — and
-its answer streams in a word at a time.
+The quizzes and courses service includes Garry, a language-learning assistant
+powered through OpenRouter. The backend owns Garry's prompt, course and lesson
+context, model settings, and provider credentials. The browser only renders the
+streamed response and keeps a bounded transcript in `sessionStorage`; chats are
+not written to the database.
 
-It shares the same `ollama` container and `gemma4:e4b` model as the notification
-emails above, so there is no API key and no extra model to download. Each
-signed-in user gets ten questions a minute.
+Copy the example environment file and add an OpenRouter API key:
 
-It is retrieval-grounded rather than free-running. The backend keeps a curated
-set of help topics in
-`chat-discussion-service/backend/LanguageWise.ChatDiscussionService.Api/HelpKnowledgeBase.cs`,
-picks the ones matching the question and the page it was asked from, and
-instructs the model to answer only from those. This is what stops it inventing
-buttons the site does not have. It deliberately cannot read the posts or
-comments on the page — it explains the forum, it does not discuss its contents.
+```powershell
+Copy-Item quizzes-courses-service\backend\.env.example quizzes-courses-service\backend\.env
+```
 
-**When you rename or move a control in the forum frontend, update its article in
-`HelpKnowledgeBase.cs` too** — otherwise the assistant will keep confidently
-directing people to it.
+```text
+OpenRouter__ApiKey=your-openrouter-api-key
+```
 
-If Ollama is unreachable, or the model has never been pulled, AI mode degrades
-rather than failing: it streams the matched help text verbatim and the panel
-marks the answer as coming from the help pages. That only applies before the
-first fragment arrives — a model that dies part-way through an answer reports
-the response as interrupted instead.
-
-The answer travels as server-sent events, so any proxy in front of the backend
-has to have `proxy_buffering off` for `/api/assistant/messages`. Both
-`chat-discussion-service/frontend/nginx.conf` and `shared/frontend/nginx.conf`
-already do.
-
-## Discussion forums come from the course catalogue
-
-Apart from **Global**, every discussion forum mirrors a course from the quizzes and
-courses catalogue. The chat discussion **database** service syncs them once at
-start-up, calling the courses *database* service directly (`Services__Courses`).
-
-- Courses are matched by **course ID**, so renaming a course renames its forum and
-  keeps the posts in it.
-- A forum's **code is written once** and never resynced. URLs are `/forums/:code`,
-  so a course changing its code must not break links already out there.
-- A forum is **never deleted** — a withdrawn course would orphan its posts.
-- An unreachable catalogue is **not fatal**; the next restart tries again.
-
-The seed mirrors the courses seed (`de`…`pl` with their course IDs). A volume created
-before forums existed carries `Posts.Category` instead: `DatabaseInitializer` turns
-each distinct category into a forum with no course ID and repoints the posts, and the
-first sync adopts those by code.
+Docker Compose loads this ignored file into the quizzes and courses backend.
+The default model is `google/gemma-4-26b-a4b-it`; override
+`OpenRouter__Model` in the same file if the model identifier changes. When no
+key is configured, the rest of the service remains available and Garry returns
+a clear unavailable response without exposing configuration details.
