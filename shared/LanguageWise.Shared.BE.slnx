@@ -9,9 +9,12 @@
     <Project Path="tests/LanguageWise.Shared.Api.Tests/LanguageWise.Shared.Api.Tests.csproj" />
   </Folder>
   <Folder Name="/frontend/">
-    <File Path="frontend/css/theme.css" />
+    <File Path="frontend/package.json" />
     <File Path="frontend/index.html" />
-    <File Path="frontend/js/app.js" />
     <File Path="frontend/nginx.conf" />
+    <File Path="frontend/src/App.vue" />
+    <File Path="frontend/src/main.ts" />
+    <File Path="frontend/src/styles.css" />
+    <File Path="frontend/vite.config.ts" />
   </Folder>
 </Solution>
