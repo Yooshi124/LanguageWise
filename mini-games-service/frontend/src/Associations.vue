@@ -1,12 +1,15 @@
 <template>
 	<main class="game-page">
-		<a class="back-button" href="/game" aria-label="Return to the main game page">Back</a>
+		<a class="back-button" :href="gameHome" aria-label="Return to the main game page">Back</a>
 		<header class="game-header">
 			<p class="eyebrow">Make the associations</p>
 			<h1>Associations</h1>
 			<p>Find the words that belong together.</p>
 		</header>
-		<section class="board-shell" aria-label="Associations game board">
+		<section v-if="noVocabulary" class="board-shell empty-state" role="status">
+			<p class="empty-state__message">{{ NO_VOCABULARY_MESSAGE }}</p>
+		</section>
+		<section v-else class="board-shell" aria-label="Associations game board">
 			<div class="attempts" aria-label="Remaining mistakes">
 				<span v-for="attempt in 4" :key="attempt" class="attempt-icon" :class="{ used: attempt <= failedAttempts }" :aria-label="attempt <= failedAttempts ? 'Mistake used' : 'Mistake remaining'"></span>
 			</div>
@@ -52,7 +55,7 @@
 				<button class="submit-button" type="button" :disabled="selectedWords.length !== 4 || loading || gameComplete" @click="submitGuess">
 					{{ loading ? 'Checking...' : 'Submit group' }}
 				</button>
-				<button class="reset-button" type="button" @click="resetGame">New game</button>
+				<button class="reset-button" type="button" @click="resetGameHandler">New game</button>
 			</div>
 		</section>
 	</main>
@@ -60,6 +63,10 @@
 
  <script setup>
  import { onMounted, ref } from 'vue';
+ import { initializeGame, submitAssociationsGuess, resetGame, isNoVocabularyError, NO_VOCABULARY_MESSAGE } from './api.js';
+
+ // App base path ('/mini-games/' through the gateway, '/' in local dev).
+ const gameHome = `${import.meta.env.BASE_URL}game`;
 
  const words = ref([]);
  const selectedWords = ref([]);
@@ -71,11 +78,7 @@ const isWon = ref(false);
  const loading = ref(false);
  const message = ref('');
  const error = ref(false);
-
- const readResponse = async (response) => {
-	 const text = await response.text();
-	 return text ? JSON.parse(text) : null;
- };
+ const noVocabulary = ref(false);
 
  const applyState = (state) => {
 	 words.value = state.words;
@@ -100,16 +103,7 @@ const isWon = ref(false);
 	 message.value = '';
 	 error.value = false;
 	 try {
-		 const response = await fetch('/api/associations/guess', {
-			 method: 'POST',
-			 headers: { 'Content-Type': 'application/json' },
-			 body: JSON.stringify({ words: selectedWords.value })
-		 });
-		 const result = await readResponse(response);
-		 if (!response.ok) {
-			 throw new Error(result?.errors?.words?.[0] ?? result?.error ?? `Unable to submit group (${response.status}).`);
-		 }
-
+		 const result = await submitAssociationsGuess(selectedWords.value);
 		 applyState(result.state);
 		message.value = result.isAssociation
 			 ? `Connected: ${result.group.summary}.`
@@ -123,29 +117,34 @@ const isWon = ref(false);
 	 }
  };
 
- const resetGame = async () => {
+ const resetGameHandler = async () => {
 	 try {
-		 const response = await fetch('/api/associations/reset', { method: 'POST' });
-		 if (!response.ok) throw new Error(`Unable to reset the game (${response.status}).`);
-		 const stateResponse = await fetch('/api/associations');
-		 applyState(await readResponse(stateResponse));
+		 await resetGame('associations');
+		 const state = await initializeGame('associations');
+		 applyState(state);
 		 message.value = '';
 		 error.value = false;
 	 } catch (exception) {
-		 message.value = exception.message;
-		 error.value = true;
+		 if (isNoVocabularyError(exception)) {
+			 noVocabulary.value = true;
+		 } else {
+			 message.value = exception.message;
+			 error.value = true;
+		 }
 	 }
  };
 
  onMounted(async () => {
 	 try {
-		 const response = await fetch('/api/associations');
-		 const state = await readResponse(response);
-		 if (!response.ok) throw new Error(`Unable to load the game (${response.status}).`);
+		 const state = await initializeGame('associations');
 		 applyState(state);
 	 } catch (exception) {
-		 message.value = exception.message;
-		 error.value = true;
+		 if (isNoVocabularyError(exception)) {
+			 noVocabulary.value = true;
+		 } else {
+			 message.value = 'Could not start game: ' + exception.message;
+			 error.value = true;
+		 }
 	 }
  });
  </script>
@@ -165,6 +164,8 @@ const isWon = ref(false);
  h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.25rem); letter-spacing: -0.03em; }
  .game-header p:last-child { margin: 0.65rem 0 0; color: #65709d; }
  .board-shell { width: min(92vw, 42rem); margin: 0 auto; padding: 1.5rem; background: rgba(255, 255, 255, 0.7); border: 1px solid rgba(66, 84, 164, 0.22); border-radius: 10px; box-shadow: 0 12px 32px rgba(57, 68, 132, 0.12); }
+ .empty-state { text-align: center; }
+ .empty-state__message { margin: 1rem 0; color: #65709d; font-weight: 600; line-height: 1.6; }
  .solved-groups { display: grid; gap: 0.6rem; margin-bottom: 0.75rem; }
 .revealed-groups { display: grid; gap: 0.6rem; margin-top: 1rem; }
 .revealed-title { margin: 0 0 0.1rem; color: #65709d; font-size: 0.8rem; font-weight: 800; text-transform: uppercase; }

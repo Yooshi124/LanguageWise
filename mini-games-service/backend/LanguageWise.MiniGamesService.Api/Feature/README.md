@@ -7,36 +7,44 @@ future cross-service integrations.
 
 ## What is in here
 
-- `GuessTheWord`, `WordSearch`, and `Associations` — grouped game implementations.
+- `GuessTheWord`, `WordSearch`, and `Associations` — the three game implementations.
+- `Vocabulary` — resolves playable words from the quizzes/courses service based on
+  the user's completed lesson milestones.
 
-The grouped structure is now present, with each game following the same
-three-part relationship:
+Each game follows the same two-part structure:
 
 ```
 Feature/<Game>/
   <Game>Models.cs   data passed between the game and API
   <Game>Game.cs     game rules; references <Game>Models.cs
-  <Game>Service.cs  session/application boundary; references <Game>Game.cs
 ```
 
-For example, `GuessTheWordService.SubmitGuess` calls `GuessTheWordGame.SubmitGuess`,
-which returns the `GuessTheWordGuessResult` model. The equivalent references exist for
-`WordSearch` and `Associations`.
+Game instances are created per user by `Services/GameSessionManager.cs`, which asks
+the `IVocabularyProvider` for the user's course vocabulary and throws
+`NoVocabularyAvailableException` when there is nothing to play with. The API maps
+that to a `422` with `{ "code": "NO_VOCABULARY" }` so the frontend can show a
+friendly "complete more course content" message instead of a broken board.
 
-The Guess the word game is registered in `Program.cs` and uses a local fake learning-context
-provider until the quizzes/courses service exposes the required API.
+## Vocabulary rules
 
-Word Search uses a themed board with pointer-drag selection and server-side
-progress tracking.
-
-The local provider currently supplies a small Markdown learning context containing
-candidate vocabulary. It is deliberately replaceable when the courses API exists.
+- Words come from completed lessons of the user's course (milestones in the
+  quizzes/courses database service).
+- Entries are split into letter-only tokens (so "Guten Tag" yields GUTEN and TAG),
+  uppercased, and must be 3–15 letters long. Any alphabet is allowed, so German
+  umlauts and ß work.
+- Tokens shared by several entries of a lesson (e.g. articles like "die") are dropped.
+- **Guess the Word** needs at least one five-letter word.
+- **Word Search** needs at least four words; the board is generated along a
+  serpentine route and leftover cells are filled with letters from the placed words.
+- **Associations** needs at least four lessons with four words each; each lesson
+  becomes one association group.
 
 ## The frontend
 
 This microservice's frontend is Kyan's **Vue + Vite** single-page app, in
-`mini-games-service/frontend/src/`. `GamePage.vue` and `GuessTheWord.vue` are the
-currently supported screens.
+`mini-games-service/frontend/src/`. All API calls go through `src/api.js`, which
+attaches the `userId` query parameter and translates error responses into typed
+errors (including the `NO_VOCABULARY` code).
 The build runs entirely inside the frontend Dockerfile, so no Node install is needed
 locally or in CI.
 
@@ -47,16 +55,10 @@ Routes, resolved in `src/main.js`:
 | `/` | `GamePage.vue` |
 | `/game/guess-the-word` | `GuessTheWord.vue` |
 | `/game/word-search` | `WordSearch.vue` |
-| `/game/associations` | `Associations.vue` — game screen stub |
+| `/game/associations` | `Associations.vue` |
 
 ## Wiring this feature up
 
-1. Replace the fake learning-context provider with a client for the quizzes/courses service.
-2. Add persistence and authentication once the shared contracts are available.
-3. Replace the placeholder answer selection with the agreed content-generation strategy.
-4. Add NUnit tests for each new game and integration boundary.
-
-## Notes on the code as it stands
-
-- Learning context is currently fake and is not user-specific.
-- Game state is currently held in memory and is shared by requests to the backend process.
+1. Add persistence and authentication once the shared contracts are available
+   (the games database service and `GamesDatabaseClient` are already in place).
+2. Add integration tests for the courses-service boundary.

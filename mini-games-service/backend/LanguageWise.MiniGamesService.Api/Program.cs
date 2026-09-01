@@ -1,30 +1,81 @@
-using LanguageWise.MiniGamesService.Api.Feature.GuessTheWord;
+using LanguageWise.MiniGamesService.Api.Clients;
 using LanguageWise.MiniGamesService.Api.Feature.Associations;
+using LanguageWise.MiniGamesService.Api.Feature.GuessTheWord;
+using LanguageWise.MiniGamesService.Api.Feature.Vocabulary;
 using LanguageWise.MiniGamesService.Api.Feature.WordSearch;
+using LanguageWise.MiniGamesService.Api.Services;
 
 const string ServiceName = "mini-games-service-backend";
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSingleton<ILearningContextProvider, FakeLearningContextProvider>();
-builder.Services.AddSingleton(serviceProvider => new GuessTheWordService(
-    "English",
-    serviceProvider.GetRequiredService<ILearningContextProvider>()));
-builder.Services.AddSingleton(new AssociationsService("English"));
-builder.Services.AddSingleton(new WordSearchService("English"));
+// Database and external service URLs
+var databaseServiceUrl = builder.Configuration["Services:Database"] ?? "http://localhost:6005";
+var courseServiceUrl = builder.Configuration["Services:Courses"] ?? "http://localhost:6003";
+
+// Register HTTP clients for external services
+builder.Services.AddHttpClient<GamesDatabaseClient>(client =>
+{
+    client.BaseAddress = new Uri(databaseServiceUrl.TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
+
+builder.Services.AddHttpClient<CourseVocabularyClient>(client =>
+{
+    client.BaseAddress = new Uri(courseServiceUrl.TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
+
+// Register vocabulary providers and supporting services
+builder.Services.AddSingleton<IVocabularyProvider>(serviceProvider =>
+    new CourseVocabularyProvider(
+        serviceProvider.GetRequiredService<CourseVocabularyClient>(),
+        serviceProvider.GetRequiredService<ILogger<CourseVocabularyProvider>>()));
+
+// Register the game session manager to handle concurrent games
+builder.Services.AddSingleton<GameSessionManager>();
 
 var app = builder.Build();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = ServiceName }));
 
-app.MapGet("/api/guess-the-word", (GuessTheWordService service) =>
-    Results.Ok(service.GetState()));
-
-app.MapPost("/api/guess-the-word/guess", (GuessTheWordGuessRequest request, GuessTheWordService service) =>
+// Starts a game, translating "no vocabulary yet" into a 422 the frontend can show a friendly message for.
+async Task<IResult> InitializeGameAsync<TState>(Func<Task<TState>> startGame)
 {
     try
     {
-        return Results.Ok(service.SubmitGuess(request.Guess));
+        return Results.Ok(await startGame());
+    }
+    catch (NoVocabularyAvailableException exception)
+    {
+        return Results.UnprocessableEntity(new { code = "NO_VOCABULARY", error = exception.Message });
+    }
+    catch (Exception exception)
+    {
+        return Results.BadRequest(new { error = exception.Message });
+    }
+}
+
+// Guess the Word endpoints
+app.MapGet("/api/guess-the-word", (int? userId, GameSessionManager gameManager) =>
+{
+    if (userId is null)
+    {
+        return Results.BadRequest(new { error = "userId query parameter is required" });
+    }
+    var state = gameManager.GetGuessTheWordGameState(userId.Value);
+    return state is not null ? Results.Ok(state) : Results.NotFound(new { error = "No active game. Use POST /api/guess-the-word/init to start one" });
+});
+
+app.MapPost("/api/guess-the-word/init", async (int userId, GameSessionManager gameManager, string? courseCode = "de") =>
+    await InitializeGameAsync(() => gameManager.StartGuessTheWordGameAsync(userId, courseCode ?? "de")));
+
+app.MapPost("/api/guess-the-word/guess", (int userId, GuessTheWordGuessRequest request, GameSessionManager gameManager) =>
+{
+    try
+    {
+        var result = gameManager.SubmitGuessTheWordGuess(userId, request.Guess);
+        return Results.Ok(result);
     }
     catch (ArgumentException exception)
     {
@@ -39,19 +90,32 @@ app.MapPost("/api/guess-the-word/guess", (GuessTheWordGuessRequest request, Gues
     }
 });
 
-app.MapPost("/api/guess-the-word/reset", (GuessTheWordService service) =>
+app.MapPost("/api/guess-the-word/reset", (int userId, GameSessionManager gameManager) =>
 {
-    service.ResetGame();
+    gameManager.ResetGuessTheWordGame(userId);
     return Results.NoContent();
 });
 
-app.MapGet("/api/word-search", (WordSearchService service) => Results.Ok(service.GetState()));
+// Word Search endpoints
+app.MapGet("/api/word-search", (int? userId, GameSessionManager gameManager) =>
+{
+    if (userId is null)
+    {
+        return Results.BadRequest(new { error = "userId query parameter is required" });
+    }
+    var state = gameManager.GetWordSearchGameState(userId.Value);
+    return state is not null ? Results.Ok(state) : Results.NotFound(new { error = "No active game. Use POST /api/word-search/init to start one" });
+});
 
-app.MapPost("/api/word-search/guess", (WordSearchGuessRequest request, WordSearchService service) =>
+app.MapPost("/api/word-search/init", async (int userId, GameSessionManager gameManager, string? courseCode = "de") =>
+    await InitializeGameAsync(() => gameManager.StartWordSearchGameAsync(userId, courseCode ?? "de")));
+
+app.MapPost("/api/word-search/guess", (int userId, WordSearchGuessRequest request, GameSessionManager gameManager) =>
 {
     try
     {
-        return Results.Ok(service.SubmitWord(request.Word, request.Indices));
+        var result = gameManager.SubmitWordSearchWord(userId, request.Word, request.Indices);
+        return Results.Ok(result);
     }
     catch (ArgumentException exception)
     {
@@ -63,11 +127,12 @@ app.MapPost("/api/word-search/guess", (WordSearchGuessRequest request, WordSearc
     }
 });
 
-app.MapPost("/api/word-search/hint", (WordSearchService service) =>
+app.MapPost("/api/word-search/hint", (int userId, GameSessionManager gameManager) =>
 {
     try
     {
-        return Results.Ok(service.UseHint());
+        var result = gameManager.UseWordSearchHint(userId);
+        return Results.Ok(result);
     }
     catch (InvalidOperationException exception)
     {
@@ -75,21 +140,45 @@ app.MapPost("/api/word-search/hint", (WordSearchService service) =>
     }
 });
 
-app.MapPost("/api/word-search/give-up", (WordSearchService service) => Results.Ok(service.GiveUp()));
-
-app.MapPost("/api/word-search/reset", (WordSearchService service) =>
-{
-    service.ResetGame();
-    return Results.NoContent();
-});
-
-app.MapGet("/api/associations", (AssociationsService service) => Results.Ok(service.GetState()));
-
-app.MapPost("/api/associations/guess", (AssociationsGuessRequest request, AssociationsService service) =>
+app.MapPost("/api/word-search/give-up", (int userId, GameSessionManager gameManager) =>
 {
     try
     {
-        return Results.Ok(service.SubmitGuess(request.Words));
+        var result = gameManager.GiveUpWordSearch(userId);
+        return Results.Ok(result);
+    }
+    catch (InvalidOperationException exception)
+    {
+        return Results.Conflict(new { error = exception.Message });
+    }
+});
+
+app.MapPost("/api/word-search/reset", (int userId, GameSessionManager gameManager) =>
+{
+    gameManager.ResetWordSearchGame(userId);
+    return Results.NoContent();
+});
+
+// Associations endpoints
+app.MapGet("/api/associations", (int? userId, GameSessionManager gameManager) =>
+{
+    if (userId is null)
+    {
+        return Results.BadRequest(new { error = "userId query parameter is required" });
+    }
+    var state = gameManager.GetAssociationsGameState(userId.Value);
+    return state is not null ? Results.Ok(state) : Results.NotFound(new { error = "No active game. Use POST /api/associations/init to start one" });
+});
+
+app.MapPost("/api/associations/init", async (int userId, GameSessionManager gameManager, string? courseCode = "de") =>
+    await InitializeGameAsync(() => gameManager.StartAssociationsGameAsync(userId, courseCode ?? "de")));
+
+app.MapPost("/api/associations/guess", (int userId, AssociationsGuessRequest request, GameSessionManager gameManager) =>
+{
+    try
+    {
+        var result = gameManager.SubmitAssociationsGuess(userId, request.Words);
+        return Results.Ok(result);
     }
     catch (ArgumentException exception)
     {
@@ -101,9 +190,9 @@ app.MapPost("/api/associations/guess", (AssociationsGuessRequest request, Associ
     }
 });
 
-app.MapPost("/api/associations/reset", (AssociationsService service) =>
+app.MapPost("/api/associations/reset", (int userId, GameSessionManager gameManager) =>
 {
-    service.ResetGame();
+    gameManager.ResetAssociationsGame(userId);
     return Results.NoContent();
 });
 

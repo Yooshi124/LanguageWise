@@ -5,10 +5,17 @@ namespace LanguageWise.MiniGamesService.Api.Tests;
 [TestFixture]
 public class WordSearchGameTests
 {
+    private const string ThemeHint = "Words from your lessons: Greetings · Numbers";
+
+    private static readonly string[] TestVocabulary =
+    [
+        "ASTRONAUT", "ECLIPSE", "GALAXY", "ROCKET", "COMET", "MARS", "MOON", "RING", "SUN"
+    ];
+
     [Test]
     public void NewGameUsesAFullTallBoardWithContiguousThemedPaths()
     {
-        var game = new WordSearchGame("English");
+        var game = new WordSearchGame("English", ThemeHint, TestVocabulary);
         var state = game.GetState();
         var coveredCells = state.CoveragePaths.SelectMany(path => path).ToHashSet();
 
@@ -17,12 +24,13 @@ public class WordSearchGameTests
             Assert.That(state.Board, Has.Count.EqualTo(state.Rows * state.Columns));
             Assert.That(state.Rows, Is.EqualTo(8));
             Assert.That(state.Columns, Is.EqualTo(6));
-            Assert.That(game.GetWordChain(), Has.Length.GreaterThanOrEqualTo(9));
+            Assert.That(game.GetWordChain(), Has.Length.GreaterThanOrEqualTo(4));
             Assert.That(game.GetWordChain().Min(word => word.Length), Is.GreaterThanOrEqualTo(3));
-            Assert.That(coveredCells, Has.Count.EqualTo(state.Board.Count));
-            Assert.That(state.WordPaths[state.FeaturedWord].Select(index => index / state.Columns).Distinct().ToArray(), Has.Length.EqualTo(state.Rows));
+            Assert.That(coveredCells, Has.Count.EqualTo(state.WordPaths.Values.Sum(path => path.Count)));
+            Assert.That(state.WordPaths, Contains.Key(state.FeaturedWord));
             Assert.That(state.WordPaths.Values.SelectMany(path => path), Is.Unique);
-            Assert.That(state.ThemeHint, Is.Not.Empty);
+            Assert.That(state.ThemeHint, Is.EqualTo(ThemeHint));
+            Assert.That(state.Board, Has.All.Not.Null.And.Not.Empty);
         });
 
         foreach (var path in state.WordPaths.Values)
@@ -46,9 +54,29 @@ public class WordSearchGameTests
     }
 
     [Test]
+    public void ConstructorFiltersUnplayableWords()
+    {
+        var game = new WordSearchGame("English", ThemeHint, ["AB", "HAS SPACE", "TOO", "VALID", "ALSOVALID"]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(game.GetWordChain(), Does.Not.Contain("AB"));
+            Assert.That(game.GetWordChain(), Does.Not.Contain("HAS SPACE"));
+            Assert.That(game.GetWordChain(), Does.Contain("VALID"));
+        });
+    }
+
+    [Test]
+    public void ConstructorRejectsEmptyVocabulary()
+    {
+        Assert.Throws<ArgumentException>(() => new WordSearchGame("English", ThemeHint, []));
+        Assert.Throws<ArgumentException>(() => new WordSearchGame("English", ThemeHint, ["AB", "HAS SPACE"]));
+    }
+
+    [Test]
     public void SubmitWordAcceptsWordsOfDifferentLengthsAndTracksScore()
     {
-        var game = new WordSearchGame("English");
+        var game = new WordSearchGame("English", ThemeHint, TestVocabulary);
         var chain = game.GetWordChain();
         var shortWord = chain.OrderBy(word => word.Length).First();
         var longWord = chain.OrderByDescending(word => word.Length).First();
@@ -68,7 +96,7 @@ public class WordSearchGameTests
     [Test]
     public void InvalidWordDoesNotChangeProgress()
     {
-        var game = new WordSearchGame("English");
+        var game = new WordSearchGame("English", ThemeHint, TestVocabulary);
 
         var result = game.SubmitWord("language");
 
@@ -83,7 +111,7 @@ public class WordSearchGameTests
     [Test]
     public void FindingEveryWordCompletesTheGame()
     {
-        var game = new WordSearchGame("English");
+        var game = new WordSearchGame("English", ThemeHint, TestVocabulary);
 
         foreach (var word in game.GetWordChain())
         {
@@ -100,7 +128,7 @@ public class WordSearchGameTests
     [Test]
     public void PlayerCanUseThreeHintsAndTheFourthIsRejected()
     {
-        var game = new WordSearchGame("English");
+        var game = new WordSearchGame("English", ThemeHint, TestVocabulary);
 
         game.UseHint();
         game.UseHint();
@@ -118,7 +146,7 @@ public class WordSearchGameTests
     [Test]
     public void GiveUpRevealsOnlyWordsThatWereNotFound()
     {
-        var game = new WordSearchGame("English");
+        var game = new WordSearchGame("English", ThemeHint, TestVocabulary);
         var firstWord = game.GetWordChain().First();
 
         game.SubmitWord(firstWord);

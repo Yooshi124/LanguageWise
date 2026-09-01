@@ -36,25 +36,27 @@
 </template>
 
 <script setup>
+// Relative links resolve correctly both under the gateway base (/mini-games/)
+// and when served at the root in local dev.
 const games = [
 	{
 		id: 1,
 		name: 'Guess the word',
-		link: '/game/guess-the-word',
+		link: 'game/guess-the-word',
 		theme: 'vocab',
 		description: 'Guess the word, build your streak, and sharpen your language instincts.'
 	},
 	{
 		id: 2,
 		name: 'Word Search',
-		link: '/game/word-search',
+		link: 'game/word-search',
 		theme: 'strings',
 		description: 'Follow the chain of letters and discover the words hiding in plain sight.'
 	},
 	{
 		id: 3,
 		name: 'Associations',
-		link: '/game/associations',
+		link: 'game/associations',
 		theme: 'associations',
 		description: 'Connect ideas, spot patterns, and make vocabulary stick together.'
 	}

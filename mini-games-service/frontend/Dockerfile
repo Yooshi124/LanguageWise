@@ -18,6 +18,10 @@ RUN npm install
 COPY index.html vite.config.js ./
 COPY public/ ./public/
 COPY src/ ./src/
+
+# The shared-frontend gateway serves this app under /mini-games/, so asset
+# URLs and API calls must be built with that base path.
+ENV VITE_BASE=/mini-games/
 RUN npm run build
 
 FROM nginx:1.29-alpine

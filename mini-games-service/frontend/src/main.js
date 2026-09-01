@@ -5,12 +5,16 @@ import WordSearch from './WordSearch.vue';
 import Associations from './Associations.vue';
 
 const routes = {
+    '/': GamePage,
     '/game': GamePage,
     '/game/guess-the-word': GuessTheWord,
     '/game/word-search': WordSearch,
     '/game/associations': Associations,
 };
 
-const page = routes[window.location.pathname] ?? GamePage;
+// Through the gateway the app is served under its base path (e.g. /mini-games/),
+// so strip that prefix before resolving the route.
+const path = window.location.pathname.replace(import.meta.env.BASE_URL, '/');
+const page = routes[path] ?? GamePage;
 
 createApp(page).mount('#app');
