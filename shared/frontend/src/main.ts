@@ -8,6 +8,7 @@ import 'vuetify/styles'
 import App from './App.vue'
 import router from './router'
 import './styles.css'
+import './features/quizzes-courses.css'
 
 const vuetify = createVuetify({
   components,

@@ -4,24 +4,19 @@ import type { Router, RouteRecordRaw } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import RemoteUnavailableView from '../views/RemoteUnavailableView.vue'
 
-const basePath = '/federation-spike'
+const basePath = '/quizzes-and-courses'
 const remoteEntryPath = '/remotes/quizzes-courses/remoteEntry.js'
 
-function referenceRemote(force: boolean) {
-  return {
-    name: 'quizzes_courses',
-    alias: 'quizzesCourses',
-    entry: force ? `${remoteEntryPath}?retry=${Date.now()}` : remoteEntryPath,
-    type: 'module' as const,
-  }
+interface FeatureRouteDefinition {
+  path: string
+  name: string
+  component: Component
+  props?: Record<string, unknown>
+  meta?: Record<string, unknown>
 }
-let routesRegistered = false
-let fallbackRegistered = false
-let removeFallback: (() => void) | undefined
-let registration: Promise<void> | undefined
-let remoteRegistered = false
 
-interface ReferenceRemoteModule {
+interface QuizzesCoursesRemoteModule {
+  QuizzesCoursesComponent: Component
   metadata: {
     key: string
     displayName: string
@@ -29,11 +24,22 @@ interface ReferenceRemoteModule {
     basePath: string
     requiresAuth: boolean
   }
-  routes: readonly {
-    path: string
-    name: string
-    component: Component
-  }[]
+  routes: readonly FeatureRouteDefinition[]
+}
+
+let routesRegistered = false
+let fallbackRegistered = false
+let removeFallback: (() => void) | undefined
+let registration: Promise<void> | undefined
+let remoteRegistered = false
+
+function remoteDefinition(force: boolean) {
+  return {
+    name: 'quizzes_courses',
+    alias: 'quizzesCourses',
+    entry: force ? `${remoteEntryPath}?retry=${Date.now()}` : remoteEntryPath,
+    type: 'module' as const,
+  }
 }
 
 function hostContext(router: Router) {
@@ -61,67 +67,67 @@ function registerFallback(router: Router) {
 
   removeFallback = router.addRoute({
     path: `${basePath}/:pathMatch(.*)*`,
-    name: 'federation-reference-unavailable',
+    name: 'quizzes-courses-unavailable',
     component: RemoteUnavailableView,
     props: {
-      featureName: 'Federation reference remote',
+      featureName: 'Quizzes & Courses',
       retry: async () => {
-        await registerReferenceRoutes(router, true)
-        await router.replace({
-          path: router.currentRoute.value.fullPath,
-          force: true,
-        })
+        await registerQuizzesCoursesRoutes(router, true)
+        await router.replace({ path: router.currentRoute.value.fullPath, force: true })
       },
     },
   })
   fallbackRegistered = true
 }
 
-export function isReferencePath(path: string) {
+export function isQuizzesCoursesPath(path: string) {
   return path === basePath || path.startsWith(`${basePath}/`)
 }
 
-export function referenceRoutesReady() {
+export function quizzesCoursesRoutesReady() {
   return routesRegistered
 }
 
-export async function registerReferenceRoutes(router: Router, forceRemote = false) {
+export async function registerQuizzesCoursesRoutes(router: Router, forceRemote = false) {
   if (routesRegistered) return
   if (registration) return registration
 
   registration = (async () => {
     try {
       if (!remoteRegistered) {
-        registerRemotes([referenceRemote(false)])
+        registerRemotes([remoteDefinition(false)])
         remoteRegistered = true
       } else if (forceRemote) {
-        registerRemotes([referenceRemote(true)], { force: true })
+        registerRemotes([remoteDefinition(true)], { force: true })
       }
 
-      const remote = await loadRemote<ReferenceRemoteModule>('quizzesCourses/reference')
-      if (!remote) {
-        throw new Error('The federation reference remote returned no module.')
-      }
-      const context = hostContext(router)
+      const remote = await loadRemote<QuizzesCoursesRemoteModule>('quizzesCourses/feature')
+      if (!remote) throw new Error('The Quizzes and Courses remote returned no module.')
 
       removeFallback?.()
       removeFallback = undefined
       fallbackRegistered = false
-
-      for (const route of remote.routes) {
-        const path = route.path ? `${remote.metadata.basePath}/${route.path}` : remote.metadata.basePath
-        router.addRoute({
-          path,
+      router.addRoute({
+        path: remote.metadata.basePath,
+        name: 'quizzes-courses',
+        component: remote.QuizzesCoursesComponent,
+        props: { hostContext: hostContext(router) },
+        meta: {
+          federatedFeature: remote.metadata.key,
+          requiresAuth: remote.metadata.requiresAuth,
+        },
+        children: remote.routes.map((route) => ({
+          path: route.path,
           name: route.name,
           component: route.component,
-          props: { hostContext: context },
+          props: route.props,
           meta: {
+            ...route.meta,
             federatedFeature: remote.metadata.key,
             requiresAuth: remote.metadata.requiresAuth,
           },
-        } as RouteRecordRaw)
-      }
-
+        })),
+      } as RouteRecordRaw)
       routesRegistered = true
     } catch (error) {
       registerFallback(router)

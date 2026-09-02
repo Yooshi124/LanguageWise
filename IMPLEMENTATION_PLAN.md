@@ -2,9 +2,9 @@
 
 ## Status
 
-Phases 0 through 3 are complete. `leaderboard-analytics-service` is present
+Phases 0 through 4 are complete. `leaderboard-analytics-service` is present
 with a frontend, backend, database, Docker wiring, and backend tests. The
-migration can proceed to the Phase 4 Quizzes and Courses reference remote.
+migration can proceed to the Phase 5 Mini Games remote.
 
 The completed system will contain one shared host application and five feature
 remotes:
@@ -454,6 +454,39 @@ match the Quizzes and Courses visual baseline on desktop and mobile.
 
 Exit criteria: all current Quizzes and Courses routes and workflows operate as
 a federated component and establish the template for other remotes.
+
+#### Verified Phase 4 result
+
+- Quizzes and Courses exposes a shell-free `QuizzesCoursesComponent`, metadata,
+  and ten relative route records. The Shared host registers and loads them only
+  when `/quizzes-and-courses/*` is entered.
+- Course, lesson, quiz list/runner, flashcard list/deck/revision, and completion
+  deep links all survive direct production refreshes. Named navigation remains
+  client-side beneath the host route, and Garry is suppressed on quiz-runner
+  and completion routes as intended.
+- Browser traffic uses `/quizzes-and-courses/api/*` for feature data and
+  `/remotes/quizzes-courses/*` for the remote entry, chunks, flags, and Garry
+  image. No remote CSS request or failed asset request occurs.
+- Authored feature CSS now lives in Shared under a feature scope. The remote
+  no longer imports authored CSS; its remaining standalone build stylesheet is
+  Vuetify's framework CSS only.
+- Shared nginx serves feature pages from the host SPA while retaining the more
+  specific feature API and 120-second unbuffered assistant locations.
+- At 1440 x 900 and 390 x 844, representative home, course, lesson, quiz,
+  flashcard, and completion views have no horizontal overflow. The Shared
+  mobile navigation trigger remains available on the narrow viewport.
+- Signing out from the feature redirects to the host-owned signed-out view with
+  the full deep link preserved. Signing in returns directly to that route.
+- Stopping the remote produces an isolated host-owned fallback. Restarting it
+  and selecting Retry restores the feature in the same document through a
+  cache-busted remote entry URL.
+- The assistant request reaches the stable endpoint and accepts the federated
+  home context after normalizing its host-only route name. The current Ollama
+  environment returns the expected deterministic `503`, so successful token
+  streaming remains an environment-dependent recheck rather than a blocker to
+  the frontend migration.
+- Shared's eight Vitest tests and both production frontend builds pass. The
+  obsolete Phase 1 reference remote files have been removed.
 
 ### Phase 5 - Mini Games remote
 

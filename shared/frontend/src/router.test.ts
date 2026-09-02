@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('./federation/referenceRemote', () => ({
-  isReferencePath: () => false,
-  referenceRoutesReady: () => false,
-  registerReferenceRoutes: vi.fn(),
+vi.mock('./federation/quizzesCoursesRemote', () => ({
+  isQuizzesCoursesPath: () => false,
+  quizzesCoursesRoutesReady: () => false,
+  registerQuizzesCoursesRoutes: vi.fn(),
 }))
 
 afterEach(() => {

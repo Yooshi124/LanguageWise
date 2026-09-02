@@ -1,7 +1,7 @@
-import { markSignedOut } from '../composables/useAuth'
+import { handleUnauthorized } from '../federation/featureHost'
 import type { AssistantMessageRequest } from '../models/api'
 
-const apiBase = `${import.meta.env.BASE_URL}api`
+const apiBase = '/quizzes-and-courses/api'
 
 interface AssistantStreamHandlers {
   onDelta: (content: string) => void
@@ -31,7 +31,7 @@ export async function streamAssistantMessage(
   })
 
   if (response.status === 401) {
-    markSignedOut()
+    handleUnauthorized()
   }
   if (!response.ok) {
     throw new Error(await responseError(response))

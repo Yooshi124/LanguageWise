@@ -16,9 +16,12 @@ export interface FeatureRouteDefinition {
   path: string
   name: string
   component: Component
+  props?: Record<string, unknown>
+  meta?: Record<string, unknown>
 }
 
 export interface FederatedFeatureModule {
+  QuizzesCoursesComponent: Component
   metadata: {
     key: string
     displayName: string

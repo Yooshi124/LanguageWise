@@ -6,7 +6,7 @@ import CardAction from './CardAction.vue'
 
 const props = defineProps<{ kind: 'quizzes' | 'flashcards' }>()
 const store = useCourses()
-const flagsPath = `${import.meta.env.BASE_URL}flags`
+const flagsPath = '/remotes/quizzes-courses/flags'
 const title = computed(() =>
   props.kind === 'quizzes' ? 'Choose a quiz language' : 'Choose a flashcard language',
 )

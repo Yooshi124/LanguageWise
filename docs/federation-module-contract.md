@@ -47,6 +47,8 @@ export interface FeatureRouteDefinition {
   path: string
   name: string
   component: Component
+  props?: Record<string, unknown>
+  meta?: Record<string, unknown>
 }
 
 export interface FederatedFeatureModule {
@@ -63,13 +65,15 @@ export interface FederatedFeatureModule {
 
 The module exports `metadata` and `routes`. Route paths are relative to
 `metadata.basePath`: use `''` for the feature root and a segment such as
-`'details'` for a child. Route names and metadata keys must be globally unique.
-The host converts these definitions into Vue Router records and supplies
-`FeatureHostContext` as the root component prop.
+'details'` for a child. A route may also declare static `props` and feature
+`meta`; the host merges its own federation and authentication metadata into
+every child. Route names and metadata keys must be globally unique. The host
+converts these definitions into nested Vue Router records and supplies
+`FeatureHostContext` as the shell-free root component prop.
 
-The Phase 1 reference implementation is
-`quizzes-courses-service/frontend/src/federation/reference.ts`; its contract
-types are in the adjacent `contracts.ts`.
+The production reference implementation is
+`quizzes-courses-service/frontend/src/federation/feature.ts`; its contract types
+are in the adjacent `contracts.ts`.
 
 ## Ownership rules
 

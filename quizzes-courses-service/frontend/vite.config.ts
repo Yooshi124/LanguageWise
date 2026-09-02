@@ -11,7 +11,7 @@ export default defineConfig({
       filename: 'remoteEntry.js',
       publicPath: '/remotes/quizzes-courses/',
       exposes: {
-        './reference': './src/federation/reference.ts',
+        './feature': './src/federation/feature.ts',
       },
       shared: {
         vue: { singleton: true, requiredVersion: '3.5.42', strictVersion: true },
@@ -26,7 +26,10 @@ export default defineConfig({
   server: {
     port: 3003,
     proxy: {
-      '/api': 'http://localhost:8080',
+      '/quizzes-and-courses/api': {
+        target: 'http://localhost:8080',
+        rewrite: (path) => path.replace(/^\/quizzes-and-courses/, ''),
+      },
     },
   },
 })

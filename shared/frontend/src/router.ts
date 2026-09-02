@@ -4,10 +4,10 @@ import LoginView from './views/LoginView.vue'
 import SignedOutView from './views/SignedOutView.vue'
 import { useAuth } from './composables/useAuth'
 import {
-  isReferencePath,
-  referenceRoutesReady,
-  registerReferenceRoutes,
-} from './federation/referenceRemote'
+  isQuizzesCoursesPath,
+  quizzesCoursesRoutesReady,
+  registerQuizzesCoursesRoutes,
+} from './federation/quizzesCoursesRemote'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -35,16 +35,16 @@ router.beforeEach(async (to) => {
     }
   }
 
-  if (!isReferencePath(to.path) || referenceRoutesReady()) {
+  if (!isQuizzesCoursesPath(to.path) || quizzesCoursesRoutesReady()) {
     return true
   }
 
-  if (to.name === 'federation-reference-unavailable') {
+  if (to.name === 'quizzes-courses-unavailable') {
     return true
   }
 
   try {
-    await registerReferenceRoutes(router)
+    await registerQuizzesCoursesRoutes(router)
     return { path: to.fullPath, replace: true }
   } catch {
     return { path: to.fullPath, replace: true }
