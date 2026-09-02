@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
 using LanguageWise.LeaderboardAnalyticsService.Api.Clients;
+using LanguageWise.LeaderboardAnalyticsService.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
@@ -112,5 +113,18 @@ app.MapGet("/api/discussion-rankings/user/{userId:int}", async (int userId, Lead
     await client.GetDiscussionRankingByUserAsync(userId, cancellationToken) is { } ranking
         ? Results.Ok(ranking)
         : Results.NotFound());
+
+app.MapGet("/api/lessons-completed-over-time", (HttpContext context) =>
+{
+    var subject = context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+    if (!int.TryParse(subject, out var userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    var to = DateOnly.FromDateTime(DateTime.UtcNow);
+    var from = to.AddDays(-29);
+    return Results.Ok(MockLessonsCompletedGenerator.Generate(userId, from, to));
+});
 
 app.Run();
