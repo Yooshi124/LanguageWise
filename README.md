@@ -119,19 +119,31 @@ The authenticated SMTP username is always used as the sender address.
 The discussion forum has an **AI mode** button in its navigation bar that opens a
 help chatbot. It answers questions about the forum itself — *"how do I create a
 new post"*, *"how do I edit my post"*, how comments, likes and search work — and
-it shares the same `ollama` container and `gemma4:12b` model as the notification
-emails above, so there is no extra model to download.
+its answer streams in a word at a time.
+
+It shares the same `ollama` container and `gemma4:e4b` model as the notification
+emails above, so there is no API key and no extra model to download. Each
+signed-in user gets ten questions a minute.
 
 It is retrieval-grounded rather than free-running. The backend keeps a curated
 set of help topics in
 `chat-discussion-service/backend/LanguageWise.ChatDiscussionService.Api/HelpKnowledgeBase.cs`,
-picks the ones matching the question, and instructs the model to answer only
-from those. This is what stops it inventing buttons the site does not have.
+picks the ones matching the question and the page it was asked from, and
+instructs the model to answer only from those. This is what stops it inventing
+buttons the site does not have. It deliberately cannot read the posts or
+comments on the page — it explains the forum, it does not discuss its contents.
 
 **When you rename or move a control in the forum frontend, update its article in
 `HelpKnowledgeBase.cs` too** — otherwise the assistant will keep confidently
 directing people to it.
 
-If Ollama is unreachable the assistant degrades rather than failing: it replies
-with the matched help text verbatim and marks the answer as coming from the help
-pages, so AI mode still answers the common questions with no model running.
+If Ollama is unreachable, or the model has never been pulled, AI mode degrades
+rather than failing: it streams the matched help text verbatim and the panel
+marks the answer as coming from the help pages. That only applies before the
+first fragment arrives — a model that dies part-way through an answer reports
+the response as interrupted instead.
+
+The answer travels as server-sent events, so any proxy in front of the backend
+has to have `proxy_buffering off` for `/api/assistant/messages`. Both
+`chat-discussion-service/frontend/nginx.conf` and `shared/frontend/nginx.conf`
+already do.

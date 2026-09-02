@@ -167,7 +167,7 @@ internal static class DiscussionRules
     internal static string MergeComment(Comment current, PatchCommentRequest patch) =>
         patch.Content?.Trim() ?? current.Content;
 
-    private static string UnknownForumMessage =>
+    internal static string UnknownForumMessage =>
         $"Unknown forum. Valid values are: {string.Join(", ", Forums.Select(forum => forum.Code))}.";
 
     private static void Require(
