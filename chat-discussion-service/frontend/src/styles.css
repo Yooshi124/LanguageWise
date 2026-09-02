@@ -162,6 +162,14 @@ button, a { -webkit-tap-highlight-color: transparent; }
     margin: 0 0 10px;
 }
 
+/* The landing-page title, at the same scale as the quizzes and courses home page:
+   the two services front their sections the same way. Inner pages keep the smaller
+   lw-section-heading above. */
+.hero-copy { max-width: 780px; }
+.hero-copy h1 { margin: 0; font-size: clamp(2.8rem, 6vw, 5.25rem); line-height: 1.03; letter-spacing: -.055em; }
+.hero-copy h1 span { color: var(--lw-colour-primary); }
+.hero-copy p { max-width: 630px; margin: 24px 0 0; color: var(--lw-colour-ink-muted); font-size: 1.2rem; line-height: 1.7; }
+
 .lw-card {
     border: 1px solid var(--lw-colour-border);
     border-radius: var(--radius-card);
@@ -280,6 +288,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
     .app-shell-content { margin-left: 0; }
     .local-topbar { padding-left: 70px; }
     .forum-page { padding-top: 30px; }
+    .hero-copy h1 { font-size: 2.7rem; }
     .garry-assistant { right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); }
     .garry-panel { width: calc(100vw - 32px); height: min(680px, calc(100dvh - 32px)); border-radius: 22px; }
     .garry-launcher { min-width: 86px; width: 86px; height: 86px; padding: 5px; }

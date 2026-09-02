@@ -44,10 +44,11 @@ try
     var courses = await app.Services.GetRequiredService<CourseCatalogClient>().GetCoursesAsync();
     var sync = app.Services.GetRequiredService<DiscussionRepository>().SyncCourseForums(courses);
     app.Logger.LogInformation(
-        "Synced {CourseCount} courses into forums: {Added} added, {Renamed} renamed.",
+        "Synced {CourseCount} courses into forums: {Added} added, {Renamed} renamed, {Merged} merged.",
         courses.Count,
         sync.Added,
-        sync.Renamed);
+        sync.Renamed,
+        sync.Merged);
 }
 catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
 {

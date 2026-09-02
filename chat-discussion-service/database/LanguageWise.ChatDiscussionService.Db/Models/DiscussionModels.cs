@@ -89,4 +89,5 @@ public sealed record Image(
 /// <summary>The owning post or comment is taken from the route, not the body.</summary>
 public sealed record ImageInput(string StorageKey, string? FileName, string? ContentType, long SizeBytes);
 
-public sealed record ForumSyncResult(int Added, int Renamed);
+/// <summary>Merged counts the legacy duplicate forums folded into a course forum.</summary>
+public sealed record ForumSyncResult(int Added, int Renamed, int Merged);
