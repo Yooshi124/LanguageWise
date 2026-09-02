@@ -6,6 +6,7 @@
     "moduleResolution": "Bundler",
     "strict": true,
     "jsx": "preserve",
+    "noEmit": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "esModuleInterop": true,

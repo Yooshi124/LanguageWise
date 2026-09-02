@@ -27,6 +27,13 @@ public sealed record GameAttemptResponse(
     string? CompletedAt,
     int TimeSpentSeconds);
 
+/// <summary>Successful completions per game type for a user, optionally scoped to one course (language).</summary>
+public sealed record CompletionStatsResponse(
+    string? CourseCode,
+    int GuessTheWord,
+    int WordSearch,
+    int Associations);
+
 /// <summary>Database response wrapper.</summary>
 public sealed record DatabaseResponse<T>(
     int StatusCode,

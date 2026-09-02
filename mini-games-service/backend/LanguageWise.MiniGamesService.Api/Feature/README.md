@@ -8,8 +8,8 @@ future cross-service integrations.
 ## What is in here
 
 - `GuessTheWord`, `WordSearch`, and `Associations` — the three game implementations.
-- `Vocabulary` — resolves playable words from the quizzes/courses service based on
-  the user's completed lesson milestones.
+- `Vocabulary` — resolves playable words from two sources: the user's completed
+  course lessons (Content Focus mode) or on-demand AI generation (AI Generation mode).
 
 Each game follows the same two-part structure:
 
@@ -19,15 +19,32 @@ Feature/<Game>/
   <Game>Game.cs     game rules; references <Game>Models.cs
 ```
 
-Game instances are created per user by `Services/GameSessionManager.cs`, which asks
-the `IVocabularyProvider` for the user's course vocabulary and throws
-`NoVocabularyAvailableException` when there is nothing to play with. The API maps
-that to a `422` with `{ "code": "NO_VOCABULARY" }` so the frontend can show a
-friendly "complete more course content" message instead of a broken board.
+Game instances are created per user by `Services/GameSessionManager.cs`, which asks a
+vocabulary source for words and throws `NoVocabularyAvailableException` when there is
+nothing to play with. The API maps that to a `422` with `{ "code": "NO_VOCABULARY" }` so
+the frontend can show a friendly message instead of a broken board.
+
+## Vocabulary modes
+
+Every game can start in one of two modes, chosen by the player on the game page:
+
+- **Content Focus** (`mode=content`) — words from the quizzes/courses service, scoped to
+  the user's completed lesson milestones. This is the original behaviour.
+- **AI Generation** (`mode=ai`) — words, themes, and definitions generated on demand by
+  OpenRouter (`Clients/OpenRouterVocabularyClient.cs` +
+  `Feature/Vocabulary/OpenRouterVocabularyProvider.cs`). Works standalone: the service
+  does not need quizzes/courses running. Prompts are shaped per game (a single 5-letter
+  word list for Guess the Word, one theme for Word Search, four explicit 4-word
+  categories for Associations), beginner level, in any supported course language.
+
+`GET /api/game-modes` reports which modes are currently usable (`contentAvailable`,
+`aiAvailable`, `defaultMode`, and the language lists). The frontend locks the toggle
+onto AI Generation when the courses service is unavailable. AI generation failures map
+to a `503` with `{ "code": "AI_UNAVAILABLE" }`.
 
 ## Vocabulary rules
 
-- Words come from completed lessons of the user's course (milestones in the
+- Content mode words come from completed lessons of the user's course (milestones in the
   quizzes/courses database service).
 - Entries are split into letter-only tokens (so "Guten Tag" yields GUTEN and TAG),
   uppercased, and must be 3–15 letters long. Any alphabet is allowed, so German
@@ -38,6 +55,14 @@ friendly "complete more course content" message instead of a broken board.
   serpentine route and leftover cells are filled with letters from the placed words.
 - **Associations** needs at least four lessons with four words each; each lesson
   becomes one association group.
+- AI-generated words go through the same `PlayableWords` filter before a game starts.
+
+## Definitions
+
+Both modes can carry a short definition per word (course meanings in Content Focus,
+AI-generated glosses in AI Generation). Definitions are kept in memory for the round and
+attached to the game state only once the round completes, so the frontend can show them
+in a popup without leaking answers mid-game. They are not persisted to the database.
 
 ## The frontend
 

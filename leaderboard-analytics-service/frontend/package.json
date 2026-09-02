@@ -1,0 +1,24 @@
+{
+  "name": "languagewise-leaderboard-analytics-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@mdi/js": "^7.4.47",
+    "@tanstack/vue-query": "^5.102.8",
+    "highcharts": "^11.4.8",
+    "vue": "^3.5.18",
+    "vuetify": "^3.9.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.1",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.6",
+    "vue-tsc": "^3.0.4"
+  }
+}

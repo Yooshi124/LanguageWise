@@ -1,0 +1,14 @@
+# Build context is this tier folder only. Keep host build output out of the
+# image: obj/ holds absolute Windows paths that break restore inside Linux.
+**/bin
+**/obj
+**/TestResults
+**/artifacts
+**/.vs
+**/.vscode
+**/.idea
+**/*.user
+**/.env
+**/*.db
+**/*.db-shm
+**/*.db-wal

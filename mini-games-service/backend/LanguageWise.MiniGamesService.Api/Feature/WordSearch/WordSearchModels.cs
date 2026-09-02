@@ -18,7 +18,8 @@ public sealed record WordSearchState(
     IReadOnlyList<string> RevealedWords,
     bool IsGivenUp,
     int Score,
-    bool IsComplete);
+    bool IsComplete,
+    IReadOnlyDictionary<string, string>? Definitions = null);
 
 public sealed record WordSearchMoveResult(
     string Word,

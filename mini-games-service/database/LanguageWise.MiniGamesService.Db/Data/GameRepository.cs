@@ -77,6 +77,7 @@ public sealed class GameRepository(string connectionString)
         command.Parameters.AddWithValue("$solution", solution);
         command.Parameters.AddWithValue("$words", wordsJson);
         command.Parameters.AddWithValue("$difficulty", difficulty);
+        command.Parameters.AddWithValue("$createdAt", createdAt);
         command.Parameters.AddWithValue("$expiresAt", expiresAt ?? (object)DBNull.Value);
 
         using var reader = command.ExecuteReader();
