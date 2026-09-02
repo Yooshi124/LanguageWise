@@ -18,15 +18,23 @@ const apiBase = `${import.meta.env.BASE_URL}api`
 const auth = useAuth()
 const isAuthLoading = computed(() => auth.status.value === 'loading')
 const isSignedOut = computed(() => auth.status.value === 'signed-out')
+const isAuthenticated = computed(() => auth.status.value === 'authenticated')
 
-const { data: rankings, isLoading, isError } = useQuery<LanguageRanking[]>({
-    queryKey: ['language-rankings'],
+const {
+    data: myRankings,
+    isLoading: isMyLoading,
+    isError: isMyError,
+} = useQuery<LanguageRanking[]>({
+    queryKey: ['my-language-rankings'],
     queryFn: async () => {
-        const res = await fetch(`${apiBase}/language-rankings`)
+        const res = await fetch(`${apiBase}/my-language-rankings`, {
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json' },
+        })
         if (!res.ok) throw new Error(`Request failed (${res.status})`)
         return res.json()
     },
-    enabled: computed(() => auth.status.value === 'authenticated'),
+    enabled: isAuthenticated,
 })
 </script>
 
@@ -52,27 +60,27 @@ const { data: rankings, isLoading, isError } = useQuery<LanguageRanking[]>({
             <LessonsCompletedChart />
 
             <div class="lw-card" style="margin-top: calc(var(--lw-space) * 1.5)">
-                <h2 class="lw-card__title">Language Rankings</h2>
-                <p class="lw-card__hint">Scores and positions across all languages</p>
+                <h2 class="lw-card__title">Your Rankings</h2>
+                <p class="lw-card__hint">Your position across every language you are studying</p>
 
-                <p v-if="isLoading" class="lw-table__empty">Loading rankings…</p>
-                <p v-else-if="isError" class="lw-table__error">Failed to load rankings.</p>
-                <p v-else-if="!rankings?.length" class="lw-table__empty">No rankings available yet.</p>
+                <p v-if="isMyLoading" class="lw-table__empty">Loading your rankings…</p>
+                <p v-else-if="isMyError" class="lw-table__error">Failed to load your rankings.</p>
+                <p v-else-if="!myRankings?.length" class="lw-table__empty">
+                    You are not ranked in any language yet.
+                </p>
 
-                <div v-else class="leaderboard-grid">
-                    <div class="leaderboard-grid__header">Rank</div>
-                    <div class="leaderboard-grid__header">User</div>
-                    <div class="leaderboard-grid__header">Language</div>
-                    <div class="leaderboard-grid__header">Score</div>
+                <div v-else class="my-rankings-grid">
+                    <div class="my-rankings-grid__header">Language</div>
+                    <div class="my-rankings-grid__header">Rank</div>
+                    <div class="my-rankings-grid__header">Score</div>
 
-                    <template v-for="r in rankings" :key="r.id">
-                        <div class="leaderboard-grid__cell leaderboard-grid__rank">
+                    <template v-for="r in myRankings" :key="r.id">
+                        <div class="my-rankings-grid__cell">{{ r.language }}</div>
+                        <div class="my-rankings-grid__cell my-rankings-grid__rank">
                             <span v-if="r.rank <= 3" class="lw-badge">#{{ r.rank }}</span>
                             <span v-else>#{{ r.rank }}</span>
                         </div>
-                        <div class="leaderboard-grid__cell">{{ r.userId }}</div>
-                        <div class="leaderboard-grid__cell">{{ r.language }}</div>
-                        <div class="leaderboard-grid__cell leaderboard-grid__score">{{ r.score }}</div>
+                        <div class="my-rankings-grid__cell my-rankings-grid__score">{{ r.score }}</div>
                     </template>
                 </div>
             </div>
@@ -81,13 +89,13 @@ const { data: rankings, isLoading, isError } = useQuery<LanguageRanking[]>({
 </template>
 
 <style scoped>
-.leaderboard-grid {
+.my-rankings-grid {
     display: grid;
-    grid-template-columns: minmax(60px, 0.5fr) 1fr 1fr minmax(80px, 0.75fr);
+    grid-template-columns: 1fr minmax(80px, 0.6fr) minmax(80px, 0.6fr);
     gap: 0;
 }
 
-.leaderboard-grid__header {
+.my-rankings-grid__header {
     font-size: 0.78rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -97,23 +105,22 @@ const { data: rankings, isLoading, isError } = useQuery<LanguageRanking[]>({
     font-weight: 600;
 }
 
-.leaderboard-grid__cell {
+.my-rankings-grid__cell {
     padding: 0.6rem 0.75rem;
     border-bottom: 1px solid var(--lw-colour-border);
     display: flex;
     align-items: center;
 }
 
-/* Remove border on the last row */
-.leaderboard-grid__cell:nth-last-child(-n+4) {
+.my-rankings-grid__cell:nth-last-child(-n+3) {
     border-bottom: none;
 }
 
-.leaderboard-grid__rank {
+.my-rankings-grid__rank {
     font-weight: 700;
 }
 
-.leaderboard-grid__score {
+.my-rankings-grid__score {
     font-family: var(--lw-font-mono);
     font-weight: 600;
 }

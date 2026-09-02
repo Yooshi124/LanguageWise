@@ -93,6 +93,21 @@ app.MapGet("/api/language-rankings/{id:int}", async (int id, LeaderboardClient c
 app.MapGet("/api/language-rankings/user/{userId:int}", (int userId, LeaderboardClient client, CancellationToken cancellationToken) =>
     client.GetLanguageRankingsByUserAsync(userId, cancellationToken));
 
+app.MapGet("/api/my-language-rankings", async (
+    HttpContext context,
+    LeaderboardClient client,
+    CancellationToken cancellationToken) =>
+{
+    var subject = context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+    if (!int.TryParse(subject, out var userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    var rankings = await client.GetLanguageRankingsByUserAsync(userId, cancellationToken);
+    return Results.Ok(rankings);
+});
+
 // ---------------------------------------------------------------------------
 // Discussion Rankings
 // ---------------------------------------------------------------------------
