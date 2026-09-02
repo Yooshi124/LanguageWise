@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
 using LanguageWise.LeaderboardAnalyticsService.Api.Clients;
+using LanguageWise.LeaderboardAnalyticsService.Api.Models;
 using LanguageWise.LeaderboardAnalyticsService.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -14,6 +15,14 @@ builder.Services.AddHttpClient<LeaderboardClient>(client =>
 {
     client.BaseAddress = new Uri(databaseServiceUrl.TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(10);
+});
+
+var ollamaServiceUrl = builder.Configuration["Services:Ollama"] ?? "http://localhost:11434";
+builder.Services.Configure<OllamaOptions>(builder.Configuration.GetSection("Ollama"));
+builder.Services.AddHttpClient<ISummaryGenerator, OllamaSummaryGenerator>(client =>
+{
+    client.BaseAddress = new Uri(ollamaServiceUrl.TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromSeconds(30);
 });
 
 var verificationKeyPath = builder.Configuration["Auth:VerificationKeyPath"] ?? "/run/secrets/signing_public_key";
@@ -137,9 +146,23 @@ app.MapGet("/api/lessons-completed-over-time", (HttpContext context) =>
         return Results.Unauthorized();
     }
 
-    var to = DateOnly.FromDateTime(DateTime.UtcNow);
-    var from = to.AddDays(-29);
-    return Results.Ok(MockLessonsCompletedGenerator.Generate(userId, from, to));
+    return Results.Ok(MockLessonsCompletedGenerator.GenerateForLast30Days(userId));
+});
+
+app.MapPost("/api/lessons-completed-summary", async (
+    HttpContext context,
+    ISummaryGenerator generator,
+    CancellationToken cancellationToken) =>
+{
+    var subject = context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+    if (!int.TryParse(subject, out var userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    var chartData = MockLessonsCompletedGenerator.GenerateForLast30Days(userId);
+    var summary = await generator.GenerateAsync(chartData, cancellationToken);
+    return Results.Ok(summary);
 });
 
 app.Run();
