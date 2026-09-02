@@ -46,7 +46,7 @@ export const serviceNavigation: readonly ServiceNavigationItem[] = [
   },
   {
     label: 'Leaderboard & Analytics',
+    href: `${sharedFrontend}/analytics/`,
     icon: 'analytics',
-    disabled: true,
   },
 ]
