@@ -2,9 +2,9 @@
 
 ## Status
 
-Planning only. `leaderboard-analytics-service` is now present with a frontend,
-backend, database, Docker wiring, and backend tests. The migration can begin
-with Phase 0 baseline verification.
+Phase 0 baseline verification is complete. `leaderboard-analytics-service` is
+present with a frontend, backend, database, Docker wiring, and backend tests.
+The migration can proceed to the Phase 1 federation and router spike.
 
 The completed system will contain one shared host application and five feature
 remotes:
@@ -258,9 +258,51 @@ do not use Shadow DOM.
 Exit criteria: all five services work before migration and their behavior can
 be compared objectively afterward.
 
+#### Verified baseline
+
+- All seven backend test projects pass: 88 passed, 0 failed.
+- `docker compose config --quiet` passes and `docker compose up -d --build`
+  completes successfully. All long-running containers are up and healthy;
+  the one-shot `ollama-model-init` container exits as designed, and the Q/A/N
+  database API is running without a configured health check.
+- All six authenticated application entry points render through
+  `http://localhost:3000`. Representative Quizzes, Mini Games, and Discussion
+  deep links return their SPA entry points. Public APIs return `200`, while
+  protected Q/A/N and Analytics APIs return `401` without a session.
+- Desktop (1440 x 900) and mobile (390 x 844) screenshots for all six current
+  frontends are stored in `docs/frontend-baseline`. No tested mobile entry
+  point has horizontal overflow.
+- The Analytics baseline renders personal French and Spanish rankings, six
+  deterministic 30-day course series, and a warmed Ollama summary with summary
+  text, trend, and best course.
+- The shared endpoint table now uses the Leaderboard database host port `5006`.
+- Fresh host `npm ci` is currently blocked by HTTP 403 from the configured npm
+  registry. Offline retries also fail because their exact lockfile packages
+  are not all cached. Production Docker images still build and run, but Phase 1
+  must prove a clean dependency restore before changing any lockfile.
+- Q/A/N currently makes ten avoidable `404` requests for root-relative
+  achievement images before its fallback image renders. Analytics has no
+  failed requests, but Highcharts reports that its accessibility module is not
+  installed.
+- Mini Games deep links render, but the seeded `amber` account cannot start a
+  round: content mode returns `422 NO_VOCABULARY` because it has no unlocked
+  course vocabulary, while AI mode returns `503 AI_UNAVAILABLE` when no
+  OpenRouter key is configured. Both frontend error states work, but successful
+  gameplay needs a deterministic test fixture before parity can be measured.
+
+The exact common toolchain selected for Phase 1 is Vue 3.5.42, Vue Router
+4.6.4, Vuetify 3.13.2, Vite 7.3.6, `@vitejs/plugin-vue` 6.0.8, `@mdi/js`
+7.4.47, and TypeScript 5.8.3. These versions already coexist in the current
+lockfiles and satisfy their recorded peer ranges. Keep TanStack Vue Query
+5.102.8 shared for Analytics and Highcharts 11.4.8 feature-local. Do not pair
+Vite 7 with the older `@vitejs/plugin-vue` 5.2.4 used by the Vite 6 projects.
+
 ### Phase 1 - Federation and router spike
 
 - Create a minimal Vite/Vue host in `shared/frontend`.
+- First restore the selected pinned toolchain from an accessible npm registry
+  and prove a clean, uncached install; do not rewrite lockfiles while registry
+  access returns HTTP 403.
 - Add `@module-federation/vite` to the host and one temporary/reference remote.
 - Serve that remote's `remoteEntry.js` through shared nginx at `/remotes/...`.
 - Prove singleton Vue, Vue Router, Vuetify, and icon dependencies.
@@ -335,6 +377,10 @@ a federated component and establish the template for other remotes.
   from the authenticated `sub` claim, remove the localStorage/default user ID,
   and reject caller-supplied identity for user-specific operations.
 - Add authorization and user-isolation tests before changing those API inputs.
+- Add deterministic seeded course vocabulary for the Playwright account (or a
+  test-only equivalent) so Guess the Word, Word Search, and Associations can be
+  exercised without OpenRouter. Test the optional AI-unavailable path
+  separately from successful content-mode gameplay.
 - Preserve game selection, language/mode loading, completion statistics,
   Guess the Word, Word Search, Associations, help, generation, and error states.
 - Move all global and scoped component CSS into host-owned namespaced files.
@@ -385,7 +431,9 @@ the shared shell, including deep links and logout.
 - Send preferences as JSON; retain form support temporarily until rollout is
   complete, then remove it only with backend test updates.
 - Move all Q/A/N CSS and fallback assets to the appropriate host/remote asset
-  ownership location without changing the visual content.
+  ownership location without changing the visual content. Import achievement
+  images or resolve them from the explicit remote asset base so the current ten
+  root-relative image `404`s are eliminated rather than preserved.
 - Add the `/remotes/quests-achievements/` gateway proxy and switch
   `/quests-and-achievements/*` page routes to the host SPA while retaining its
   API path.
@@ -411,6 +459,8 @@ have feature parity in Vue and match the shared Quizzes-style UI.
   series, integer y-axis, shared tooltip, empty/loading/error states, chart
   destruction on unmount, and responsive reflow when the host sidebar or
   viewport changes the content width.
+- Load and configure the Highcharts accessibility module, then add an
+  accessible chart description and verify the current console warning is gone.
 - Preserve personal language ranking loading/error/empty states, rank badges,
   scores, and authenticated user isolation through
   `/analytics/api/my-language-rankings`.
@@ -517,6 +567,7 @@ Use Playwright against `http://localhost:3000` at desktop and mobile sizes:
 | --- | --- |
 | Nested/incompatible routers break deep links | Prove one-router route registration in Phase 1 before feature work |
 | Vite 6/7 and plugin version mismatch | Pin one tested toolchain and lockfiles across all six frontends |
+| npm registry blocks clean host installs | Prove an uncached restore before Phase 1 lockfile changes and retain the Docker baseline until it passes |
 | Duplicate Vue or Vuetify runtime | Configure singleton sharing and verify one instance in runtime tests |
 | Remote CSS leaks or disappears | Move styles incrementally, namespace by feature root, screenshot before deletion |
 | Remote chunks load from host SPA paths | Give each remote an explicit `/remotes/<feature>/` production public path and test every emitted asset |
@@ -525,9 +576,12 @@ Use Playwright against `http://localhost:3000` at desktop and mobile sizes:
 | Stale `remoteEntry.js` references old chunks | Revalidate the entry; use hashed immutable chunks |
 | Auth migration breaks writes | Change shared endpoint first, migrate consumers, delete old endpoints last |
 | Q/A/N loses HTMX edge behavior | Component tests and an explicit parity checklist gate deletion |
+| Q/A/N root-relative achievement images return 404 | Import images or use the remote asset base and assert no failed image requests |
 | Mini Games accepts another user's ID | Add JWT validation and derive identity server-side before remote cutover |
+| Mini Games seed cannot start a successful round | Add deterministic unlocked vocabulary for the E2E account before gameplay parity testing |
 | Leaderboard queries lack a provider in the host | Install and singleton-share TanStack Query before mounting the remote |
 | Highcharts keeps stale dimensions or instances | Reflow on host layout changes and destroy the chart on unmount |
+| Highcharts chart lacks accessibility metadata | Load its accessibility module and test the chart's accessible description |
 | Leaderboard AI call reaches the nginx deadline | Benchmark warm inference and leave explicit headroom below the proxy timeout |
 
 ## Deliberate Non-Goals
