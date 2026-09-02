@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 import LessonsCompletedChart from '../components/LessonsCompletedChart.vue'
+import AiSummaryCard from '../components/AiSummaryCard.vue'
 import { useAuth } from '../composables/useAuth'
 
 interface LanguageRanking {
@@ -58,6 +59,7 @@ const {
 
         <template v-else>
             <LessonsCompletedChart />
+            <AiSummaryCard />
 
             <div class="lw-card" style="margin-top: calc(var(--lw-space) * 1.5)">
                 <h2 class="lw-card__title">Your Rankings</h2>
