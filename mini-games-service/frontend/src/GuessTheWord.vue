@@ -1,6 +1,9 @@
 <template>
 	<main class="guess-the-word">
-		<a class="back-button" :href="gameHome" aria-label="Return to the main game page">Back</a>
+		<a class="back-button" :href="gameHome" aria-label="Return to the main game page">
+			<AppIcon name="arrow-left" :size="18" />
+			Back to games
+		</a>
 		<GameHelp :steps="howToPlay" />
 		<header class="game-header">
 			<p class="eyebrow">Daily vocabulary challenge</p>
@@ -9,6 +12,12 @@
 		</header>
 		<section v-if="noVocabulary" class="board-shell empty-state" role="status">
 			<p class="empty-state__message">{{ NO_VOCABULARY_MESSAGE }}</p>
+		</section>
+		<section v-else-if="aiUnavailable" class="board-shell empty-state" role="status">
+			<p class="empty-state__message">{{ AI_UNAVAILABLE_MESSAGE }}</p>
+		</section>
+		<section v-else-if="starting" class="board-shell" aria-label="Generating game">
+			<GeneratingState title="Preparing your word…" />
 		</section>
 		<section v-else class="board-shell" aria-label="GuessTheWord game board">
 			<div class="game-grid">
@@ -49,15 +58,20 @@
 				<span>The answer was <b>{{ correctAnswer }}</b>. Start a new round to play again.</span>
 			</div>
 		<p v-if="message" class="game-message" :class="{ 'is-error': error }">{{ message }}</p>
-		<button v-if="gameComplete" class="reset-button" type="button" @click="resetGameHandler">Play again</button>
+		<button v-if="gameComplete && definitions && Object.keys(definitions).length" class="reset-button" type="button" @click="showDefinitions = true">Word definitions</button>
+		<button v-if="gameComplete" class="reset-button" type="button" :disabled="starting" @click="resetGameHandler">Play again</button>
+		<WordDefinitions :definitions="definitions" :visible="showDefinitions" @close="showDefinitions = false" />
 		</section>
 	</main>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue';
-import { submitGuessTheWordGuess, resetGame, initializeGame, isNoVocabularyError, NO_VOCABULARY_MESSAGE } from './api.js';
+import { submitGuessTheWordGuess, resetGame, initializeGame, isNoVocabularyError, isAiUnavailableError, NO_VOCABULARY_MESSAGE, AI_UNAVAILABLE_MESSAGE } from './api.js';
+import AppIcon from './components/AppIcon.vue';
 import GameHelp from './components/GameHelp.vue';
+import WordDefinitions from './components/WordDefinitions.vue';
+import GeneratingState from './components/GeneratingState.vue';
 
 // App base path ('/mini-games/' through the gateway, '/' in local dev).
 const gameHome = `${import.meta.env.BASE_URL}game`;
@@ -76,12 +90,16 @@ const howToPlay = [
 const guess = ref('');
 const guesses = ref([]);
 const loading = ref(false);
+const starting = ref(false);
 const message = ref('');
 const error = ref(false);
 const noVocabulary = ref(false);
+const aiUnavailable = ref(false);
 const gameComplete = ref(false);
 const isWon = ref(false);
 const correctAnswer = ref('');
+const definitions = ref(null);
+const showDefinitions = ref(false);
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
 const boxes = computed(() => Array.from({ length: 30 }, (_, index) => {
@@ -143,6 +161,9 @@ const submitGuess = async () => {
 		gameComplete.value = result.isCorrect || guesses.value.length >= 6;
 		isWon.value = result.isCorrect;
 		correctAnswer.value = result.correctAnswer ?? '';
+		if (result.definitions && Object.keys(result.definitions).length > 0) {
+			definitions.value = result.definitions;
+		}
 		message.value = result.isCorrect ? 'Correct. You found the word!' : gameComplete.value ? '' : 'Keep going.';
 	} catch (exception) {
 		message.value = exception.message;
@@ -153,17 +174,31 @@ const submitGuess = async () => {
 };
 
 const resetGameHandler = async () => {
+	starting.value = true;
+	showDefinitions.value = false;
 	try {
 		await resetGame('guess-the-word');
-		guesses.value = [];
-		gameComplete.value = false;
-		isWon.value = false;
-		correctAnswer.value = '';
+		const state = await initializeGame('guess-the-word');
+		guesses.value = state?.guesses ?? [];
+		gameComplete.value = state?.isComplete ?? false;
+		isWon.value = state?.isWon ?? false;
+		correctAnswer.value = state?.correctAnswer ?? '';
+		specialLetters.value = state?.specialLetters ?? specialLetters.value;
+		definitions.value = state?.definitions ?? null;
+		guess.value = '';
 		message.value = '';
 		error.value = false;
 	} catch (exception) {
-		message.value = exception.message;
-		error.value = true;
+		if (isNoVocabularyError(exception)) {
+			noVocabulary.value = true;
+		} else if (isAiUnavailableError(exception)) {
+			aiUnavailable.value = true;
+		} else {
+			message.value = exception.message;
+			error.value = true;
+		}
+	} finally {
+		starting.value = false;
 	}
 };
 
@@ -175,9 +210,12 @@ onMounted(async () => {
 		isWon.value = state?.isWon ?? false;
 		correctAnswer.value = state?.correctAnswer ?? '';
 		specialLetters.value = state?.specialLetters ?? [];
+		definitions.value = state?.definitions ?? null;
 	} catch (exception) {
 		if (isNoVocabularyError(exception)) {
 			noVocabulary.value = true;
+		} else if (isAiUnavailableError(exception)) {
+			aiUnavailable.value = true;
 		} else {
 			message.value = 'Could not start game: ' + exception.message;
 			error.value = true;
@@ -225,17 +263,22 @@ h1 {
 	position: absolute;
 	top: 2rem;
 	left: 2rem;
-	padding: 0.5rem 0.75rem;
-	color: #1c2b45;
-	border: 1px solid #9acbc4;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	margin-left: -0.85rem;
+	padding: 0.45rem 0.85rem;
+	border: none;
 	border-radius: 6px;
+	color: #1c2b45;
+	background: transparent;
+	font-weight: 600;
 	text-decoration: none;
-	background: #fff;
 }
 
 .back-button:hover,
 .back-button:focus-visible {
-	border-color: #10897a;
+	background: rgba(16, 137, 122, 0.1);
 	outline: 3px solid rgba(16, 137, 122, 0.18);
 }
 
