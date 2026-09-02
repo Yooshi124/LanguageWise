@@ -1,10 +1,8 @@
 <script setup>
 import { computed } from 'vue';
 import { useRoute } from 'vue-router';
-import { useAssistant } from '../composables/useAssistant.js';
 
 const route = useRoute();
-const { open: assistantOpen, toggle: toggleAssistant } = useAssistant();
 
 const browsingForums = computed(() => ['forums', 'forum', 'post', 'post-edit'].includes(route.name));
 const viewingMyPosts = computed(() => route.name === 'my-posts');
@@ -23,12 +21,6 @@ const viewingMyPosts = computed(() => route.name === 'my-posts');
                 variant="text"
                 :active="viewingMyPosts"
             >My Posts</v-btn>
-            <v-btn
-                variant="text"
-                :active="assistantOpen"
-                :aria-pressed="assistantOpen"
-                @click="toggleAssistant"
-            >AI mode</v-btn>
             <v-btn
                 :to="{ name: 'post-create' }"
                 color="primary"

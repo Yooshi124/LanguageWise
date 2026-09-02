@@ -3,7 +3,7 @@ import { ref } from 'vue';
 import AppIcon from './components/AppIcon.vue';
 import AppSidebar from './components/AppSidebar.vue';
 import AppNav from './components/AppNav.vue';
-import AssistantPanel from './components/AssistantPanel.vue';
+import GarryAssistant from './components/GarryAssistant.vue';
 import { useForums } from './composables/useForums.js';
 
 const sidebarExpanded = ref(false);
@@ -42,8 +42,8 @@ useForums().ensureLoaded().catch(() => {});
             </v-main>
         </div>
 
-        <!-- Outside the shell: AI mode docks over whichever page you are on, so the
+        <!-- Outside the shell: Garry floats over whichever page you are on, so the
              instructions stay visible while you follow them. -->
-        <AssistantPanel />
+        <GarryAssistant />
     </v-app>
 </template>

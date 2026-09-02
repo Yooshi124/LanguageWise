@@ -8,7 +8,7 @@ import {
 import { useAuth } from './useAuth.js';
 
 // Module level, like useAuth, so the panel keeps its transcript when you follow
-// the assistant's advice and navigate to another page mid-conversation.
+// Garry's advice and navigate to another page mid-conversation.
 
 const SUGGESTIONS = [
     'How do I create a new post?',
@@ -52,8 +52,8 @@ function initialise() {
     messages.value = userId === null ? [] : load(userId);
 }
 
-function toggle() {
-    open.value = !open.value;
+function expand() {
+    open.value = true;
 }
 
 function close() {
@@ -172,7 +172,7 @@ function describe(failure) {
     if (!(failure instanceof ApiError)) {
         return failure instanceof Error
             ? failure.message
-            : 'The assistant could not answer that. Please try again.';
+            : 'Garry could not answer that. Please try again.';
     }
 
     if (failure.firstValidationMessage) {
@@ -180,17 +180,17 @@ function describe(failure) {
     }
 
     if (failure.isUnauthorised) {
-        return 'Please sign in again to use AI mode.';
+        return 'Please sign in again to talk to Garry.';
     }
 
     if (failure.status === 429) {
         return failure.body?.detail
-            || 'AI mode is busy right now. Please wait a moment and try again.';
+            || 'Garry is busy right now. Please wait a moment and try again.';
     }
 
     return failure.isUnavailable || failure.status === 502
-        ? 'The assistant is unavailable right now. Please try again shortly.'
-        : 'The assistant could not answer that. Please try again.';
+        ? 'Garry is unavailable right now. Please try again shortly.'
+        : 'Garry could not answer that. Please try again.';
 }
 
 /**
@@ -289,7 +289,7 @@ export function useAssistant() {
         streaming: readonly(streaming),
         error: readonly(error),
         suggestions: SUGGESTIONS,
-        toggle,
+        expand,
         close,
         clear,
         cancel,

@@ -92,7 +92,7 @@ function upload(path, file) {
 }
 
 // ---------------------------------------------------------------------------
-// AI mode. Its answer arrives as server-sent events rather than one JSON body,
+// Garry. An answer arrives as server-sent events rather than one JSON body,
 // so it is read here by hand instead of through request() above.
 //
 // EventSource is not an option: it can only issue a GET, and the question, its
@@ -142,7 +142,7 @@ async function streamAssistantMessage({ message, history, context }, { onDelta, 
     }
 
     if (!response.body) {
-        throw new Error('The assistant could not start a response. Please try again.');
+        throw new Error('Garry could not start a response. Please try again.');
     }
 
     const reader = response.body.getReader();
@@ -177,7 +177,7 @@ async function streamAssistantMessage({ message, history, context }, { onDelta, 
     // No terminating event means the connection dropped mid-answer. Saying so is
     // better than leaving a half-written reply looking finished.
     if (!completed) {
-        throw new Error('The assistant’s response ended unexpectedly. Please try again.');
+        throw new Error('Garry’s response ended unexpectedly. Please try again.');
     }
 }
 
@@ -203,7 +203,7 @@ function readFrame(frame, onDelta, onDone) {
     try {
         payload = JSON.parse(data.join('\n'));
     } catch {
-        throw new Error('The assistant returned an invalid response. Please try again.');
+        throw new Error('Garry returned an invalid response. Please try again.');
     }
 
     if (name === 'delta') {
@@ -223,7 +223,7 @@ function readFrame(frame, onDelta, onDone) {
         throw new Error(
             typeof payload?.message === 'string' && payload.message
                 ? payload.message
-                : 'The assistant’s response was interrupted. Please try again.'
+                : 'Garry’s response was interrupted. Please try again.'
         );
     }
 
