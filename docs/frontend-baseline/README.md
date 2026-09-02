@@ -20,6 +20,11 @@ viewport capture at 390 x 844:
 All 12 PNG files decode successfully. None of the six mobile entry points had
 horizontal overflow at capture time.
 
+The Shared captures were refreshed after commit `449d9f2` migrated that
+frontend from static HTMX to Vue 3, Vue Router, Vuetify, and Vite. They now
+record the Quizzes-style responsive sidebar, module cards, and runtime map that
+form the host-shell visual baseline.
+
 ## Route Fixtures
 
 | Application | Current browser routes |
@@ -64,6 +69,7 @@ fixture, so Phase 5 must add deterministic content-mode test data.
 - Seven backend test projects: 88 passed, 0 failed.
 - `docker compose config --quiet`: passed.
 - `docker compose up -d --build`: passed; all long-running services started.
+- Refreshed Shared Vue frontend production build: passed and healthy.
 - Fresh local `npm ci`: blocked by npm registry HTTP 403 for all four current
   Vite frontends. Offline installation is unavailable because the exact
   lockfile packages are not fully cached.

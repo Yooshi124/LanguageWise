@@ -24,9 +24,10 @@ boundaries, and all authored CSS. Each feature frontend remains independently
 built and served by its own Docker container, but exposes a Vue feature module
 through `@module-federation/vite` for the host to load dynamically.
 
-The visual baseline is the current Quizzes and Courses frontend: its sidebar,
-top bar, spacing, typography, colour usage, responsive behavior, and Vuetify
-controls should become the shared design language.
+The shared frontend has now adopted the Quizzes and Courses visual language in
+Vue: its responsive sidebar, spacing, typography, colour usage, module cards,
+and Vuetify controls are the host-shell baseline. Quizzes and Courses remains
+the feature-content reference while Shared is the canonical shell reference.
 
 ## Current-State Findings
 
@@ -34,7 +35,7 @@ controls should become the shared design language.
 
 | Application | Current stack | Shell/routing | Main issue |
 | --- | --- | --- | --- |
-| Shared | Static HTML, HTMX, vanilla JS | Full-page links | No SPA host or Vue toolchain |
+| Shared | Vue 3, TypeScript, Vue Router, Vuetify, Vite | Own responsive sidebar/router/login | Host foundation exists; federation, route guards, richer auth, query provider, and remote boundaries remain |
 | Quizzes and Courses | Vue 3, TypeScript, Vue Router, Vuetify | Own sidebar/top bar/router | Best visual baseline, but duplicates shell/auth |
 | Mini Games | Vue 3, JavaScript | Own sidebar and manual pathname routing | Duplicates shell/auth and has no Vue Router |
 | Discussion Forum | Vue 3, JavaScript, Vue Router | Own header/nav/router | Different layout and auth conventions |
@@ -43,17 +44,19 @@ controls should become the shared design language.
 
 Auth is currently checked in three incompatible ways:
 
-- Shared `POST /api/check-login` returns only a JSON string containing the name.
+- Shared `POST /api/check-login` returns only a JSON string containing the name;
+  the new Shared Vue auth composable consumes that legacy contract.
 - Quizzes and Courses `GET /api/me` returns `{ id, username }`.
 - Discussion Forum `GET /api/me` returns `{ id, username }`.
 - Leaderboard and Analytics `GET /api/me` returns `{ id, username }`.
 - Mini Games calls the shared check directly and constructs a username-only user.
 - Q/A/N infers signed-in state from `GET /api/profile` and renders an HTMX auth fragment.
 
-Navigation, login URLs, logout behavior, app shell markup, icon handling, and
-responsive sidebar behavior are duplicated across feature frontends. Authored
-CSS is spread across shared `theme.css`, three service-level stylesheets, many
-Vue single-file component `<style>` blocks, and inline login-page CSS.
+Shared now provides the intended canonical navigation, login/logout UI, app
+shell, icon handling, and responsive sidebar behavior. Equivalent concerns are
+still duplicated across feature frontends. Authored CSS is spread across the
+new Shared `src/styles.css`, service-level stylesheets, many Vue single-file
+component `<style>` blocks, and remaining inline/login styles.
 
 ### Existing gateway behavior to preserve
 
@@ -207,7 +210,7 @@ After all consumers migrate:
 - Delete Leaderboard and Analytics `GET /api/me`.
 - Delete shared `POST /api/check-login/fragment`.
 - Delete remote auth composables and hard-coded login/logout URLs.
-- Remove HTMX from shared and Q/A/N frontends.
+- Remove HTMX from Q/A/N; Shared has already completed that cleanup.
 
 ### CSS ownership
 
@@ -272,6 +275,8 @@ be compared objectively afterward.
 - Desktop (1440 x 900) and mobile (390 x 844) screenshots for all six current
   frontends are stored in `docs/frontend-baseline`. No tested mobile entry
   point has horizontal overflow.
+- Shared desktop and mobile screenshots were refreshed after its Vue/Vuetify
+  redesign. The production Docker build and responsive shell both pass.
 - The Analytics baseline renders personal French and Spanish rankings, six
   deterministic 30-day course series, and a warmed Ollama summary with summary
   text, trend, and best course.
@@ -299,7 +304,8 @@ Vite 7 with the older `@vitejs/plugin-vue` 5.2.4 used by the Vite 6 projects.
 
 ### Phase 1 - Federation and router spike
 
-- Create a minimal Vite/Vue host in `shared/frontend`.
+- Use the existing Vite/Vue/Vuetify Shared host as the spike foundation; do not
+  replace its current shell, home, login, router, or production build setup.
 - First restore the selected pinned toolchain from an accessible npm registry
   and prove a clean, uncached install; do not rewrite lockfiles while registry
   access returns HTTP 403.
@@ -332,18 +338,23 @@ with old consumers.
 
 ### Phase 3 - Shared Vue host and visual system
 
-- Add `package.json`, lockfile, Vite config, TypeScript config, Vue entry point,
-  Vue Router, and federation host config under `shared/frontend`.
-- Convert the shared Dockerfile to a Node build stage plus nginx runtime stage.
-- Build the shared shell from the Quizzes and Courses sidebar/top-bar design.
-- Centralize the navigation registry for all five services.
-- Create host auth state, route guards, login view, logout action, and return URL
-  handling.
-- Convert the current shared home/sample-items view to Vue or explicitly remove
-  it only after a product decision; do not lose it accidentally.
+- Preserve the existing package/lockfile, Vite, TypeScript, Vue entry point,
+  Vue Router, Node-build/nginx Dockerfile, and responsive Vuetify shell.
+- Extend the existing centralized five-service navigation registry for
+  federated route metadata rather than creating a second registry.
+- Keep the existing host auth state, login view, logout action, and safe return
+  URL handling. Upgrade it to `{ id, name }`, add route guards, and ensure auth
+  bootstrap occurs once at the host boundary rather than in the sidebar.
+- Add the federation host configuration and TanStack Query provider established
+  by the Phase 1 spike.
+- Preserve the redesigned Shared home and runtime map. The former HTMX
+  sample-items view has already been intentionally removed.
 - Add accessible loading, signed-out, missing-remote, and general error states.
-- Move all common CSS, Vuetify setup, icons, and assets into the host.
-- Preserve `/login.html` as a temporary redirect to `/login` during rollout.
+- Treat the existing Shared `src/styles.css`, Vuetify theme, icons, and assets
+  as the initial host-owned visual system, then absorb common/feature CSS into
+  namespaced host styles during each remote migration.
+- Keep the current `/login.html` Vue route during rollout and add `/login` as
+  the canonical route, with `/login.html` retained as a compatibility redirect.
 
 Exit criteria: the host shell and auth work without any feature remote and
 match the Quizzes and Courses visual baseline on desktop and mobile.
