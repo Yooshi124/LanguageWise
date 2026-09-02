@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 import LessonsCompletedChart from '../components/LessonsCompletedChart.vue'
+import { useAuth } from '../composables/useAuth'
 
 interface LanguageRanking {
     id: number
@@ -13,6 +15,10 @@ interface LanguageRanking {
 
 const apiBase = `${import.meta.env.BASE_URL}api`
 
+const auth = useAuth()
+const isAuthLoading = computed(() => auth.status.value === 'loading')
+const isSignedOut = computed(() => auth.status.value === 'signed-out')
+
 const { data: rankings, isLoading, isError } = useQuery<LanguageRanking[]>({
     queryKey: ['language-rankings'],
     queryFn: async () => {
@@ -20,6 +26,7 @@ const { data: rankings, isLoading, isError } = useQuery<LanguageRanking[]>({
         if (!res.ok) throw new Error(`Request failed (${res.status})`)
         return res.json()
     },
+    enabled: computed(() => auth.status.value === 'authenticated'),
 })
 </script>
 
@@ -32,33 +39,44 @@ const { data: rankings, isLoading, isError } = useQuery<LanguageRanking[]>({
             </div>
         </header>
 
-        <LessonsCompletedChart />
-
-        <div class="lw-card" style="margin-top: calc(var(--lw-space) * 1.5)">
-            <h2 class="lw-card__title">Language Rankings</h2>
-            <p class="lw-card__hint">Scores and positions across all languages</p>
-
-            <p v-if="isLoading" class="lw-table__empty">Loading rankings…</p>
-            <p v-else-if="isError" class="lw-table__error">Failed to load rankings.</p>
-            <p v-else-if="!rankings?.length" class="lw-table__empty">No rankings available yet.</p>
-
-            <div v-else class="leaderboard-grid">
-                <div class="leaderboard-grid__header">Rank</div>
-                <div class="leaderboard-grid__header">User</div>
-                <div class="leaderboard-grid__header">Language</div>
-                <div class="leaderboard-grid__header">Score</div>
-
-                <template v-for="r in rankings" :key="r.id">
-                    <div class="leaderboard-grid__cell leaderboard-grid__rank">
-                        <span v-if="r.rank <= 3" class="lw-badge">#{{ r.rank }}</span>
-                        <span v-else>#{{ r.rank }}</span>
-                    </div>
-                    <div class="leaderboard-grid__cell">{{ r.userId }}</div>
-                    <div class="leaderboard-grid__cell">{{ r.language }}</div>
-                    <div class="leaderboard-grid__cell leaderboard-grid__score">{{ r.score }}</div>
-                </template>
-            </div>
+        <div v-if="isAuthLoading" class="lw-card" style="margin-top: calc(var(--lw-space) * 1.5)">
+            <p class="lw-table__empty">Checking login…</p>
         </div>
+
+        <div v-else-if="isSignedOut" class="lw-card" style="margin-top: calc(var(--lw-space) * 1.5)">
+            <h2 class="lw-card__title">Analytics is only available to logged in users</h2>
+            <p class="lw-card__hint">Please sign in to view your language rankings and lesson progress.</p>
+        </div>
+
+        <template v-else>
+            <LessonsCompletedChart />
+
+            <div class="lw-card" style="margin-top: calc(var(--lw-space) * 1.5)">
+                <h2 class="lw-card__title">Language Rankings</h2>
+                <p class="lw-card__hint">Scores and positions across all languages</p>
+
+                <p v-if="isLoading" class="lw-table__empty">Loading rankings…</p>
+                <p v-else-if="isError" class="lw-table__error">Failed to load rankings.</p>
+                <p v-else-if="!rankings?.length" class="lw-table__empty">No rankings available yet.</p>
+
+                <div v-else class="leaderboard-grid">
+                    <div class="leaderboard-grid__header">Rank</div>
+                    <div class="leaderboard-grid__header">User</div>
+                    <div class="leaderboard-grid__header">Language</div>
+                    <div class="leaderboard-grid__header">Score</div>
+
+                    <template v-for="r in rankings" :key="r.id">
+                        <div class="leaderboard-grid__cell leaderboard-grid__rank">
+                            <span v-if="r.rank <= 3" class="lw-badge">#{{ r.rank }}</span>
+                            <span v-else>#{{ r.rank }}</span>
+                        </div>
+                        <div class="leaderboard-grid__cell">{{ r.userId }}</div>
+                        <div class="leaderboard-grid__cell">{{ r.language }}</div>
+                        <div class="leaderboard-grid__cell leaderboard-grid__score">{{ r.score }}</div>
+                    </template>
+                </div>
+            </div>
+        </template>
     </div>
 </template>
 
