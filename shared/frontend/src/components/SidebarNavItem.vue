@@ -10,6 +10,7 @@ defineProps<{
   active?: boolean
   disabled?: boolean
   static?: boolean
+  native?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -20,7 +21,19 @@ const emit = defineEmits<{
 <template>
   <v-tooltip :text="label" location="end" :disabled="showLabel">
     <template #activator="{ props }">
-      <RouterLink v-if="href" :to="href" custom v-slot="{ href: routeHref, navigate }">
+      <a
+        v-if="href && native"
+        v-bind="props"
+        :href="href"
+        class="sidebar-nav-item"
+        :class="{ active }"
+        :aria-current="active ? 'page' : undefined"
+        :aria-label="showLabel ? undefined : label"
+      >
+        <AppIcon :name="icon" />
+        <span v-if="showLabel">{{ label }}</span>
+      </a>
+      <RouterLink v-else-if="href" :to="href" custom v-slot="{ href: routeHref, navigate }">
         <a
           v-bind="props"
           :href="routeHref"

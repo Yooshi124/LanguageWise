@@ -190,8 +190,11 @@
   .lw-notifications__empty { color: var(--qan-muted); font-size: 0.85rem; }
 
   .lw-notification-dialog {
+    position: fixed;
+    inset: 0;
     width: min(36rem, calc(100% - 2rem));
     max-height: calc(100vh - 2rem);
+    margin: auto;
     padding: 1.5rem;
     border: 1px solid var(--qan-border);
     border-radius: 6px;

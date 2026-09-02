@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import { serviceNavigation } from '../config/navigation'
 import AppIcon from './AppIcon.vue'
@@ -8,6 +8,7 @@ import SidebarNavItem from './SidebarNavItem.vue'
 
 const auth = useAuth()
 const route = useRoute()
+const router = useRouter()
 const loggingOut = ref(false)
 const logoutError = ref('')
 
@@ -67,6 +68,7 @@ async function handleLogout() {
 
   try {
     await auth.logout()
+    await router.push('/')
   } catch (error) {
     logoutError.value = error instanceof Error ? error.message : 'Unable to log out'
   } finally {
@@ -123,6 +125,7 @@ onBeforeUnmount(() => clearTimeout(hoverTimer))
         :label="accountLabel"
         icon="profile"
         :href="accountHref"
+        native
         :static="!accountHref"
         :show-label="expanded || mobileOpen"
       />

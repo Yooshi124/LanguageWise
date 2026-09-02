@@ -69,9 +69,9 @@ export const serviceMappings: readonly ServiceMapping[] = [
   {
     service: 'Leaderboard & Analytics',
     gateway: '/analytics/',
-    frontend: 'Gateway upstream configured; Compose service absent',
-    backend: 'Gateway upstream configured; Compose service absent',
-    database: 'Not configured',
-    technology: 'Not configured',
+    frontend: 'Gateway -> leaderboard-analytics-service-frontend:80',
+    backend: 'localhost:5005 -> leaderboard-analytics-service-backend:8080',
+    database: 'localhost:5006 -> leaderboard-analytics-service-db:8080',
+    technology: 'SQLite',
   },
 ]
