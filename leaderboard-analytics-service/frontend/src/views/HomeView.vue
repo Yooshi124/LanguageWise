@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useQuery } from '@tanstack/vue-query'
+import LessonsCompletedChart from '../components/LessonsCompletedChart.vue'
 
 interface LanguageRanking {
     id: number
@@ -30,6 +31,8 @@ const { data: rankings, isLoading, isError } = useQuery<LanguageRanking[]>({
                 <p class="lw-header__subtitle">Language ranking statistics</p>
             </div>
         </header>
+
+        <LessonsCompletedChart />
 
         <div class="lw-card" style="margin-top: calc(var(--lw-space) * 1.5)">
             <h2 class="lw-card__title">Language Rankings</h2>
