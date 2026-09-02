@@ -14,11 +14,17 @@ Each area is owned by one team member and will live in its own microservice.
 
 ### Student 1: Mini Games / Activities — *Kyan*
 
-Small games for learning vocabulary.
+Small games for practising vocabulary.
 
-- Crosswords, word jumbles, matching a word to an image (in the spirit of babadum.com)
-- A "Squid Game glass bridge", but with words
-- **AI integration:** mark the activity (RAG), generate or retrieve the word list to use (RAG)
+- **Guess the Word** — find the hidden five-letter word in six guesses (Wordle-style),
+  with special-letter buttons for non-ASCII letters like ß
+- **Word Search** — trace a chain of connected letters to find themed words hidden in the grid
+- **Associations** — group sixteen words into four categories of four
+- **Two vocabulary modes:** *Content Focus* uses words from the lessons you have completed in
+  your courses; *AI Generation* creates fresh beginner-level word lists (with themes and
+  definitions) on demand, so the service is fully playable standalone
+- **AI integration:** generates the word list, themes, and per-word definitions to play with
+  (OpenRouter); definitions are revealed in a popup once a round ends
 
 ### Student 2: Discussion / Chat Forum — *Lachlan*
 

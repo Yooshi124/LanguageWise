@@ -1,6 +1,9 @@
 <template>
 	<main class="game-page">
-		<a class="back-button" :href="gameHome" aria-label="Return to the main game page">Back</a>
+		<a class="back-button" :href="gameHome" aria-label="Return to the main game page">
+			<AppIcon name="arrow-left" :size="18" />
+			Back to games
+		</a>
 		<GameHelp :steps="howToPlay" />
 		<header class="game-header">
 			<p class="eyebrow">Find the connection</p>
@@ -9,6 +12,12 @@
 		</header>
 		<section v-if="noVocabulary" class="board-shell empty-state" role="status">
 			<p class="empty-state__message">{{ NO_VOCABULARY_MESSAGE }}</p>
+		</section>
+		<section v-else-if="aiUnavailable" class="board-shell empty-state" role="status">
+			<p class="empty-state__message">{{ AI_UNAVAILABLE_MESSAGE }}</p>
+		</section>
+		<section v-else-if="starting" class="board-shell" aria-label="Generating game">
+			<GeneratingState title="Preparing your Word Search…" />
 		</section>
 		<div v-else class="game-layout">
 			<section class="board-shell" aria-label="Word Search game board">
@@ -47,8 +56,10 @@
 						{{ hintWord ? 'Show order' : `Hint (${maximumHints - hintsUsed} left)` }}
 					</button>
 					<button type="button" :disabled="gameComplete || hintBusy" @click="giveUp">Give up</button>
-					<button v-if="gameComplete" type="button" @click="resetGameHandler">Play again</button>
+					<button v-if="gameComplete && definitions && Object.keys(definitions).length" type="button" @click="showDefinitions = true">Word definitions</button>
+					<button v-if="gameComplete" type="button" :disabled="starting" @click="resetGameHandler">Play again</button>
 				</div>
+				<WordDefinitions :definitions="definitions" :visible="showDefinitions" @close="showDefinitions = false" />
 			</section>
 
 			<aside class="hint-box">
@@ -64,8 +75,11 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { initializeGame, submitWordSearchWord, useWordSearchHint, giveUpWordSearch, resetGame, isNoVocabularyError, NO_VOCABULARY_MESSAGE } from './api.js';
+import { initializeGame, submitWordSearchWord, useWordSearchHint, giveUpWordSearch, resetGame, isNoVocabularyError, isAiUnavailableError, NO_VOCABULARY_MESSAGE, AI_UNAVAILABLE_MESSAGE } from './api.js';
+import AppIcon from './components/AppIcon.vue';
 import GameHelp from './components/GameHelp.vue';
+import WordDefinitions from './components/WordDefinitions.vue';
+import GeneratingState from './components/GeneratingState.vue';
 
 // App base path ('/mini-games/' through the gateway, '/' in local dev).
 const gameHome = `${import.meta.env.BASE_URL}game`;
@@ -95,11 +109,15 @@ const gameComplete = ref(false);
 const selectedIndexes = ref([]);
 const selecting = ref(false);
 const loading = ref(false);
+const starting = ref(false);
 const hintBusy = ref(false);
 const hintPulseIndexes = ref([]);
 const message = ref('');
 const error = ref(false);
 const noVocabulary = ref(false);
+const aiUnavailable = ref(false);
+const definitions = ref(null);
+const showDefinitions = ref(false);
 
 const selection = computed(() => selectedIndexes.value.map((index) => board.value[index]).join(''));
 const foundIndexes = computed(() => foundWords.value.flatMap((word) => wordPaths.value[word] ?? []));
@@ -140,11 +158,20 @@ const applyState = (state) => {
 	revealedWords.value = state.revealedWords;
 	isGivenUp.value = state.isGivenUp;
 	gameComplete.value = state.isComplete;
+	if (state.definitions) {
+		definitions.value = state.definitions;
+	}
 };
 
 const loadGame = async () => {
-	const state = await initializeGame('word-search');
-	applyState(state);
+	starting.value = true;
+	showDefinitions.value = false;
+	try {
+		const state = await initializeGame('word-search');
+		applyState(state);
+	} finally {
+		starting.value = false;
+	}
 };
 
 const startSelection = (index, event) => {
@@ -234,11 +261,17 @@ const resetGameHandler = async () => {
 	try {
 		await resetGame('word-search');
 		message.value = '';
+		error.value = false;
 		hintPulseIndexes.value = [];
+		hintWord.value = '';
+		hintPath.value = [];
+		selectedIndexes.value = [];
 		await loadGame();
 	} catch (requestError) {
 		if (isNoVocabularyError(requestError)) {
 			noVocabulary.value = true;
+		} else if (isAiUnavailableError(requestError)) {
+			aiUnavailable.value = true;
 		} else {
 			message.value = requestError.message;
 			error.value = true;
@@ -252,6 +285,8 @@ onMounted(async () => {
 	} catch (requestError) {
 		if (isNoVocabularyError(requestError)) {
 			noVocabulary.value = true;
+		} else if (isAiUnavailableError(requestError)) {
+			aiUnavailable.value = true;
 		} else {
 			message.value = requestError.message;
 			error.value = true;
@@ -299,6 +334,7 @@ h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.25rem); }
 .hint-box li { margin: 0.2rem 0; }
 .hint-box .foundWord { color: #3d8b72; font-weight: 800; }
 .hint-box .missedWord { color: #c85b70; font-weight: 800; }
-.back-button { position: absolute; top: 2rem; left: 2rem; padding: 0.5rem 0.75rem; color: #1c2b45; border: 1px solid #d9b783; border-radius: 6px; text-decoration: none; background: #fff; }
+.back-button { position: absolute; top: 2rem; left: 2rem; display: inline-flex; align-items: center; gap: 0.35rem; margin-left: -0.85rem; padding: 0.45rem 0.85rem; border: none; border-radius: 6px; color: #1c2b45; background: transparent; font-weight: 600; text-decoration: none; }
+.back-button:hover, .back-button:focus-visible { background: rgba(180, 83, 9, 0.1); outline: 3px solid rgba(180, 83, 9, 0.18); }
 @media (max-width: 40rem) { .game-layout { flex-direction: column; } .game-grid { width: min(88vw, 30rem); } .hint-box { width: min(70vw, 16rem); } }
 </style>

@@ -1,6 +1,7 @@
 <script setup>
 import {
 	mdiAccountCircleOutline,
+	mdiArrowLeft,
 	mdiClose,
 	mdiControllerClassicOutline,
 	mdiForumOutline,
@@ -20,6 +21,7 @@ defineProps({
 
 const icons = {
 	analytics: mdiChartBoxOutline,
+	'arrow-left': mdiArrowLeft,
 	close: mdiClose,
 	courses: mdiBookOpenPageVariantOutline,
 	discussion: mdiForumOutline,

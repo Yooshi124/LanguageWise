@@ -1,6 +1,9 @@
 <template>
 	<main class="game-page">
-		<a class="back-button" :href="gameHome" aria-label="Return to the main game page">Back</a>
+		<a class="back-button" :href="gameHome" aria-label="Return to the main game page">
+			<AppIcon name="arrow-left" :size="18" />
+			Back to games
+		</a>
 		<GameHelp :steps="howToPlay" />
 		<header class="game-header">
 			<p class="eyebrow">Make the associations</p>
@@ -9,6 +12,12 @@
 		</header>
 		<section v-if="noVocabulary" class="board-shell empty-state" role="status">
 			<p class="empty-state__message">{{ NO_VOCABULARY_MESSAGE }}</p>
+		</section>
+		<section v-else-if="aiUnavailable" class="board-shell empty-state" role="status">
+			<p class="empty-state__message">{{ AI_UNAVAILABLE_MESSAGE }}</p>
+		</section>
+		<section v-else-if="starting" class="board-shell" aria-label="Generating game">
+			<GeneratingState title="Preparing your Associations game…" />
 		</section>
 		<section v-else class="board-shell" aria-label="Associations game board">
 			<div class="attempts" aria-label="Remaining mistakes">
@@ -56,16 +65,21 @@
 				<button class="submit-button" type="button" :disabled="selectedWords.length !== 4 || loading || gameComplete" @click="submitGuess">
 					{{ loading ? 'Checking...' : 'Submit group' }}
 				</button>
-				<button class="reset-button" type="button" @click="resetGameHandler">New game</button>
+				<button v-if="gameComplete && definitions && Object.keys(definitions).length" class="reset-button" type="button" @click="showDefinitions = true">Word definitions</button>
+				<button class="reset-button" type="button" :disabled="starting" @click="resetGameHandler">New game</button>
 			</div>
+			<WordDefinitions :definitions="definitions" :visible="showDefinitions" @close="showDefinitions = false" />
 		</section>
 	</main>
  </template>
 
  <script setup>
  import { onMounted, ref } from 'vue';
- import { initializeGame, submitAssociationsGuess, resetGame, isNoVocabularyError, NO_VOCABULARY_MESSAGE } from './api.js';
+ import { initializeGame, submitAssociationsGuess, resetGame, isNoVocabularyError, isAiUnavailableError, NO_VOCABULARY_MESSAGE, AI_UNAVAILABLE_MESSAGE } from './api.js';
+ import AppIcon from './components/AppIcon.vue';
  import GameHelp from './components/GameHelp.vue';
+ import WordDefinitions from './components/WordDefinitions.vue';
+ import GeneratingState from './components/GeneratingState.vue';
 
  // App base path ('/mini-games/' through the gateway, '/' in local dev).
  const gameHome = `${import.meta.env.BASE_URL}game`;
@@ -85,9 +99,13 @@ const revealedGroups = ref([]);
  const gameComplete = ref(false);
 const isWon = ref(false);
  const loading = ref(false);
+ const starting = ref(false);
  const message = ref('');
  const error = ref(false);
  const noVocabulary = ref(false);
+ const aiUnavailable = ref(false);
+ const definitions = ref(null);
+ const showDefinitions = ref(false);
 
  const applyState = (state) => {
 	 words.value = state.words;
@@ -97,6 +115,9 @@ const isWon = ref(false);
 	 failedAttempts.value = state.failedAttempts;
 	 gameComplete.value = state.isComplete;
 	isWon.value = state.isWon;
+	if (state.definitions && Object.keys(state.definitions).length > 0) {
+		definitions.value = state.definitions;
+	}
  };
 
  const toggleWord = (word) => {
@@ -127,6 +148,8 @@ const isWon = ref(false);
  };
 
  const resetGameHandler = async () => {
+	 starting.value = true;
+	 showDefinitions.value = false;
 	 try {
 		 await resetGame('associations');
 		 const state = await initializeGame('associations');
@@ -136,24 +159,33 @@ const isWon = ref(false);
 	 } catch (exception) {
 		 if (isNoVocabularyError(exception)) {
 			 noVocabulary.value = true;
+		 } else if (isAiUnavailableError(exception)) {
+			 aiUnavailable.value = true;
 		 } else {
 			 message.value = exception.message;
 			 error.value = true;
 		 }
+	 } finally {
+		 starting.value = false;
 	 }
  };
 
  onMounted(async () => {
+	 starting.value = true;
 	 try {
 		 const state = await initializeGame('associations');
 		 applyState(state);
 	 } catch (exception) {
 		 if (isNoVocabularyError(exception)) {
 			 noVocabulary.value = true;
+		 } else if (isAiUnavailableError(exception)) {
+			 aiUnavailable.value = true;
 		 } else {
 			 message.value = 'Could not start game: ' + exception.message;
 			 error.value = true;
 		 }
+	 } finally {
+		 starting.value = false;
 	 }
  });
  </script>
@@ -203,7 +235,7 @@ const isWon = ref(false);
  .submit-button { color: #fff; background: #4254a4; }
  .submit-button:disabled { opacity: 0.45; cursor: not-allowed; }
  .reset-button { margin-left: 0.5rem; color: #1c2b45; background: #fff; }
- .back-button { position: absolute; top: 2rem; left: 2rem; padding: 0.5rem 0.75rem; color: #1c2b45; border: 1px solid #aab4e3; border-radius: 6px; text-decoration: none; background: #fff; }
- .back-button:hover, .back-button:focus-visible { border-color: #4254a4; outline: 3px solid rgba(66, 84, 164, 0.18); }
+ .back-button { position: absolute; top: 2rem; left: 2rem; display: inline-flex; align-items: center; gap: 0.35rem; margin-left: -0.85rem; padding: 0.45rem 0.85rem; border: none; border-radius: 6px; color: #1c2b45; background: transparent; font-weight: 600; text-decoration: none; }
+ .back-button:hover, .back-button:focus-visible { background: rgba(66, 84, 164, 0.1); outline: 3px solid rgba(66, 84, 164, 0.18); }
  @media (max-width: 520px) { .game-page { padding-inline: 1rem; } .back-button { position: static; display: inline-block; } .game-header { margin-top: 1.5rem; } .board-shell { padding: 1rem; } .game-grid { gap: 0.45rem; } .word-box { min-height: 4rem; font-size: 0.75rem; } }
  </style>
