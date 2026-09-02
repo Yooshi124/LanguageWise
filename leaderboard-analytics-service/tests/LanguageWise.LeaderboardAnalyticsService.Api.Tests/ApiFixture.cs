@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using LanguageWise.LeaderboardAnalyticsService.Api.Clients;
 using LanguageWise.LeaderboardAnalyticsService.Api.Models;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -25,6 +26,7 @@ internal sealed class ApiFixture : WebApplicationFactory<Program>
     }
 
     internal ISummaryGenerator SummaryGenerator { get; set; } = new FakeSummaryGenerator();
+    internal HttpMessageHandler? LeaderboardHandler { get; set; }
 
     internal string CreateToken(int userId = 7, string username = "justin")
     {
@@ -59,6 +61,14 @@ internal sealed class ApiFixture : WebApplicationFactory<Program>
         {
             services.RemoveAll<ISummaryGenerator>();
             services.AddSingleton(SummaryGenerator);
+            if (LeaderboardHandler is not null)
+            {
+                services.RemoveAll<LeaderboardClient>();
+                services.AddSingleton(new LeaderboardClient(new HttpClient(LeaderboardHandler)
+                {
+                    BaseAddress = new Uri("http://leaderboard-database/")
+                }));
+            }
         });
     }
 

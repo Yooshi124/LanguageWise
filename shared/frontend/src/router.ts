@@ -23,6 +23,11 @@ import {
   questsAchievementsRoutesReady,
   registerQuestsAchievementsRoutes,
 } from './federation/questsAchievementsRemote'
+import {
+  isLeaderboardAnalyticsPath,
+  leaderboardAnalyticsRoutesReady,
+  registerLeaderboardAnalyticsRoutes,
+} from './federation/leaderboardAnalyticsRemote'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -54,7 +59,20 @@ router.beforeEach(async (to) => {
     if (!isMiniGamesPath(to.path) || miniGamesRoutesReady()) {
       if (!isChatDiscussionPath(to.path) || chatDiscussionRoutesReady()) {
         if (!isQuestsAchievementsPath(to.path) || questsAchievementsRoutesReady()) {
-          return true
+          if (!isLeaderboardAnalyticsPath(to.path) || leaderboardAnalyticsRoutesReady()) {
+            return true
+          }
+
+          if (to.name === 'leaderboard-analytics-unavailable') {
+            return true
+          }
+
+          try {
+            await registerLeaderboardAnalyticsRoutes(router)
+            return { path: to.path, query: to.query, hash: to.hash, replace: true }
+          } catch {
+            return { path: to.path, query: to.query, hash: to.hash, replace: true }
+          }
         }
 
         if (to.name === 'quests-achievements-unavailable') {

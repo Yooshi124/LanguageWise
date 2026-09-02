@@ -2,9 +2,9 @@
 
 ## Status
 
-Phases 0 through 7 are complete. `leaderboard-analytics-service` is present
-with a frontend, backend, database, Docker wiring, and backend tests. The
-migration can proceed to the Phase 8 Leaderboard and Analytics remote.
+Phases 0 through 8 are complete. All five feature frontends now load as
+federated remotes through the Shared host. The migration can proceed to the
+Phase 9 gateway and legacy cleanup.
 
 The completed system will contain one shared host application and five feature
 remotes:
@@ -681,6 +681,32 @@ Verified result:
 Exit criteria: the fifth remote loads at `/analytics`, uses host auth/query/UI
 providers, and preserves ranking, chart, and AI-summary behavior with no local
 shell or authored CSS.
+
+#### Verified Phase 8 result
+
+- Leaderboard and Analytics exposes a shell-free component with a relative
+  route, stable `/analytics/api` calls, and exact singleton sharing for Vue,
+  Vue Router, and TanStack Query. Highcharts remains feature-local.
+- Shared lazily registers the protected `/analytics` route, supplies host auth
+  context, serves the remote entry with no-cache headers and chunks as
+  immutable, and isolates remote load failures behind the standard Retry view.
+- The duplicate sidebar, navigation, auth composable, Vuetify instance, icon
+  ownership, local styles, and `/api/me` endpoint are removed. The remote build
+  emits no CSS; Analytics styles are host-owned and feature-scoped.
+- Personal ranking loading/error/empty/content states remain intact. The chart
+  retains six UTC series, integer values, shared tooltip, update/destruction
+  lifecycle, responsive sizing, and now has Highcharts accessibility semantics
+  with no console warning.
+- AI summary query caching behavior, trend labels, best course, structured
+  Ollama response, and deterministic fallback remain intact. The Ollama client
+  timeout is 20 seconds beneath nginx's 30-second budget, with explicit timeout
+  fallback coverage.
+- Production validation through `http://localhost:3000/analytics/` confirms
+  the chart, warmed AI summary, and authenticated rankings render with no
+  console errors, failed requests, horizontal overflow, or mobile title/menu
+  overlap. The host, remote, and Analytics backend containers are healthy.
+- Thirteen Analytics backend tests, six Analytics frontend tests, nine Shared
+  frontend tests, both production builds, and Compose configuration pass.
 
 ### Phase 9 - Gateway and legacy cleanup
 

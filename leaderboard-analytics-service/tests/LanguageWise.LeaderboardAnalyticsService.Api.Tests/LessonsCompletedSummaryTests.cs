@@ -1,6 +1,10 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using LanguageWise.LeaderboardAnalyticsService.Api.Clients;
+using LanguageWise.LeaderboardAnalyticsService.Api.Models;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace LanguageWise.LeaderboardAnalyticsService.Api.Tests;
 
@@ -60,5 +64,43 @@ public sealed class LessonsCompletedSummaryTests
         });
     }
 
+    [Test]
+    public async Task Generator_WhenOllamaTimesOut_ReturnsDeterministicFallback()
+    {
+        using var httpClient = new HttpClient(new TimeoutHandler())
+        {
+            BaseAddress = new Uri("http://ollama/")
+        };
+        var generator = new OllamaSummaryGenerator(
+            httpClient,
+            Options.Create(new OllamaOptions()),
+            NullLogger<OllamaSummaryGenerator>.Instance);
+        var chartData = new LessonsCompletedResponse(
+            42,
+            new DateOnly(2026, 1, 1),
+            new DateOnly(2026, 1, 2),
+            [new LessonsCompletedSeries("de", "German", [
+                new LessonsCompletedPoint(new DateOnly(2026, 1, 1), 1),
+                new LessonsCompletedPoint(new DateOnly(2026, 1, 2), 3)
+            ])]);
+
+        var result = await generator.GenerateAsync(chartData);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Summary, Is.EqualTo("You completed 3 lessons across 1 courses over the last 30 days, with German leading the way."));
+            Assert.That(result.Trend, Is.EqualTo("flat"));
+            Assert.That(result.BestCourse, Is.EqualTo("German"));
+        });
+    }
+
     private sealed record LessonsCompletedSummaryDto(string Summary, string Trend, string BestCourse);
+
+    private sealed class TimeoutHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            Task.FromException<HttpResponseMessage>(new TaskCanceledException("Ollama timed out."));
+    }
 }

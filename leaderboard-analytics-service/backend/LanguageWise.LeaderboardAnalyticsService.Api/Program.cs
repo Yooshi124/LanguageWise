@@ -22,7 +22,7 @@ builder.Services.Configure<OllamaOptions>(builder.Configuration.GetSection("Olla
 builder.Services.AddHttpClient<ISummaryGenerator, OllamaSummaryGenerator>(client =>
 {
     client.BaseAddress = new Uri(ollamaServiceUrl.TrimEnd('/') + "/");
-    client.Timeout = TimeSpan.FromSeconds(30);
+    client.Timeout = TimeSpan.FromSeconds(20);
 });
 
 var verificationKeyPath = builder.Configuration["Auth:VerificationKeyPath"] ?? "/run/secrets/signing_public_key";
@@ -71,16 +71,6 @@ app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok())
     .AllowAnonymous();
-
-app.MapGet("/api/me", (HttpContext context) =>
-{
-    var subject = context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
-    var username = context.User.Identity?.Name;
-
-    return int.TryParse(subject, out var userId) && !string.IsNullOrWhiteSpace(username)
-        ? Results.Ok(new { id = userId, username })
-        : Results.Unauthorized();
-});
 
 // ---------------------------------------------------------------------------
 // Language Rankings

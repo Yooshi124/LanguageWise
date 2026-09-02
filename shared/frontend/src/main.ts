@@ -12,6 +12,7 @@ import './features/quizzes-courses.css'
 import './features/mini-games.css'
 import './features/chat-discussion.css'
 import './features/quests-achievements.css'
+import './features/leaderboard-analytics.css'
 
 const vuetify = createVuetify({
   components,
