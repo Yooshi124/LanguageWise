@@ -89,6 +89,19 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: shared/frontend/package-lock.json
+
+      - name: Build the frontend
+        working-directory: shared/frontend
+        run: |
+          npm ci
+          npm run build
+
       - name: Cache NuGet packages
         uses: actions/cache@v4
         with:

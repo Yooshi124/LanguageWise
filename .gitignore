@@ -19,6 +19,9 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# ---- Generated frontend compiler output ----
+shared/frontend/src/**/*.js
+
 # ---- Python ----
 __pycache__/
 *.py[cod]
