@@ -43,6 +43,9 @@ public sealed class AssociationsGame
         return words.ToArray();
     }
 
+    /// <summary>The summaries of the four groups in play, exposed so the round can be persisted when the game starts.</summary>
+    public string Solution => string.Join(" | ", groups.Select(group => group.Summary));
+
     public AssociationResult SubmitGuess(IReadOnlyList<string> guessedWords)
     {
         if (isComplete)

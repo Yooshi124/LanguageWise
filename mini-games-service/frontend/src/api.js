@@ -6,6 +6,8 @@
 const DEFAULT_USER_ID = 1;
 const USER_ID_STORAGE_KEY = 'mini_games_user_id';
 const COURSE_CODE_STORAGE_KEY = 'mini_games_course_code';
+const MODE_STORAGE_KEY = 'mini_games_mode';
+const AI_LANGUAGE_STORAGE_KEY = 'mini_games_ai_language';
 
 // Through the shared-frontend gateway this app lives under /mini-games/, so its
 // API is /mini-games/api/. Vite inlines the configured base into BASE_URL.
@@ -14,13 +16,25 @@ const API_BASE = `${import.meta.env.BASE_URL}api`;
 /** Error code the backend returns when the user has no playable vocabulary yet. */
 export const NO_VOCABULARY_CODE = 'NO_VOCABULARY';
 
+/** Error code the backend returns when AI word generation is unavailable. */
+export const AI_UNAVAILABLE_CODE = 'AI_UNAVAILABLE';
+
 /** Friendly message shown when a game cannot start because the user has no vocabulary. */
 export const NO_VOCABULARY_MESSAGE =
   'There were no words available to start the game with. Completing more course content will unlock new vocabulary';
 
+/** Friendly message shown when AI word generation cannot fulfil a request. */
+export const AI_UNAVAILABLE_MESSAGE =
+  'AI word generation is unavailable right now. Try again in a moment, or switch to Content Focus.';
+
 /** True when an API error means the user has not unlocked any vocabulary yet. */
 export function isNoVocabularyError(error) {
   return error?.code === NO_VOCABULARY_CODE;
+}
+
+/** True when an API error means the AI provider could not generate words. */
+export function isAiUnavailableError(error) {
+  return error?.code === AI_UNAVAILABLE_CODE;
 }
 
 /**
@@ -56,6 +70,45 @@ export function setCourseCode(courseCode) {
   localStorage.setItem(COURSE_CODE_STORAGE_KEY, courseCode);
 }
 
+/** The selected vocabulary mode: 'content' (course words) or 'ai' (generated). */
+export function getMode() {
+  return localStorage.getItem(MODE_STORAGE_KEY) || 'content';
+}
+
+/** Persist the vocabulary mode. */
+export function setMode(mode) {
+  localStorage.setItem(MODE_STORAGE_KEY, mode);
+}
+
+/** The language code the AI mode generates words for. */
+export function getAiLanguage() {
+  return localStorage.getItem(AI_LANGUAGE_STORAGE_KEY);
+}
+
+/** Persist the AI mode language code. */
+export function setAiLanguage(code) {
+  localStorage.setItem(AI_LANGUAGE_STORAGE_KEY, code);
+}
+
+/**
+ * Which vocabulary modes are usable right now, plus the languages each mode can offer.
+ * contentAvailable=false means the courses service is unreachable or the user has no
+ * unlocked vocabulary — the frontend locks the toggle onto AI generation in that case.
+ * @returns {Promise<{contentAvailable: boolean, aiAvailable: boolean, defaultMode: string, contentLanguages: Array, aiLanguages: Array}>}
+ */
+export async function fetchGameModes() {
+  const response = await fetch(`${API_BASE}/game-modes`, {
+    method: 'GET',
+    headers: { Accept: 'application/json' }
+  });
+
+  if (!response.ok) {
+    throw await toApiError(response, 'Failed to load game modes');
+  }
+
+  return response.json();
+}
+
 /**
  * Languages the user has unlocked vocabulary in (started courses with completed lessons),
  * as seen by the backend for the logged-in user. Empty when signed out or nothing unlocked.
@@ -69,6 +122,31 @@ export async function fetchGameLanguages() {
 
   if (!response.ok) {
     throw await toApiError(response, 'Failed to load your languages');
+  }
+
+  return response.json();
+}
+
+/**
+ * Successful completions per game type for the user, scoped to the given course
+ * (the language selected on the game page).
+ * @param {string} courseCode - Optional course code; omit for all languages.
+ * @param {number} userId - Optional user ID (uses stored or default if not provided)
+ * @returns {Promise<{courseCode: string|null, guessTheWord: number, wordSearch: number, associations: number}>}
+ */
+export async function fetchCompletionStats(courseCode, userId) {
+  const id = userId ?? getUserId();
+  const query = courseCode
+    ? `?userId=${id}&courseCode=${encodeURIComponent(courseCode)}`
+    : `?userId=${id}`;
+
+  const response = await fetch(`${API_BASE}/stats/completions${query}`, {
+    method: 'GET',
+    headers: { Accept: 'application/json' }
+  });
+
+  if (!response.ok) {
+    throw await toApiError(response, 'Failed to load your completion stats');
   }
 
   return response.json();
@@ -136,9 +214,22 @@ async function post(path, body) {
  */
 export async function initializeGame(gameType, userId, courseCode) {
   const id = userId ?? getUserId();
-  const code = courseCode ?? await ensureCourseCode();
-  const query = code ? `?userId=${id}&courseCode=${encodeURIComponent(code)}` : `?userId=${id}`;
-  return post(`${API_BASE}/${gameType}/init${query}`);
+  const mode = getMode();
+  const params = new URLSearchParams({ userId: String(id), mode });
+  if (mode === 'ai') {
+    // AI mode: language comes from the AI language picker (any supported language).
+    const language = getAiLanguage();
+    if (language) {
+      params.set('language', language);
+    }
+  } else {
+    // Content mode: scope to the selected course (or the first unlocked one).
+    const code = courseCode ?? await ensureCourseCode();
+    if (code) {
+      params.set('courseCode', code);
+    }
+  }
+  return post(`${API_BASE}/${gameType}/init?${params.toString()}`);
 }
 
 /**

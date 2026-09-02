@@ -7,12 +7,14 @@ public sealed record GuessTheWordState(
     bool IsWon,
     IReadOnlyList<GuessTheWordGuessResult> Guesses,
     string? CorrectAnswer,
-    IReadOnlyList<string> SpecialLetters);
+    IReadOnlyList<string> SpecialLetters,
+    IReadOnlyDictionary<string, string>? Definitions = null);
 
 public sealed record GuessTheWordGuessResult(
     string Guess,
     char[] Colours,
     bool IsCorrect,
-    string? CorrectAnswer = null);
+    string? CorrectAnswer = null,
+    IReadOnlyDictionary<string, string>? Definitions = null);
 
 public sealed record GuessTheWordGuessRequest(string Guess);

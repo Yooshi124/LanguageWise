@@ -108,6 +108,9 @@ services:
     container_name: mini-games-service-backend
     build:
       context: ./mini-games-service/backend
+    env_file:
+      - path: ./mini-games-service/backend/.env
+        required: false
     environment:
       Services__Database: http://mini-games-service-db:8080
       Services__Courses: http://quizzes-courses-service-backend:8080
@@ -116,8 +119,6 @@ services:
     networks: [languagewise]
     depends_on:
       mini-games-service-db:
-        condition: service_started
-      quizzes-courses-service-backend:
         condition: service_started
     restart: unless-stopped
 

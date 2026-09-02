@@ -14,7 +14,8 @@ RUN dotnet restore ${PROJECT}
 
 COPY ${PROJECT}/ ${PROJECT}/
 COPY sql/ sql/
-RUN dotnet publish ${PROJECT} -c Release -o /app/publish --no-restore
+# Bust the publish cache when source or schema changes so stale binaries are never shipped.
+RUN dotnet publish ${PROJECT} -c Release -o /app/publish
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
