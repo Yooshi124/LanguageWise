@@ -1,12 +1,20 @@
 namespace LanguageWise.ChatDiscussionService.Db.Models;
 
+/// <summary>One place a post can live. CourseId is the quizzes and courses
+/// service's own ID, and is null for forums that mirror no course.</summary>
+public sealed record Forum(int Id, int? CourseId, string Code, string Name);
+
+public sealed record CatalogCourse(int Id, string Code, string Title);
+
 public sealed record Post(
     int Id,
     int UserId,
     string AuthorName,
     string Title,
     string Content,
-    string Category,
+    int ForumId,
+    string ForumCode,
+    string ForumName,
     DateTime CreatedAt,
     DateTime UpdatedAt);
 
@@ -21,7 +29,9 @@ public sealed record PostSummary(
     string AuthorName,
     string Title,
     string Content,
-    string Category,
+    int ForumId,
+    string ForumCode,
+    string ForumName,
     DateTime CreatedAt,
     DateTime UpdatedAt,
     int CommentCount,
@@ -29,10 +39,11 @@ public sealed record PostSummary(
     bool LikedByViewer,
     string? MatchedCommentExcerpt);
 
-public sealed record PostInput(int UserId, string? AuthorName, string? Title, string? Content, string? Category);
+/// <summary>The forum arrives as a code; this service resolves it to the FK.</summary>
+public sealed record PostInput(int UserId, string? AuthorName, string? Title, string? Content, string? ForumCode);
 
 /// <summary>Editable fields only. UserId and AuthorName are absent by design: an edit must never reassign authorship.</summary>
-public sealed record PostUpdate(string? Title, string? Content, string? Category);
+public sealed record PostUpdate(string? Title, string? Content, string? ForumCode);
 
 public sealed record Comment(
     int Id,
@@ -77,3 +88,5 @@ public sealed record Image(
 
 /// <summary>The owning post or comment is taken from the route, not the body.</summary>
 public sealed record ImageInput(string StorageKey, string? FileName, string? ContentType, long SizeBytes);
+
+public sealed record ForumSyncResult(int Added, int Renamed);

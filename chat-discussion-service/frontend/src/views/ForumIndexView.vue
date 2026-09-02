@@ -45,11 +45,11 @@ onMounted(load);
             class="lw-card cd-forum"
             :to="{ name: 'forum', params: { code: forum.code } }"
         >
-            <h3 class="cd-forum__name">{{ forum.displayName }}</h3>
+            <h3 class="cd-forum__name">{{ forum.name }}</h3>
             <p class="cd-forum__hint">
                 {{ forum.code === 'global'
                     ? 'Anything that is not tied to one language.'
-                    : `Posts from people learning ${forum.displayName}.` }}
+                    : `Posts from people learning ${forum.name}.` }}
             </p>
         </RouterLink>
     </div>

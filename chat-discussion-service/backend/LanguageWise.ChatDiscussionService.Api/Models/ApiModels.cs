@@ -10,7 +10,8 @@ public sealed record PostSummary(
     string AuthorName,
     string Title,
     string Content,
-    string Category,
+    string ForumCode,
+    string ForumName,
     DateTime CreatedAt,
     DateTime UpdatedAt,
     int CommentCount,
@@ -24,7 +25,8 @@ public sealed record Post(
     string AuthorName,
     string Title,
     string Content,
-    string Category,
+    string ForumCode,
+    string ForumName,
     DateTime CreatedAt,
     DateTime UpdatedAt);
 
@@ -34,7 +36,8 @@ public sealed record PostDetail(
     string AuthorName,
     string Title,
     string Content,
-    string Category,
+    string ForumCode,
+    string ForumName,
     DateTime CreatedAt,
     DateTime UpdatedAt,
     int CommentCount,
@@ -104,7 +107,8 @@ public sealed record Image(
 /// <summary>Image bytes on their way back to the browser.</summary>
 public sealed record ImageContent(byte[] Bytes, string ContentType);
 
-public sealed record Forum(string Code, string DisplayName, int SortOrder);
+/// <summary>One place a post can live. CourseId is null for forums that mirror no course.</summary>
+public sealed record Forum(int Id, int? CourseId, string Code, string Name);
 
 public sealed record Me(int Id, string Username);
 
@@ -116,10 +120,10 @@ public sealed record Me(int Id, string Username);
 // write on another user's behalf by editing the request body.
 // ---------------------------------------------------------------------------
 
-public sealed record CreatePostRequest(string? Title, string? Content, string? Category);
+public sealed record CreatePostRequest(string? Title, string? Content, string? ForumCode);
 
 /// <summary>A PATCH body. A null field means 'leave it unchanged'; a blank one is rejected.</summary>
-public sealed record PatchPostRequest(string? Title, string? Content, string? Category);
+public sealed record PatchPostRequest(string? Title, string? Content, string? ForumCode);
 
 public sealed record CreateCommentRequest(string? Content);
 

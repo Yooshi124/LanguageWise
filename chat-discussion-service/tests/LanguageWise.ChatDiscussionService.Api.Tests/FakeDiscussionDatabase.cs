@@ -159,6 +159,11 @@ internal sealed class FakeDiscussionDatabase : HttpMessageHandler
                 : Json($"[{Comment(1, SignedInUserId)}]");
         }
 
+        if (path == "/api/forums")
+        {
+            return Json(Forums);
+        }
+
         // Posts
         if (path == "/api/posts")
         {
@@ -200,11 +205,20 @@ internal sealed class FakeDiscussionDatabase : HttpMessageHandler
         return int.TryParse(segment, out var id) ? id : null;
     }
 
+    private const string Forums =
+        """
+        [
+          { "id": 1, "courseId": null, "code": "global", "name": "Global" },
+          { "id": 2, "courseId": 11, "code": "spanish", "name": "Spanish" },
+          { "id": 3, "courseId": 12, "code": "italian", "name": "Italian" }
+        ]
+        """;
+
     private static string PostSummary(int id, int userId) =>
         $$"""
         {
           "id": {{id}}, "userId": {{userId}}, "authorName": "someone", "title": "A title", "content": "Some content",
-          "category": "global", "createdAt": "2026-02-12T09:00:00Z", "updatedAt": "2026-02-12T09:00:00Z",
+          "forumCode": "global", "forumName": "Global", "createdAt": "2026-02-12T09:00:00Z", "updatedAt": "2026-02-12T09:00:00Z",
           "commentCount": 2, "likeCount": 3, "likedByViewer": false, "matchedCommentExcerpt": null
         }
         """;
@@ -213,7 +227,7 @@ internal sealed class FakeDiscussionDatabase : HttpMessageHandler
         $$"""
         {
           "id": {{id}}, "userId": {{userId}}, "authorName": "someone", "title": "A title", "content": "Some content",
-          "category": "global", "createdAt": "2026-02-12T09:00:00Z", "updatedAt": "2026-02-12T09:00:00Z"
+          "forumCode": "global", "forumName": "Global", "createdAt": "2026-02-12T09:00:00Z", "updatedAt": "2026-02-12T09:00:00Z"
         }
         """;
 

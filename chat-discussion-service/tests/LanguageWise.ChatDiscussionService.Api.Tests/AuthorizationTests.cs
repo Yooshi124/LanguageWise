@@ -47,7 +47,7 @@ public sealed class AuthorizationTests
 
         var response = await client.PostAsJsonAsync(
             "/api/posts",
-            new { title = "Hello", content = "World", category = "global" });
+            new { title = "Hello", content = "World", forumCode = "global" });
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
     }
@@ -61,7 +61,7 @@ public sealed class AuthorizationTests
 
         var response = await client.PostAsJsonAsync(
             "/api/posts",
-            new { title = "Hello", content = "World", category = "global" });
+            new { title = "Hello", content = "World", forumCode = "global" });
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Created));
     }
@@ -78,7 +78,7 @@ public sealed class AuthorizationTests
 
         var response = await client.PostAsJsonAsync(
             "/api/posts",
-            new { title = "Hello", content = "World", category = "global" });
+            new { title = "Hello", content = "World", forumCode = "global" });
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Created));
     }
@@ -93,7 +93,7 @@ public sealed class AuthorizationTests
         // The caller tries to post as somebody else.
         var response = await client.PostAsJsonAsync(
             "/api/posts",
-            new { userId = FakeDiscussionDatabase.OtherUserId, title = "Hello", content = "World", category = "global" });
+            new { userId = FakeDiscussionDatabase.OtherUserId, title = "Hello", content = "World", forumCode = "global" });
 
         using var forwarded = JsonDocument.Parse(fixture.Database.LastRequestBody!);
         Assert.Multiple(() =>
@@ -114,7 +114,7 @@ public sealed class AuthorizationTests
 
         var response = await client.PostAsJsonAsync(
             "/api/posts",
-            new { title = "   ", content = "World", category = "global" });
+            new { title = "   ", content = "World", forumCode = "global" });
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
     }
@@ -278,7 +278,7 @@ public sealed class AuthorizationTests
         Assert.Multiple(() =>
         {
             Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
-            Assert.That(codes, Is.EquivalentTo(new[] { "global", "spanish", "italian", "japanese" }));
+            Assert.That(codes, Is.EquivalentTo(new[] { "global", "spanish", "italian" }));
         });
     }
 
@@ -329,14 +329,18 @@ public sealed class AuthorizationTests
     }
 
     [Test]
-    public async Task GetPosts_WithAForumThatDoesNotExist_ReturnsBadRequest()
+    public async Task GetPosts_WithAForumThatDoesNotExist_ForwardsTheFilterInsteadOfRejectingIt()
     {
         using var fixture = new ApiFixture();
         using var client = fixture.CreateClient();
 
-        var response = await client.GetAsync("/api/posts?category=klingon");
+        var response = await client.GetAsync("/api/posts?forumCode=klingon");
 
-        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(fixture.Database.LastRequestUri?.Query, Does.Contain("forumCode=klingon"));
+        });
     }
 
     [Test]
@@ -370,7 +374,7 @@ public sealed class AuthorizationTests
 
         var response = await client.PostAsJsonAsync(
             "/api/posts",
-            new { title = "Hello", content = "World", category = "klingon" });
+            new { title = "Hello", content = "World", forumCode = "klingon" });
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
     }
@@ -384,13 +388,13 @@ public sealed class AuthorizationTests
 
         await client.PostAsJsonAsync(
             "/api/posts",
-            new { title = "Hello", content = "World", category = "global" });
+            new { title = "Hello", content = "World", forumCode = "global" });
 
         using var forwarded = JsonDocument.Parse(fixture.Database.LastRequestBody!);
         Assert.That(forwarded.RootElement.GetProperty("authorName").GetString(), Is.EqualTo("lachlan"));
     }
 
-    private sealed record ForumResponse(string Code, string DisplayName, int SortOrder);
+    private sealed record ForumResponse(int Id, int? CourseId, string Code, string Name);
 
     private sealed record MeResponse(int Id, string Username);
 

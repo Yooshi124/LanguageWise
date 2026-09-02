@@ -1,4 +1,6 @@
+using System.Net;
 using System.Text.Json;
+using LanguageWise.ChatDiscussionService.Api.Clients;
 using LanguageWise.ChatDiscussionService.Api.Models;
 using LanguageWise.ChatDiscussionService.Api.Services;
 
@@ -6,25 +8,41 @@ namespace LanguageWise.ChatDiscussionService.Api.Tests;
 
 public sealed class AssistantContextServiceTests
 {
-    private static readonly AssistantContextService Service = new();
+    private const string ForumsJson =
+        """
+        [
+          { "id": 1, "courseId": null, "code": "global", "name": "Global" },
+          { "id": 2, "courseId": 11, "code": "spanish", "name": "Spanish" },
+          { "id": 3, "courseId": 12, "code": "italian", "name": "Italian" }
+        ]
+        """;
 
-    private static AssistantContext Retrieve(
+    private static AssistantContextService CreateService(HttpMessageHandler handler) =>
+        new(new DiscussionClient(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://chat-discussion-service-db:8080/")
+        }));
+
+    private static Task<AssistantContext> Retrieve(
         string message,
         string routeName = "forums",
         string? forumCode = null,
         int? postId = null) =>
-        Service.GetContext(new ValidatedAssistantRequest(
-            message,
-            [],
-            new AssistantRouteContext(routeName, forumCode, postId)));
+        CreateService(new StubHttpMessageHandler(HttpStatusCode.OK, ForumsJson))
+            .GetContextAsync(
+                new ValidatedAssistantRequest(
+                    message,
+                    [],
+                    new AssistantRouteContext(routeName, forumCode, postId)),
+                CancellationToken.None);
 
-    private static JsonElement Context(
+    private static async Task<JsonElement> Context(
         string message,
         string routeName = "forums",
         string? forumCode = null,
         int? postId = null) =>
         JsonDocument
-            .Parse(Retrieve(message, routeName, forumCode, postId).CanonicalContext)
+            .Parse((await Retrieve(message, routeName, forumCode, postId)).CanonicalContext)
             .RootElement;
 
     private static IEnumerable<string> TopicTitles(JsonElement context) =>
@@ -32,29 +50,26 @@ public sealed class AssistantContextServiceTests
             .Select(topic => topic.GetProperty("title").GetString()!);
 
     [Test]
-    public void BuildCanonicalContext_RetrievesTheTopicsThatMatchTheQuestion()
+    public async Task BuildCanonicalContext_RetrievesTheTopicsThatMatchTheQuestion()
     {
-        var context = Context("How do I delete a post?");
+        var context = await Context("How do I delete a post?");
 
         Assert.That(TopicTitles(context), Does.Contain("Deleting a post"));
     }
 
-    /// <summary>
-    /// The page is a retrieval hint in its own right, so standing on the edit
-    /// screen surfaces the editing topic even when the question does not say so.
-    /// </summary>
+    // The page is a retrieval hint in its own right.
     [Test]
-    public void BuildCanonicalContext_BiasesRetrievalTowardsThePageTheQuestionWasAskedFrom()
+    public async Task BuildCanonicalContext_BiasesRetrievalTowardsThePageTheQuestionWasAskedFrom()
     {
-        var context = Context("What can I change here?", "post-edit", postId: 7);
+        var context = await Context("What can I change here?", "post-edit", postId: 7);
 
         Assert.That(TopicTitles(context), Does.Contain("Editing a post you wrote"));
     }
 
     [Test]
-    public void BuildCanonicalContext_NamesThePageAndTheForumTheAskerIsIn()
+    public async Task BuildCanonicalContext_NamesThePageAndTheForumTheAskerIsIn()
     {
-        var context = Context("What is this?", "forum", "spanish");
+        var context = await Context("What is this?", "forum", "spanish");
 
         Assert.Multiple(() =>
         {
@@ -64,24 +79,42 @@ public sealed class AssistantContextServiceTests
     }
 
     [Test]
-    public void BuildCanonicalContext_ListsEveryForumSoTheModelNeverInventsOne()
+    public async Task BuildCanonicalContext_ListsEveryForumSoTheModelNeverInventsOne()
     {
-        var context = Context("Which forums are there?");
+        var context = await Context("Which forums are there?");
 
         var codes = context.GetProperty("forums").EnumerateArray()
             .Select(forum => forum.GetProperty("code").GetString());
 
-        Assert.That(codes, Is.EquivalentTo(new[] { "global", "spanish", "italian", "japanese" }));
+        Assert.That(codes, Is.EquivalentTo(new[] { "global", "spanish", "italian" }));
     }
 
-    /// <summary>
-    /// Nothing about the forum's actual content is in the context, because the
-    /// assistant explains the site rather than reading it.
-    /// </summary>
     [Test]
-    public void BuildCanonicalContext_CarriesNoPostContentEvenOnAPostPage()
+    public async Task BuildCanonicalContext_WhenTheDatabaseWillNotAnswer_StillAnswersWithoutTheForumList()
     {
-        var context = Context("What does this post say?", "post", postId: 7);
+        var service = CreateService(new FailingHttpMessageHandler());
+
+        var retrieved = await service.GetContextAsync(
+            new ValidatedAssistantRequest(
+                "How do I delete a post?",
+                [],
+                new AssistantRouteContext("forums", null, null)),
+            CancellationToken.None);
+
+        var context = JsonDocument.Parse(retrieved.CanonicalContext).RootElement;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(context.GetProperty("forums").EnumerateArray(), Is.Empty);
+            Assert.That(TopicTitles(context), Does.Contain("Deleting a post"));
+        });
+    }
+
+    // The assistant explains the site rather than reading it.
+    [Test]
+    public async Task BuildCanonicalContext_CarriesNoPostContentEvenOnAPostPage()
+    {
+        var context = await Context("What does this post say?", "post", postId: 7);
 
         Assert.Multiple(() =>
         {
@@ -95,9 +128,9 @@ public sealed class AssistantContextServiceTests
     // -----------------------------------------------------------------------
 
     [Test]
-    public void GetContext_BuildsAFallbackFromTheSameTopicsItGivesTheModel()
+    public async Task GetContext_BuildsAFallbackFromTheSameTopicsItGivesTheModel()
     {
-        var context = Retrieve("How do I delete a post?");
+        var context = await Retrieve("How do I delete a post?");
 
         Assert.Multiple(() =>
         {
@@ -107,9 +140,9 @@ public sealed class AssistantContextServiceTests
     }
 
     [Test]
-    public void GetContext_WhenNothingMatches_FallsBackToWhatTheAssistantCanHelpWith()
+    public async Task GetContext_WhenNothingMatches_FallsBackToWhatTheAssistantCanHelpWith()
     {
-        var context = Retrieve("zzzz");
+        var context = await Retrieve("zzzz");
 
         Assert.Multiple(() =>
         {

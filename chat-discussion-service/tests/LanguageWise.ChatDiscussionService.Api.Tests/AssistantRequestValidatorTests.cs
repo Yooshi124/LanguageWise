@@ -136,9 +136,19 @@ public sealed class AssistantRequestValidatorTests
     }
 
     [Test]
-    public void Validate_OnAForumRouteWithAnUnknownForum_ReportsTheForumCode()
+    public void Validate_OnAForumRouteWithAForumThatDoesNotExist_IsAccepted()
     {
         var context = new AssistantRouteContext("forum", "klingon", null);
+
+        Assert.That(Validator.Validate(Request(context: context)).Errors, Is.Empty);
+    }
+
+    [TestCase("spanish!")]
+    [TestCase("-spanish")]
+    [TestCase("Spa nish")]
+    public void Validate_OnAForumRouteWithAMalformedForumCode_ReportsTheForumCode(string code)
+    {
+        var context = new AssistantRouteContext("forum", code, null);
 
         Assert.That(
             Validator.Validate(Request(context: context)).Errors,

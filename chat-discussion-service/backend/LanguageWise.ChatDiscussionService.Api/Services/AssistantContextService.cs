@@ -1,11 +1,14 @@
 using System.Text.Json;
+using LanguageWise.ChatDiscussionService.Api.Clients;
 using LanguageWise.ChatDiscussionService.Api.Models;
 
 namespace LanguageWise.ChatDiscussionService.Api.Services;
 
 public interface IAssistantContextService
 {
-    AssistantContext GetContext(ValidatedAssistantRequest request);
+    Task<AssistantContext> GetContextAsync(
+        ValidatedAssistantRequest request,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -18,7 +21,7 @@ public interface IAssistantContextService
 /// only biases which help topics are retrieved, so standing on the edit page
 /// surfaces the editing topic even when the question does not name it.
 /// </summary>
-public sealed class AssistantContextService : IAssistantContextService
+public sealed class AssistantContextService(DiscussionClient client) : IAssistantContextService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -45,7 +48,9 @@ public sealed class AssistantContextService : IAssistantContextService
     /// Retrieves once and renders the result both ways: as JSON for the model,
     /// and as prose for the fallback that stands in when the model is missing.
     /// </summary>
-    public AssistantContext GetContext(ValidatedAssistantRequest request)
+    public async Task<AssistantContext> GetContextAsync(
+        ValidatedAssistantRequest request,
+        CancellationToken cancellationToken)
     {
         // The page only refines a question that is already about the forum. Adding
         // its terms unconditionally would make every question match something,
@@ -65,7 +70,8 @@ public sealed class AssistantContextService : IAssistantContextService
                     platform = "LanguageWise discussion forum",
                     page = request.Context.RouteName,
                     forum = request.Context.ForumCode,
-                    forums = DiscussionRules.Forums.Select(forum => new { forum.Code, forum.DisplayName }),
+                    forums = (await GetForumsAsync(cancellationToken))
+                        .Select(forum => new { forum.Code, forum.Name }),
                     helpTopics = articles.Select(article => new
                     {
                         article.Title,
@@ -74,6 +80,19 @@ public sealed class AssistantContextService : IAssistantContextService
                 },
                 JsonOptions),
             BuildFallbackAnswer(articles));
+    }
+
+    /// <summary>Failing to read the forums costs the list, not the reply.</summary>
+    private async Task<IReadOnlyList<Forum>> GetForumsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await client.GetForumsAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException)
+        {
+            return [];
+        }
     }
 
     /// <summary>

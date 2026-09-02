@@ -1,3 +1,5 @@
+using System.Text.Json;
+using LanguageWise.ChatDiscussionService.Db.Clients;
 using LanguageWise.ChatDiscussionService.Db.Data;
 using LanguageWise.ChatDiscussionService.Db.Models;
 
@@ -24,8 +26,35 @@ builder.Services.AddSingleton(new DiscussionRepository(connectionString));
 var imagePath = builder.Configuration["Images:Path"] ?? "data/images";
 builder.Services.AddSingleton(new ImageStore(imagePath));
 
+// Inside Docker this resolves to the courses database service by container name.
+var coursesServiceUrl = builder.Configuration["Services:Courses"] ?? "http://localhost:6003";
+builder.Services.AddHttpClient<CourseCatalogClient>(client =>
+{
+    client.BaseAddress = new Uri(coursesServiceUrl.TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
+
 var app = builder.Build();
 app.Services.GetRequiredService<DatabaseInitializer>().Initialise();
+
+// Once, at start-up. An unreachable catalogue is not fatal: the forums already in
+// the database still work, and the next restart tries again.
+try
+{
+    var courses = await app.Services.GetRequiredService<CourseCatalogClient>().GetCoursesAsync();
+    var sync = app.Services.GetRequiredService<DiscussionRepository>().SyncCourseForums(courses);
+    app.Logger.LogInformation(
+        "Synced {CourseCount} courses into forums: {Added} added, {Renamed} renamed.",
+        courses.Count,
+        sync.Added,
+        sync.Renamed);
+}
+catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException)
+{
+    app.Logger.LogWarning(
+        exception,
+        "The course catalogue was unreachable; forums are left as they are.");
+}
 
 app.MapGet("/health", (SampleItemRepository repository) =>
 {
@@ -42,18 +71,28 @@ app.MapGet("/health", (SampleItemRepository repository) =>
 });
 
 // ---------------------------------------------------------------------------
+// Forums
+// ---------------------------------------------------------------------------
+
+app.MapGet("/api/forums", (DiscussionRepository repository) =>
+    Results.Ok(repository.GetForums()));
+
+app.MapGet("/api/forums/{code}", (string code, DiscussionRepository repository) =>
+    repository.GetForum(code) is { } forum ? Results.Ok(forum) : Results.NotFound());
+
+// ---------------------------------------------------------------------------
 // Posts
 // ---------------------------------------------------------------------------
 
 app.MapGet("/api/posts", (
     DiscussionRepository repository,
     int? userId = null,
-    string? category = null,
+    string? forumCode = null,
     string? search = null,
     int limit = 20,
     int offset = 0,
     int? viewerId = null) =>
-    Results.Ok(repository.GetPosts(userId, category, search, limit, offset, viewerId)));
+    Results.Ok(repository.GetPosts(userId, forumCode, search, limit, offset, viewerId)));
 
 app.MapGet("/api/posts/{id:int}", (int id, DiscussionRepository repository, int? viewerId = null) =>
     repository.GetPost(id, viewerId) is { } post ? Results.Ok(post) : Results.NotFound());

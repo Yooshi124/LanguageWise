@@ -18,7 +18,7 @@ const { forums } = useForums();
 
 const title = ref('');
 const content = ref('');
-const category = ref('global');
+const forumCode = ref('global');
 
 const pendingImages = ref([]);
 
@@ -27,7 +27,7 @@ watch(
     (post) => {
         title.value = post?.title ?? '';
         content.value = post?.content ?? '';
-        category.value = post?.category ?? 'global';
+        forumCode.value = post?.forumCode ?? 'global';
     },
     { immediate: true }
 );
@@ -36,7 +36,7 @@ function submit() {
     emit('submit', {
         title: title.value.trim(),
         content: content.value.trim(),
-        category: category.value,
+        forumCode: forumCode.value,
         images: pendingImages.value.map((entry) => entry.file)
     });
 }
@@ -61,9 +61,9 @@ function submit() {
 
         <div class="lw-field cd-form__field">
             <label class="cd-form__label" for="post-forum">Forum</label>
-            <select id="post-forum" v-model="category" class="cd-form__input" required>
+            <select id="post-forum" v-model="forumCode" class="cd-form__input" required>
                 <option v-for="forum in forums" :key="forum.code" :value="forum.code">
-                    {{ forum.displayName }}
+                    {{ forum.name }}
                 </option>
             </select>
         </div>

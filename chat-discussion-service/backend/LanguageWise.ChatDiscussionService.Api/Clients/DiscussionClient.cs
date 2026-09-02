@@ -22,7 +22,7 @@ public sealed class DiscussionClient(HttpClient httpClient)
 {
     public async Task<IReadOnlyList<PostSummary>> GetPostsAsync(
         int? userId,
-        string? category,
+        string? forumCode,
         string? search,
         int limit,
         int offset,
@@ -31,7 +31,7 @@ public sealed class DiscussionClient(HttpClient httpClient)
     {
         var query = new QueryBuilder()
             .Add("userId", userId)
-            .Add("category", category)
+            .Add("forumCode", forumCode)
             .Add("search", search)
             .Add("limit", limit)
             .Add("offset", offset)
@@ -41,6 +41,9 @@ public sealed class DiscussionClient(HttpClient httpClient)
             $"api/posts{query}",
             cancellationToken) ?? [];
     }
+
+    public async Task<IReadOnlyList<Forum>> GetForumsAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<List<Forum>>("api/forums", cancellationToken) ?? [];
 
     public async Task<PostSummary?> GetPostAsync(
         int id,
@@ -56,12 +59,12 @@ public sealed class DiscussionClient(HttpClient httpClient)
         string authorName,
         string title,
         string content,
-        string category,
+        string forumCode,
         CancellationToken cancellationToken = default)
     {
         using var response = await httpClient.PostAsJsonAsync(
             "api/posts",
-            new { UserId = userId, AuthorName = authorName, Title = title, Content = content, Category = category },
+            new { UserId = userId, AuthorName = authorName, Title = title, Content = content, ForumCode = forumCode },
             cancellationToken);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<Post>(cancellationToken))!;
@@ -71,12 +74,12 @@ public sealed class DiscussionClient(HttpClient httpClient)
         int id,
         string title,
         string content,
-        string category,
+        string forumCode,
         CancellationToken cancellationToken = default)
     {
         using var response = await httpClient.PutAsJsonAsync(
             $"api/posts/{id}",
-            new { Title = title, Content = content, Category = category },
+            new { Title = title, Content = content, ForumCode = forumCode },
             cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.NotFound)

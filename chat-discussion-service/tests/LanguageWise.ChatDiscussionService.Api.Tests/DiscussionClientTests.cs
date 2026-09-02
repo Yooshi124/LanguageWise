@@ -11,7 +11,7 @@ public sealed class DiscussionClientTests
         [
           {
             "id": 1, "userId": 2, "authorName": "lachlan", "title": "Welcome", "content": "Say hello",
-            "category": "global", "createdAt": "2026-02-12T09:00:00Z", "updatedAt": "2026-02-12T09:00:00Z",
+            "forumCode": "global", "forumName": "Global", "createdAt": "2026-02-12T09:00:00Z", "updatedAt": "2026-02-12T09:00:00Z",
             "commentCount": 4, "likeCount": 7, "likedByViewer": true, "matchedCommentExcerpt": null
           }
         ]
@@ -28,7 +28,7 @@ public sealed class DiscussionClientTests
         Assert.That(posts, Has.Count.EqualTo(1));
         Assert.Multiple(() =>
         {
-            Assert.That(posts[0].Category, Is.EqualTo("global"));
+            Assert.That(posts[0].ForumCode, Is.EqualTo("global"));
             Assert.That(posts[0].AuthorName, Is.EqualTo("lachlan"));
             Assert.That(posts[0].CommentCount, Is.EqualTo(4));
             Assert.That(posts[0].LikeCount, Is.EqualTo(7));
@@ -47,7 +47,7 @@ public sealed class DiscussionClientTests
 
         Assert.That(
             handler.LastRequestUri?.PathAndQuery,
-            Is.EqualTo("/api/posts?userId=3&category=spanish&search=verbs&limit=20&offset=40&viewerId=9"));
+            Is.EqualTo("/api/posts?userId=3&forumCode=spanish&search=verbs&limit=20&offset=40&viewerId=9"));
     }
 
     [Test]
@@ -73,14 +73,14 @@ public sealed class DiscussionClientTests
     }
 
     [Test]
-    public async Task GetPostsAsync_EscapesACategoryContainingASpace()
+    public async Task GetPostsAsync_EscapesAForumCodeContainingASpace()
     {
         using var handler = new StubHttpMessageHandler(HttpStatusCode.OK, "[]");
         var client = CreateClient(handler);
 
         await client.GetPostsAsync(null, "brazilian portuguese", null, 20, 0, null);
 
-        Assert.That(handler.LastRequestUri?.Query, Does.Contain("category=brazilian%20portuguese"));
+        Assert.That(handler.LastRequestUri?.Query, Does.Contain("forumCode=brazilian%20portuguese"));
     }
 
     [Test]
@@ -108,7 +108,7 @@ public sealed class DiscussionClientTests
             HttpStatusCode.Created,
             """
             {
-              "id": 5, "userId": 2, "authorName": "lachlan", "title": "T", "content": "C", "category": "global",
+              "id": 5, "userId": 2, "authorName": "lachlan", "title": "T", "content": "C", "forumCode": "global", "forumName": "Global",
               "createdAt": "2026-02-12T09:00:00Z", "updatedAt": "2026-02-12T09:00:00Z"
             }
             """);
@@ -122,7 +122,7 @@ public sealed class DiscussionClientTests
             Assert.That(handler.LastRequestUri?.AbsolutePath, Is.EqualTo("/api/posts"));
             Assert.That(body.RootElement.GetProperty("userId").GetInt32(), Is.EqualTo(2));
             Assert.That(body.RootElement.GetProperty("authorName").GetString(), Is.EqualTo("lachlan"));
-            Assert.That(body.RootElement.GetProperty("category").GetString(), Is.EqualTo("global"));
+            Assert.That(body.RootElement.GetProperty("forumCode").GetString(), Is.EqualTo("global"));
         });
     }
 

@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using LanguageWise.ChatDiscussionService.Api.Models;
 
 namespace LanguageWise.ChatDiscussionService.Api.Services;
@@ -11,7 +12,7 @@ namespace LanguageWise.ChatDiscussionService.Api.Services;
 /// its length, so the caps here are what stops one browser tab from posting a
 /// megabyte of history to a metered model.
 /// </summary>
-public sealed class AssistantRequestValidator
+public sealed partial class AssistantRequestValidator
 {
     public const int MaximumMessageCharacters = 4000;
     public const int MaximumHistoryTurns = 12;
@@ -134,9 +135,10 @@ public sealed class AssistantRequestValidator
             ? null
             : context.ForumCode.Trim().ToLowerInvariant();
 
-        if (forumCode is not null && !DiscussionRules.IsKnownForum(forumCode))
+        // Shape, not membership: this validator stays free of I/O.
+        if (forumCode is not null && !SafeForumCode().IsMatch(forumCode))
         {
-            errors["context.forumCode"] = [DiscussionRules.UnknownForumMessage];
+            errors["context.forumCode"] = ["The forum code is invalid."];
         }
 
         if (requirements == RouteRequirements.Forum && forumCode is null)
@@ -164,6 +166,9 @@ public sealed class AssistantRequestValidator
 
         return new AssistantRouteContext(routeName, forumCode, context.PostId);
     }
+
+    [GeneratedRegex("^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$", RegexOptions.CultureInvariant)]
+    private static partial Regex SafeForumCode();
 
     private enum RouteRequirements
     {

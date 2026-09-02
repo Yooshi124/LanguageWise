@@ -234,8 +234,8 @@ export const api = {
     me: () => request('/me'),
     forums: () => request('/forums'),
 
-    posts: ({ userId, category, q, limit, offset } = {}) =>
-        request(`/posts${query({ userId, category, q, limit, offset })}`),
+    posts: ({ userId, forumCode, q, limit, offset } = {}) =>
+        request(`/posts${query({ userId, forumCode, q, limit, offset })}`),
 
     post: (id) => request(`/posts/${id}`),
 

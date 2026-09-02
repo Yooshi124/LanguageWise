@@ -55,7 +55,7 @@ builder.Services.AddHttpClient<IAssistantCompletionClient, OllamaAssistantClient
 
 builder.Services.AddSingleton<AssistantRequestValidator>();
 builder.Services.AddSingleton<IAssistantPromptBuilder, AssistantPromptBuilder>();
-builder.Services.AddSingleton<IAssistantContextService, AssistantContextService>();
+builder.Services.AddScoped<IAssistantContextService, AssistantContextService>();
 
 // The model is metered, so one signed-in user cannot spend the whole allowance.
 // Partitioned by 'sub' rather than IP: everyone here is signed in anyway, and a
@@ -135,7 +135,8 @@ app.UseRateLimiter();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = ServiceName }));
 
-app.MapGet("/api/forums", () => Results.Ok(DiscussionRules.Forums));
+app.MapGet("/api/forums", (DiscussionClient client, CancellationToken cancellationToken) =>
+    Guard(async () => Results.Ok(await client.GetForumsAsync(cancellationToken)), "read forums"));
 
 app.MapGet("/api/me", (HttpContext context) =>
 {
@@ -156,7 +157,7 @@ app.MapGet("/api/posts", (
     DiscussionClient client,
     CancellationToken cancellationToken,
     int? userId = null,
-    string? category = null,
+    string? forumCode = null,
     string? q = null,
     string? sort = null,
     int limit = DiscussionRules.DefaultLimit,
@@ -169,12 +170,6 @@ app.MapGet("/api/posts", (
             return Results.ValidationProblem(paging);
         }
 
-        var filter = DiscussionRules.ValidateCategoryFilter(category);
-        if (filter.Count > 0)
-        {
-            return Results.ValidationProblem(filter);
-        }
-
         if (sort is not null && !string.Equals(sort, "newest", StringComparison.OrdinalIgnoreCase))
         {
             return Results.ValidationProblem(new Dictionary<string, string[]>
@@ -185,7 +180,7 @@ app.MapGet("/api/posts", (
 
         var posts = await client.GetPostsAsync(
             userId,
-            category,
+            forumCode,
             q,
             limit,
             offset,
@@ -231,7 +226,8 @@ app.MapGet("/api/posts/{id:int}", (
             post.AuthorName,
             post.Title,
             post.Content,
-            post.Category,
+            post.ForumCode,
+            post.ForumName,
             post.CreatedAt,
             post.UpdatedAt,
             post.CommentCount,
@@ -293,7 +289,9 @@ app.MapPost("/api/posts", (
             return Results.Unauthorized();
         }
 
-        var errors = DiscussionRules.ValidateCreatePost(request);
+        var errors = DiscussionRules.ValidateCreatePost(
+            request,
+            await client.GetForumsAsync(cancellationToken));
         if (errors.Count > 0)
         {
             return Results.ValidationProblem(errors);
@@ -304,7 +302,7 @@ app.MapPost("/api/posts", (
             DiscussionRules.GetUserName(context.User),
             request!.Title!.Trim(),
             request.Content!.Trim(),
-            request.Category!.Trim(),
+            request.ForumCode!.Trim(),
             cancellationToken);
 
         return Results.Created($"/api/posts/{created.Id}", created);
@@ -325,7 +323,9 @@ app.MapPatch("/api/posts/{id:int}", (
             return Results.Unauthorized();
         }
 
-        var errors = DiscussionRules.ValidatePatchPost(request);
+        var errors = DiscussionRules.ValidatePatchPost(
+            request,
+            await client.GetForumsAsync(cancellationToken));
         if (errors.Count > 0)
         {
             return Results.ValidationProblem(errors);
@@ -344,8 +344,8 @@ app.MapPatch("/api/posts/{id:int}", (
 
         // The post is already loaded, so the partial update is folded over it here
         // and the database service still performs a plain full-row replacement.
-        var (title, content, category) = DiscussionRules.MergePost(current, request!);
-        var updated = await client.UpdatePostAsync(id, title, content, category, cancellationToken);
+        var (title, content, forumCode) = DiscussionRules.MergePost(current, request!);
+        var updated = await client.UpdatePostAsync(id, title, content, forumCode, cancellationToken);
 
         return updated is null ? Results.NotFound() : Results.Ok(updated);
     }, "update post"))
@@ -803,7 +803,7 @@ app.MapPost("/api/assistant/messages", async (
             validation.Errors.ToDictionary(error => error.Key, error => error.Value));
     }
 
-    var assistantContext = contextService.GetContext(validation.Request);
+    var assistantContext = await contextService.GetContextAsync(validation.Request, cancellationToken);
     var logger = loggerFactory.CreateLogger<AssistantSseResult>();
 
     // No model is an expected condition, not an error: Ollama may not be running,

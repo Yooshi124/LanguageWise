@@ -43,13 +43,16 @@ internal static class HelpKnowledgeBase
             "forums",
             "Forums and choosing where to post",
             """
-            The forum is split into four sections: Global, Spanish, Italian and Japanese.
-            The "Forums" tab lists all four; select one to read it.
-            Global is for anything not tied to a single language. Every post belongs to exactly one
-            of these forums, chosen with the "Forum" dropdown when you write or edit the post.
+            The forum has one section per language course, plus Global for anything not tied to a
+            single language. The "Forums" tab lists them all; select one to read it.
+            The language sections follow the course catalogue, so they appear and are renamed as
+            courses are. The canonical context lists the forums that exist right now — use it
+            rather than naming languages from memory.
+            Every post belongs to exactly one forum, chosen with the "Forum" dropdown when you
+            write or edit the post.
             """,
             ["forum", "forums", "category", "categories", "section", "channel", "board", "global",
-             "spanish", "italian", "japanese", "language"]),
+             "language", "languages", "course", "courses"]),
 
         new(
             "create-post",

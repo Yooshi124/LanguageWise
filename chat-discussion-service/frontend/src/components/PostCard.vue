@@ -1,7 +1,6 @@
 <script setup>
 import LikeButton from './LikeButton.vue';
 import { excerpt, formatDate } from '../format.js';
-import { useForums } from '../composables/useForums.js';
 
 const props = defineProps({
     post: { type: Object, required: true },
@@ -9,8 +8,6 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['update', 'error']);
-
-const { displayName } = useForums();
 
 function onLike({ liked, count }) {
     emit('update', { ...props.post, likedByViewer: liked, likeCount: count });
@@ -29,8 +26,8 @@ function onLike({ liked, count }) {
             <span>{{ formatDate(post.createdAt) }}</span>
             <template v-if="showForum">
                 <span aria-hidden="true">·</span>
-                <RouterLink class="lw-badge" :to="{ name: 'forum', params: { code: post.category } }">
-                    {{ displayName(post.category) }}
+                <RouterLink class="lw-badge" :to="{ name: 'forum', params: { code: post.forumCode } }">
+                    {{ post.forumName }}
                 </RouterLink>
             </template>
         </p>

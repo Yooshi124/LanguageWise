@@ -7,19 +7,35 @@ CREATE TABLE IF NOT EXISTS SampleItems (
     CreatedAt   TEXT NOT NULL
 );
 
+-- One row per place a post can live. Every forum except Global mirrors a course
+-- in the quizzes and courses service: CourseId is that service's course ID, and
+-- it is what the sync matches on, so renaming a course renames its forum here
+-- without stranding the posts inside it.
+--
+-- Code is the stable, readable identity used in URLs and in the API. It is set
+-- once from the course code and never resynced, so a course code change does not
+-- break every link to the forum.
+CREATE TABLE IF NOT EXISTS Forums (
+    Id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    CourseId INTEGER UNIQUE,
+    Code     TEXT NOT NULL UNIQUE,
+    Name     TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS Posts (
     Id          INTEGER PRIMARY KEY AUTOINCREMENT,
     UserId      INTEGER NOT NULL,
     AuthorName  TEXT NOT NULL DEFAULT '',
     Title       TEXT NOT NULL,
     Content     TEXT NOT NULL,
-    Category    TEXT NOT NULL,
+    ForumId     INTEGER NOT NULL,
     CreatedAt   TEXT NOT NULL,
-    UpdatedAt   TEXT NOT NULL
+    UpdatedAt   TEXT NOT NULL,
+    FOREIGN KEY (ForumId) REFERENCES Forums (Id)
 );
 
 CREATE INDEX IF NOT EXISTS IX_Posts_UserId ON Posts (UserId);
-CREATE INDEX IF NOT EXISTS IX_Posts_Category ON Posts (Category);
+CREATE INDEX IF NOT EXISTS IX_Posts_ForumId ON Posts (ForumId);
 
 CREATE TABLE IF NOT EXISTS Comments (
     Id          INTEGER PRIMARY KEY AUTOINCREMENT,

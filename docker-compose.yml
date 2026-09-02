@@ -154,11 +154,15 @@ services:
       context: ./chat-discussion-service/database
     environment:
       Database__Path: /data/chat-discussion-service.db
+      Services__Courses: http://quizzes-courses-service-db:8080
     volumes:
       - chat-discussion-service-db-data:/data
     ports:
       - "127.0.0.1:6002:8080"
     networks: [languagewise]
+    depends_on:
+      quizzes-courses-service-db:
+        condition: service_healthy
     restart: unless-stopped
 
   chat-discussion-service-backend:

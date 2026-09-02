@@ -9,14 +9,12 @@ import StateBlock from '../components/StateBlock.vue';
 import { api, PAGE_SIZE } from '../api.js';
 import { formatDate } from '../format.js';
 import { useAuth } from '../composables/useAuth.js';
-import { useForums } from '../composables/useForums.js';
 import { uploadCommentImages } from '../composables/useImageUploads.js';
 
 const props = defineProps({ id: { type: [String, Number], required: true } });
 
 const router = useRouter();
 const { isOwnedByViewer } = useAuth();
-const { displayName } = useForums();
 
 const post = ref(null);
 const comments = ref([]);
@@ -136,7 +134,7 @@ async function removePost() {
 
     try {
         await api.deletePost(postId.value);
-        router.push({ name: 'forum', params: { code: post.value.category } });
+        router.push({ name: 'forum', params: { code: post.value.forumCode } });
     } catch (failure) {
         reportAction(failure, 'The post could not be deleted.');
         deleting.value = false;
@@ -200,8 +198,8 @@ watch(postId, load, { immediate: true });
 
     <template v-else-if="post">
         <p class="cd-breadcrumb">
-            <RouterLink :to="{ name: 'forum', params: { code: post.category } }">
-                &larr; {{ displayName(post.category) }}
+            <RouterLink :to="{ name: 'forum', params: { code: post.forumCode } }">
+                &larr; {{ post.forumName }}
             </RouterLink>
         </p>
 
