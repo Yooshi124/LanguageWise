@@ -147,3 +147,21 @@ The answer travels as server-sent events, so any proxy in front of the backend
 has to have `proxy_buffering off` for `/api/assistant/messages`. Both
 `chat-discussion-service/frontend/nginx.conf` and `shared/frontend/nginx.conf`
 already do.
+
+## Discussion forums come from the course catalogue
+
+Apart from **Global**, every discussion forum mirrors a course from the quizzes and
+courses catalogue. The chat discussion **database** service syncs them once at
+start-up, calling the courses *database* service directly (`Services__Courses`).
+
+- Courses are matched by **course ID**, so renaming a course renames its forum and
+  keeps the posts in it.
+- A forum's **code is written once** and never resynced. URLs are `/forums/:code`,
+  so a course changing its code must not break links already out there.
+- A forum is **never deleted** — a withdrawn course would orphan its posts.
+- An unreachable catalogue is **not fatal**; the next restart tries again.
+
+The seed mirrors the courses seed (`de`…`pl` with their course IDs). A volume created
+before forums existed carries `Posts.Category` instead: `DatabaseInitializer` turns
+each distinct category into a forum with no course ID and repoints the posts, and the
+first sync adopts those by code.
