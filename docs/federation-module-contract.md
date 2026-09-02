@@ -16,12 +16,13 @@ All hosts and remotes use exact compatible versions:
 | `vue-router` | `4.6.4` |
 | `vuetify` | `3.13.2` |
 | `@mdi/js` | `7.4.47` |
+| `@tanstack/vue-query` | `5.102.8` |
 
-Vue, Vue Router, Vuetify, and `@mdi/js` must be configured with
+Vue, Vue Router, Vuetify, `@mdi/js`, and TanStack Vue Query must be configured with
 `singleton: true`, `strictVersion: true`, and the exact `requiredVersion` in
-both host and remote federation configurations. TanStack Vue Query `5.102.8`
-will follow the same singleton rule when Analytics is migrated. Highcharts
-remains feature-local.
+both host and consuming remote federation configurations. The host installs the
+TanStack Query provider once; remotes consume it without installing another
+provider. Highcharts remains feature-local.
 
 ## Exposed module
 

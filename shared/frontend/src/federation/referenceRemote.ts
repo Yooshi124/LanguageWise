@@ -40,14 +40,14 @@ function hostContext(router: Router) {
   const auth = useAuth()
 
   return {
-    user: null,
+    get user() {
+      return auth.user.value
+    },
     navigate: async (path: string) => {
       await router.push(path)
     },
     signIn: (returnUrl = router.currentRoute.value.fullPath) => {
-      const url = new URL('/login.html', window.location.origin)
-      url.searchParams.set('returnUrl', returnUrl)
-      window.location.assign(url)
+      void router.push({ path: '/login', query: { returnUrl } })
     },
     signOut: async () => {
       await auth.logout()

@@ -2,10 +2,9 @@
 
 ## Status
 
-Phase 0 baseline verification, the Phase 1 federation/router spike, and the
-Phase 2 shared-authentication backend are complete. `leaderboard-analytics-service`
-is present with a frontend, backend, database, Docker wiring, and backend tests.
-The migration can proceed to the Phase 3 Shared Vue host and visual system.
+Phases 0 through 3 are complete. `leaderboard-analytics-service` is present
+with a frontend, backend, database, Docker wiring, and backend tests. The
+migration can proceed to the Phase 4 Quizzes and Courses reference remote.
 
 The completed system will contain one shared host application and five feature
 remotes:
@@ -36,7 +35,7 @@ the feature-content reference while Shared is the canonical shell reference.
 
 | Application | Current stack | Shell/routing | Main issue |
 | --- | --- | --- | --- |
-| Shared | Vue 3, TypeScript, Vue Router, Vuetify, Vite | Own responsive sidebar/router/login | Host foundation exists; federation, route guards, richer auth, query provider, and remote boundaries remain |
+| Shared | Vue 3, TypeScript, Vue Router, Vuetify, Vite | Own responsive sidebar/router/login | Host foundation, auth boundary, query provider, and federation runtime exist; feature migrations remain |
 | Quizzes and Courses | Vue 3, TypeScript, Vue Router, Vuetify | Own sidebar/top bar/router | Best visual baseline, but duplicates shell/auth |
 | Mini Games | Vue 3, JavaScript | Own sidebar and manual pathname routing | Duplicates shell/auth and has no Vue Router |
 | Discussion Forum | Vue 3, JavaScript, Vue Router | Own header/nav/router | Different layout and auth conventions |
@@ -46,7 +45,8 @@ the feature-content reference while Shared is the canonical shell reference.
 Auth is still checked in several ways during migration:
 
 - Shared `POST /api/check-login` is cookie-only and returns `{ id, name }`.
-  Shared currently retains a name-only local state until Phase 3.
+  Shared retains the full authenticated user and bootstraps it once at the host
+  boundary.
 - Quizzes and Courses `GET /api/me` returns `{ id, username }`.
 - Discussion Forum `GET /api/me` returns `{ id, username }`.
 - Leaderboard and Analytics `GET /api/me` returns `{ id, username }`.
@@ -407,6 +407,33 @@ with old consumers.
 
 Exit criteria: the host shell and auth work without any feature remote and
 match the Quizzes and Courses visual baseline on desktop and mobile.
+
+#### Verified Phase 3 result
+
+- The centralized five-feature navigation registry now owns labels, paths,
+  icons, Home-card content, and target federation route metadata. Sidebar
+  active state is derived from the current route rather than hard-coded.
+- Shared stores the complete `{ id, name }` identity, performs one settled
+  session check at the app boundary, refreshes identity after login, and passes
+  the reactive user through the federation host context.
+- Protected routes redirect signed-out users to a host-owned view while
+  preserving their full return URL. `/login` is canonical and `/login.html`
+  redirects with query/hash intact. Successful login returns through Vue Router
+  without reloading the document.
+- Accessible host loading, signed-out, general-error/retry, and missing-remote
+  states are present. A deliberate Shared backend outage displayed only the
+  general-error state; Retry restored Home in the same document.
+- `@tanstack/vue-query` 5.102.8 is installed at the host boundary and configured
+  as a strict federation singleton. Highcharts remains feature-local.
+- Eight focused Vitest tests cover auth request deduplication, identity state,
+  signed-out caching, login refresh, canonical return URLs, compatibility
+  redirect, protected-route handling, and app-boundary bootstrap.
+- Production builds and the rebuilt Shared container pass. At 1440 x 900 and
+  390 x 844, Home renders five feature cards without horizontal overflow and
+  exposes the mobile navigation trigger only at the mobile viewport.
+- With the reference remote stopped, Home and Login remain functional and make
+  no `/remotes/` requests. The remote was restored and all affected containers
+  are healthy.
 
 ### Phase 4 - Quizzes and Courses reference remote
 

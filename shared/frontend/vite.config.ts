@@ -8,6 +8,11 @@ export default defineConfig({
     federation({
       name: 'languagewise_host',
       shared: {
+        '@tanstack/vue-query': {
+          singleton: true,
+          requiredVersion: '5.102.8',
+          strictVersion: true,
+        },
         vue: { singleton: true, requiredVersion: '3.5.42', strictVersion: true },
         'vue-router': { singleton: true, requiredVersion: '4.6.4', strictVersion: true },
         vuetify: { singleton: true, requiredVersion: '3.13.2', strictVersion: true },

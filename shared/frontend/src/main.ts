@@ -1,4 +1,5 @@
 import { createApp } from 'vue'
+import { VueQueryPlugin } from '@tanstack/vue-query'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
@@ -33,4 +34,4 @@ const vuetify = createVuetify({
   },
 })
 
-createApp(App).use(router).use(vuetify).mount('#app')
+createApp(App).use(router).use(vuetify).use(VueQueryPlugin).mount('#app')

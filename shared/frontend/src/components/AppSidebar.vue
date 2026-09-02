@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import { serviceNavigation } from '../config/navigation'
 import AppIcon from './AppIcon.vue'
 import SidebarNavItem from './SidebarNavItem.vue'
 
 const auth = useAuth()
+const route = useRoute()
 const loggingOut = ref(false)
 const logoutError = ref('')
 
@@ -25,6 +27,10 @@ const accountLabel = computed(() => {
 const accountHref = computed(() =>
   auth.status.value === 'signed-out' ? auth.loginUrl() : undefined,
 )
+
+function isActive(href: string) {
+  return href === '/' ? route.path === '/' : route.path.startsWith(href.replace(/\/$/, ''))
+}
 
 defineProps<{
   expanded: boolean
@@ -68,7 +74,6 @@ async function handleLogout() {
   }
 }
 
-onMounted(() => auth.ensureAuthenticated().catch(() => undefined))
 onBeforeUnmount(() => clearTimeout(hoverTimer))
 </script>
 
@@ -108,7 +113,7 @@ onBeforeUnmount(() => clearTimeout(hoverTimer))
         :label="item.label"
         :icon="item.icon"
         :href="item.href"
-        :active="item.current"
+        :active="isActive(item.href)"
         :show-label="expanded || mobileOpen"
       />
     </nav>

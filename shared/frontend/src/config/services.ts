@@ -1,4 +1,4 @@
-import type { AppIconName } from './navigation'
+import { featureServices, type AppIconName } from './navigation'
 
 export interface ModuleSummary {
   name: string
@@ -17,43 +17,13 @@ export interface ServiceMapping {
   technology: string
 }
 
-export const moduleSummaries: readonly ModuleSummary[] = [
-  {
-    name: 'Mini Games',
-    description: 'Practise vocabulary through matching, word search, and quick language activities.',
-    href: '/mini-games/',
-    icon: 'games',
-    color: 'deep-purple',
-  },
-  {
-    name: 'Discussion Forum',
-    description: 'Share progress, create posts, and learn alongside the LanguageWise community.',
-    href: '/chat-discussion/',
-    icon: 'discussion',
-    color: 'blue',
-  },
-  {
-    name: 'Quizzes & Courses',
-    description: 'Follow structured lessons, test your knowledge, and revise with flashcards.',
-    href: '/quizzes-and-courses/',
-    icon: 'courses',
-    color: 'primary',
-  },
-  {
-    name: 'Quests & Achievements',
-    description: 'Track goals, unlock achievements, and receive learning notifications.',
-    href: '/quests-and-achievements/',
-    icon: 'quests',
-    color: 'amber-darken-3',
-  },
-  {
-    name: 'Leaderboard & Analytics',
-    description: 'Compare progress, explore learning trends, and see how your results rank.',
-    href: '/analytics/',
-    icon: 'analytics',
-    color: 'teal',
-  },
-]
+export const moduleSummaries: readonly ModuleSummary[] = featureServices.map((service) => ({
+  name: service.label,
+  description: service.description ?? '',
+  href: service.href,
+  icon: service.icon,
+  color: service.color ?? 'primary',
+}))
 
 export const serviceMappings: readonly ServiceMapping[] = [
   {

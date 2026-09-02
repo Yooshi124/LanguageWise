@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from './views/HomeView.vue'
 import LoginView from './views/LoginView.vue'
+import SignedOutView from './views/SignedOutView.vue'
+import { useAuth } from './composables/useAuth'
 import {
   isReferencePath,
   referenceRoutesReady,
@@ -12,13 +14,32 @@ const router = createRouter({
   routes: [
     { path: '/', name: 'home', component: HomeView },
     { path: '/index.html', redirect: '/' },
-    { path: '/login.html', name: 'login', component: LoginView },
+    { path: '/login', name: 'login', component: LoginView },
+    {
+      path: '/login.html',
+      redirect: (to) => ({ path: '/login', query: to.query, hash: to.hash }),
+    },
+    { path: '/signed-out', name: 'signed-out', component: SignedOutView },
   ],
   scrollBehavior: () => ({ top: 0 }),
 })
 
 router.beforeEach(async (to) => {
+  if (to.meta.requiresAuth) {
+    try {
+      if (!(await useAuth().ensureAuthenticated())) {
+        return { name: 'signed-out', query: { returnUrl: to.fullPath } }
+      }
+    } catch {
+      return { name: 'home' }
+    }
+  }
+
   if (!isReferencePath(to.path) || referenceRoutesReady()) {
+    return true
+  }
+
+  if (to.name === 'federation-reference-unavailable') {
     return true
   }
 
@@ -26,9 +47,6 @@ router.beforeEach(async (to) => {
     await registerReferenceRoutes(router)
     return { path: to.fullPath, replace: true }
   } catch {
-    if (to.name === 'federation-reference-unavailable') {
-      return true
-    }
     return { path: to.fullPath, replace: true }
   }
 })

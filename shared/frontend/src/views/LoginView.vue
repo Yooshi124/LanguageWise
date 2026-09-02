@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 
 const auth = useAuth()
+const router = useRouter()
 const username = ref('')
 const password = ref('')
 const submitting = ref(false)
@@ -32,7 +34,7 @@ async function submit() {
 
   try {
     await auth.login(username.value.trim(), password.value)
-    window.location.assign(safeReturnUrl())
+    await router.replace(safeReturnUrl())
   } catch (error) {
     errorMessage.value =
       error instanceof Error ? error.message : 'Unable to reach the server. Please try again later.'
