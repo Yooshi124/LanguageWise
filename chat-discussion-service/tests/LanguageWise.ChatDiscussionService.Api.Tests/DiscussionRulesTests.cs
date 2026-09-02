@@ -6,27 +6,40 @@ namespace LanguageWise.ChatDiscussionService.Api.Tests;
 
 public sealed class DiscussionRulesTests
 {
+    private static readonly IReadOnlyCollection<Forum> Forums =
+    [
+        new Forum(1, null, "global", "Global"),
+        new Forum(2, 11, "spanish", "Spanish"),
+        new Forum(3, 12, "italian", "Italian")
+    ];
+
     [Test]
     public void ValidateCreatePost_WithEveryFieldSupplied_ReportsNoErrors()
     {
-        var errors = DiscussionRules.ValidateCreatePost(new CreatePostRequest("Title", "Content", "spanish"));
+        var errors = DiscussionRules.ValidateCreatePost(
+            new CreatePostRequest("Title", "Content", "spanish"),
+            Forums);
 
         Assert.That(errors, Is.Empty);
     }
 
     [Test]
-    public void ValidateCreatePost_WithoutACategory_ReportsAnError()
+    public void ValidateCreatePost_WithoutAForum_ReportsAnError()
     {
-        var errors = DiscussionRules.ValidateCreatePost(new CreatePostRequest("Title", "Content", null));
+        var errors = DiscussionRules.ValidateCreatePost(
+            new CreatePostRequest("Title", "Content", null),
+            Forums);
 
-        Assert.That(errors, Does.ContainKey("category"));
+        Assert.That(errors, Does.ContainKey("forumCode"));
     }
 
     [TestCase("")]
     [TestCase("   ")]
     public void ValidateCreatePost_WithABlankTitle_ReportsAnError(string title)
     {
-        var errors = DiscussionRules.ValidateCreatePost(new CreatePostRequest(title, "Content", "global"));
+        var errors = DiscussionRules.ValidateCreatePost(
+            new CreatePostRequest(title, "Content", "global"),
+            Forums);
 
         Assert.That(errors, Does.ContainKey("title"));
     }
@@ -34,7 +47,7 @@ public sealed class DiscussionRulesTests
     [Test]
     public void ValidateCreatePost_WithoutABody_ReportsAnError()
     {
-        var errors = DiscussionRules.ValidateCreatePost(null);
+        var errors = DiscussionRules.ValidateCreatePost(null, Forums);
 
         Assert.That(errors, Does.ContainKey("body"));
     }
@@ -42,7 +55,9 @@ public sealed class DiscussionRulesTests
     [Test]
     public void ValidatePatchPost_WithASingleField_ReportsNoErrors()
     {
-        var errors = DiscussionRules.ValidatePatchPost(new PatchPostRequest(null, "Only the content changes", null));
+        var errors = DiscussionRules.ValidatePatchPost(
+            new PatchPostRequest(null, "Only the content changes", null),
+            Forums);
 
         Assert.That(errors, Is.Empty);
     }
@@ -50,7 +65,7 @@ public sealed class DiscussionRulesTests
     [Test]
     public void ValidatePatchPost_WithNothingToChange_ReportsAnError()
     {
-        var errors = DiscussionRules.ValidatePatchPost(new PatchPostRequest(null, null, null));
+        var errors = DiscussionRules.ValidatePatchPost(new PatchPostRequest(null, null, null), Forums);
 
         Assert.That(errors, Does.ContainKey("body"));
     }
@@ -58,7 +73,7 @@ public sealed class DiscussionRulesTests
     [Test]
     public void ValidatePatchPost_WithABlankSuppliedField_ReportsAnError()
     {
-        var errors = DiscussionRules.ValidatePatchPost(new PatchPostRequest("  ", null, null));
+        var errors = DiscussionRules.ValidatePatchPost(new PatchPostRequest("  ", null, null), Forums);
 
         Assert.That(errors, Does.ContainKey("title"));
     }
@@ -102,7 +117,7 @@ public sealed class DiscussionRulesTests
     {
         var current = CurrentPost();
 
-        var (title, content, category) = DiscussionRules.MergePost(
+        var (title, content, forumCode) = DiscussionRules.MergePost(
             current,
             new PatchPostRequest(null, "Fresh content", null));
 
@@ -110,7 +125,7 @@ public sealed class DiscussionRulesTests
         {
             Assert.That(title, Is.EqualTo("Original title"));
             Assert.That(content, Is.EqualTo("Fresh content"));
-            Assert.That(category, Is.EqualTo("italian"));
+            Assert.That(forumCode, Is.EqualTo("italian"));
         });
     }
 
@@ -143,15 +158,19 @@ public sealed class DiscussionRulesTests
     [Test]
     public void ValidateCreatePost_WithAForumThatDoesNotExist_ReportsAnError()
     {
-        var errors = DiscussionRules.ValidateCreatePost(new CreatePostRequest("Title", "Content", "klingon"));
+        var errors = DiscussionRules.ValidateCreatePost(
+            new CreatePostRequest("Title", "Content", "klingon"),
+            Forums);
 
-        Assert.That(errors, Does.ContainKey("category"));
+        Assert.That(errors, Does.ContainKey("forumCode"));
     }
 
     [Test]
     public void ValidateCreatePost_MatchesAForumRegardlessOfCasing()
     {
-        var errors = DiscussionRules.ValidateCreatePost(new CreatePostRequest("Title", "Content", "Spanish"));
+        var errors = DiscussionRules.ValidateCreatePost(
+            new CreatePostRequest("Title", "Content", "Spanish"),
+            Forums);
 
         Assert.That(errors, Is.Empty);
     }
@@ -159,29 +178,34 @@ public sealed class DiscussionRulesTests
     [Test]
     public void ValidatePatchPost_WithAForumThatDoesNotExist_ReportsAnError()
     {
-        var errors = DiscussionRules.ValidatePatchPost(new PatchPostRequest(null, null, "klingon"));
+        var errors = DiscussionRules.ValidatePatchPost(new PatchPostRequest(null, null, "klingon"), Forums);
 
-        Assert.That(errors, Does.ContainKey("category"));
+        Assert.That(errors, Does.ContainKey("forumCode"));
     }
 
     [Test]
-    public void ValidateCategoryFilter_WithAForumThatDoesNotExist_ReportsAnError()
+    public void ValidateCreatePost_WithAForumThatDoesNotExist_NamesTheForumsThatDo()
     {
-        Assert.That(DiscussionRules.ValidateCategoryFilter("klingon"), Does.ContainKey("category"));
+        var errors = DiscussionRules.ValidateCreatePost(
+            new CreatePostRequest("Title", "Content", "klingon"),
+            Forums);
+
+        Assert.That(errors["forumCode"].Single(), Does.Contain("global, spanish, italian"));
     }
 
-    [Test]
-    public void ValidateCategoryFilter_WithNoFilter_ReportsNoErrors()
+    [TestCase("spanish")]
+    [TestCase("SPANISH")]
+    [TestCase("  spanish  ")]
+    public void IsKnownForum_MatchesARowRegardlessOfCasingOrPadding(string code)
     {
-        Assert.That(DiscussionRules.ValidateCategoryFilter(null), Is.Empty);
+        Assert.That(DiscussionRules.IsKnownForum(code, Forums), Is.True);
     }
 
-    [Test]
-    public void Forums_IncludeGlobalAndTheSeededLanguages()
+    [TestCase("klingon")]
+    [TestCase(null)]
+    public void IsKnownForum_WithoutAMatchingRow_IsFalse(string? code)
     {
-        Assert.That(
-            DiscussionRules.Forums.Select(forum => forum.Code),
-            Is.EquivalentTo(new[] { "global", "spanish", "italian", "japanese" }));
+        Assert.That(DiscussionRules.IsKnownForum(code, Forums), Is.False);
     }
 
     [Test]
@@ -207,6 +231,7 @@ public sealed class DiscussionRulesTests
         "Original title",
         "Original content",
         "italian",
+        "Italian",
         DateTime.UtcNow,
         DateTime.UtcNow,
         0,

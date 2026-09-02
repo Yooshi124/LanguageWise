@@ -183,11 +183,15 @@ services:
       context: ./chat-discussion-service/database
     environment:
       Database__Path: /data/chat-discussion-service.db
+      Services__Courses: http://quizzes-courses-service-db:8080
     volumes:
       - chat-discussion-service-db-data:/data
     ports:
       - "127.0.0.1:6002:8080"
     networks: [languagewise]
+    depends_on:
+      quizzes-courses-service-db:
+        condition: service_healthy
     restart: unless-stopped
 
   chat-discussion-service-backend:
@@ -196,6 +200,8 @@ services:
       context: ./chat-discussion-service/backend
     environment:
       Services__Database: http://chat-discussion-service-db:8080
+      Services__Ollama: http://ollama:11434
+      Ollama__Model: gemma4:e4b
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
     secrets:
       - signing_public_key
@@ -205,6 +211,8 @@ services:
     depends_on:
       chat-discussion-service-db:
         condition: service_healthy
+      ollama-model-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   chat-discussion-service-frontend:

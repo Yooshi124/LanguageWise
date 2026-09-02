@@ -11,6 +11,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/LanguageWise.ChatDiscussionService.Api.Tests/LanguageWise.ChatDiscussionService.Api.Tests.csproj" />
+    <Project Path="tests/LanguageWise.ChatDiscussionService.Db.Tests/LanguageWise.ChatDiscussionService.Db.Tests.csproj" />
   </Folder>
   <Folder Name="/frontend/">
     <File Path="frontend/Dockerfile" />

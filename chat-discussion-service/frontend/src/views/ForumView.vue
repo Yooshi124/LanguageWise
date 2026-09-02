@@ -10,14 +10,14 @@ const props = defineProps({ code: { type: String, required: true } });
 
 const route = useRoute();
 const router = useRouter();
-const { ensureLoaded, displayName, exists, forums } = useForums();
+const { ensureLoaded, forumName, exists, forums } = useForums();
 const { posts, loading, loadingMore, error, hasMore, load, loadMore, replace } = usePostList();
 
 const term = ref(typeof route.query.q === 'string' ? route.query.q : '');
 const forumsReady = ref(false);
 let debounce = null;
 
-const filter = computed(() => ({ category: props.code, q: route.query.q || undefined }));
+const filter = computed(() => ({ forumCode: props.code, q: route.query.q || undefined }));
 const activeTerm = computed(() => (typeof route.query.q === 'string' ? route.query.q : ''));
 const forumKnown = computed(() => !forumsReady.value || exists(props.code));
 
@@ -70,7 +70,7 @@ onBeforeUnmount(() => window.clearTimeout(debounce));
 
     <template v-else>
         <div class="cd-forum-head">
-            <h2 class="lw-section-heading">{{ displayName(code) }}</h2>
+            <h2 class="lw-section-heading">{{ forumName(code) }}</h2>
             <p class="lw-card__hint">Search covers post titles, post content and comments in this forum.</p>
         </div>
 
@@ -80,7 +80,7 @@ onBeforeUnmount(() => window.clearTimeout(debounce));
                 v-model="term"
                 class="cd-search__input"
                 type="search"
-                :placeholder="`Search ${displayName(code)}…`"
+                :placeholder="`Search ${forumName(code)}…`"
             >
         </label>
 
@@ -107,13 +107,13 @@ onBeforeUnmount(() => window.clearTimeout(debounce));
         <StateBlock
             v-else-if="posts.length === 0 && activeTerm"
             title="No matches"
-            :message="`Nothing in ${displayName(code)} matched '${activeTerm}'.`"
+            :message="`Nothing in ${forumName(code)} matched '${activeTerm}'.`"
         />
 
         <StateBlock
             v-else-if="posts.length === 0"
             title="No posts here yet"
-            :message="`Be the first to post in ${displayName(code)}.`"
+            :message="`Be the first to post in ${forumName(code)}.`"
         >
             <p><RouterLink :to="{ name: 'post-create' }">Write a post</RouterLink></p>
         </StateBlock>
@@ -153,9 +153,15 @@ onBeforeUnmount(() => window.clearTimeout(debounce));
     font-size: 0.9rem;
 }
 
+.cd-search__input:focus {
+    border-color: #818cf8;
+    outline: 0;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, .12);
+}
+
 .cd-search__input {
     width: 100%;
-    padding: 0.6rem 0.75rem;
+    padding: 0.7rem 0.9rem;
     border: 1px solid var(--lw-colour-border);
     border-radius: var(--lw-radius-sm);
     font-family: var(--lw-font);

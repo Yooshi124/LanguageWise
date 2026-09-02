@@ -5,6 +5,7 @@ import PostForm from '../components/PostForm.vue';
 import StateBlock from '../components/StateBlock.vue';
 import { api } from '../api.js';
 import { useAuth } from '../composables/useAuth.js';
+import { uploadPostImages } from '../composables/useImageUploads.js';
 
 const props = defineProps({ id: { type: [String, Number], required: true } });
 
@@ -12,6 +13,7 @@ const router = useRouter();
 const { isOwnedByViewer } = useAuth();
 
 const post = ref(null);
+const images = ref([]);
 const loading = ref(true);
 const loadError = ref(null);
 const busy = ref(false);
@@ -25,6 +27,7 @@ async function load() {
 
     try {
         post.value = await api.post(postId.value);
+        images.value = post.value.images ?? [];
     } catch (failure) {
         loadError.value = failure;
     } finally {
@@ -32,18 +35,54 @@ async function load() {
     }
 }
 
-async function submit(update) {
+async function submit({ images: chosen = [], ...update }) {
     busy.value = true;
     error.value = '';
 
     try {
         await api.updatePost(postId.value, update);
-        router.push({ name: 'post', params: { id: postId.value } });
     } catch (failure) {
         error.value = failure.firstValidationMessage
             || (failure.status === 403
                 ? 'You can only edit your own posts.'
                 : 'The post could not be saved. Please try again.');
+        busy.value = false;
+        return;
+    }
+
+    const imageError = await uploadPostImages(postId.value, chosen);
+
+    if (imageError) {
+        // Staying here keeps the files that failed attached to the picker.
+        error.value = `Your changes were saved, but ${imageError}`;
+        images.value = await api.postImages(postId.value).catch(() => images.value);
+        busy.value = false;
+        return;
+    }
+
+    router.push({ name: 'post', params: { id: postId.value } });
+}
+
+// Removing a stored image takes effect at once: it is its own resource, not a field
+// of the post that Save could carry with it.
+async function removeImage(image) {
+    const confirmed = window.confirm(`Remove ${image.fileName}? This cannot be undone.`);
+
+    if (!confirmed || busy.value) {
+        return;
+    }
+
+    busy.value = true;
+    error.value = '';
+
+    try {
+        await api.deleteImage(image.id);
+        images.value = images.value.filter((stored) => stored.id !== image.id);
+    } catch (failure) {
+        error.value = failure.isUnavailable
+            ? 'The discussion service is unavailable, so the image was not removed.'
+            : 'That image could not be removed.';
+    } finally {
         busy.value = false;
     }
 }
@@ -85,11 +124,13 @@ onMounted(load);
         <h2 class="lw-section-heading">Edit post</h2>
         <PostForm
             :initial="post"
+            :images="images"
             submit-label="Save changes"
             :busy="busy"
             :error="error"
             @submit="submit"
             @cancel="router.push({ name: 'post', params: { id: postId } })"
+            @remove-image="removeImage"
         />
     </template>
 </template>

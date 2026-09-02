@@ -18,8 +18,15 @@ public sealed class DiscussionRepository(string connectionString)
     private const int ConstraintForeignKey = 787;
     private const int ConstraintUnique = 2067;
 
+    private const string PostSelect = """
+        SELECT p.Id, p.UserId, p.AuthorName, p.Title, p.Content,
+               p.ForumId, f.Code, f.Name, p.CreatedAt, p.UpdatedAt
+        FROM Posts p JOIN Forums f ON f.Id = p.ForumId
+        """;
+
     private const string PostSummarySelect = """
-        SELECT p.Id, p.UserId, p.AuthorName, p.Title, p.Content, p.Category, p.CreatedAt, p.UpdatedAt,
+        SELECT p.Id, p.UserId, p.AuthorName, p.Title, p.Content,
+               p.ForumId, f.Code, f.Name, p.CreatedAt, p.UpdatedAt,
                (SELECT COUNT(*) FROM Comments c WHERE c.PostId = p.Id) AS CommentCount,
                (SELECT COUNT(*) FROM Likes l WHERE l.PostId = p.Id) AS LikeCount,
                EXISTS (SELECT 1 FROM Likes v WHERE v.PostId = p.Id AND v.UserId = $viewerId) AS LikedByViewer,
@@ -27,8 +34,11 @@ public sealed class DiscussionRepository(string connectionString)
                  WHERE mc.PostId = p.Id AND mc.Content LIKE $pattern ESCAPE '\'
                  ORDER BY mc.CreatedAt ASC, mc.Id ASC
                  LIMIT 1) AS MatchedCommentExcerpt
-        FROM Posts p
+        FROM Posts p JOIN Forums f ON f.Id = p.ForumId
         """;
+
+    private const string ImageSelect =
+        "SELECT Id, PostId, CommentId, StorageKey, FileName, ContentType, SizeBytes, UploadedAt FROM Images";
 
     private const string CommentSummarySelect = """
         SELECT c.Id, c.PostId, c.UserId, c.AuthorName, c.Content, c.CreatedAt, c.UpdatedAt,
@@ -41,7 +51,7 @@ public sealed class DiscussionRepository(string connectionString)
     // Likes in one statement multiplies the rows and inflates both totals.
     public IReadOnlyList<PostSummary> GetPosts(
         int? userId,
-        string? category,
+        string? forumCode,
         string? search,
         int limit,
         int offset,
@@ -52,7 +62,7 @@ public sealed class DiscussionRepository(string connectionString)
         command.CommandText = $"""
             {PostSummarySelect}
             WHERE ($userId IS NULL OR p.UserId = $userId)
-              AND ($category IS NULL OR p.Category = $category)
+              AND ($forumCode IS NULL OR f.Code = $forumCode)
               AND ($pattern IS NULL
                    OR p.Title LIKE $pattern ESCAPE '\'
                    OR p.Content LIKE $pattern ESCAPE '\'
@@ -62,7 +72,7 @@ public sealed class DiscussionRepository(string connectionString)
             LIMIT $limit OFFSET $offset;
             """;
         Add(command, "$userId", userId);
-        Add(command, "$category", category);
+        Add(command, "$forumCode", forumCode);
         Add(command, "$pattern", ToLikePattern(search));
         Add(command, "$limit", limit);
         Add(command, "$offset", offset);
@@ -86,19 +96,22 @@ public sealed class DiscussionRepository(string connectionString)
         var now = Timestamp();
         using var connection = Open();
         using var command = connection.CreateCommand();
+        // An unknown code resolves to NULL, which the NOT NULL column rejects, so a
+        // bad code cannot land a post in the wrong forum.
         command.CommandText = """
-            INSERT INTO Posts (UserId, AuthorName, Title, Content, Category, CreatedAt, UpdatedAt)
-            VALUES ($userId, $authorName, $title, $content, $category, $createdAt, $updatedAt)
-            RETURNING Id, UserId, AuthorName, Title, Content, Category, CreatedAt, UpdatedAt;
+            INSERT INTO Posts (UserId, AuthorName, Title, Content, ForumId, CreatedAt, UpdatedAt)
+            VALUES ($userId, $authorName, $title, $content,
+                    (SELECT Id FROM Forums WHERE Code = $forumCode), $createdAt, $updatedAt)
+            RETURNING Id;
             """;
         Add(command, "$userId", input.UserId);
         Add(command, "$authorName", (input.AuthorName ?? string.Empty).Trim());
         Add(command, "$title", input.Title!.Trim());
         Add(command, "$content", input.Content!.Trim());
-        Add(command, "$category", input.Category!.Trim());
+        Add(command, "$forumCode", input.ForumCode!.Trim());
         Add(command, "$createdAt", now);
         Add(command, "$updatedAt", now);
-        return ReadFirst(command, MapPost)!;
+        return GetPostRow(connection, Convert.ToInt32(command.ExecuteScalar()))!;
     }
 
     /// <summary>
@@ -111,19 +124,164 @@ public sealed class DiscussionRepository(string connectionString)
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            UPDATE Posts SET Title = $title, Content = $content, Category = $category, UpdatedAt = $updatedAt
-            WHERE Id = $id
-            RETURNING Id, UserId, AuthorName, Title, Content, Category, CreatedAt, UpdatedAt;
+            UPDATE Posts
+               SET Title = $title,
+                   Content = $content,
+                   ForumId = (SELECT Id FROM Forums WHERE Code = $forumCode),
+                   UpdatedAt = $updatedAt
+             WHERE Id = $id
+            RETURNING Id;
             """;
         Add(command, "$id", id);
         Add(command, "$title", update.Title!.Trim());
         Add(command, "$content", update.Content!.Trim());
-        Add(command, "$category", update.Category!.Trim());
+        Add(command, "$forumCode", update.ForumCode!.Trim());
         Add(command, "$updatedAt", Timestamp());
-        return ReadFirst(command, MapPost);
+        var updatedId = command.ExecuteScalar();
+        return updatedId is null ? null : GetPostRow(connection, Convert.ToInt32(updatedId));
     }
 
     public bool DeletePost(int id) => Delete("Posts", id);
+
+    // -----------------------------------------------------------------------
+    // Forums
+    // -----------------------------------------------------------------------
+
+    public IReadOnlyList<Forum> GetForums()
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, CourseId, Code, Name FROM Forums
+            ORDER BY (CourseId IS NOT NULL), Name COLLATE NOCASE, Id;
+            """;
+        return ReadAll(command, MapForum);
+    }
+
+    public Forum? GetForum(string code)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT Id, CourseId, Code, Name FROM Forums WHERE Code = $code;";
+        Add(command, "$code", code);
+        return ReadFirst(command, MapForum);
+    }
+
+    /// <summary>
+    /// Matching is by CourseId first, so renaming a course keeps the posts in its
+    /// forum; a forum holding the code but no CourseId is adopted instead. A course is
+    /// never deleted for being absent from the catalogue — that would orphan its posts.
+    /// </summary>
+    public ForumSyncResult SyncCourseForums(IReadOnlyList<CatalogCourse> courses)
+    {
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        var added = 0;
+        var renamed = 0;
+        var merged = 0;
+
+        foreach (var course in courses)
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                UPDATE Forums SET Name = $name WHERE CourseId = $courseId AND Name <> $name;
+                """;
+            Add(command, "$courseId", course.Id);
+            Add(command, "$name", course.Title);
+
+            if (command.ExecuteNonQuery() > 0)
+            {
+                renamed++;
+                continue;
+            }
+
+            using var claim = connection.CreateCommand();
+            claim.Transaction = transaction;
+            claim.CommandText = """
+                UPDATE Forums SET CourseId = $courseId, Name = $name
+                 WHERE Code = $code AND CourseId IS NULL;
+                """;
+            Add(claim, "$courseId", course.Id);
+            Add(claim, "$code", course.Code);
+            Add(claim, "$name", course.Title);
+
+            if (claim.ExecuteNonQuery() > 0)
+            {
+                continue;
+            }
+
+            using var insert = connection.CreateCommand();
+            insert.Transaction = transaction;
+            insert.CommandText = """
+                INSERT INTO Forums (CourseId, Code, Name)
+                SELECT $courseId, $code, $name
+                 WHERE NOT EXISTS (SELECT 1 FROM Forums WHERE CourseId = $courseId OR Code = $code);
+                """;
+            Add(insert, "$courseId", course.Id);
+            Add(insert, "$code", course.Code);
+            Add(insert, "$name", course.Title);
+            added += insert.ExecuteNonQuery();
+        }
+
+        // Second pass, so every course forum above exists before anything is folded
+        // into it: on a migrated volume the duplicate and its replacement are both
+        // minted during this same sync.
+        foreach (var course in courses)
+        {
+            merged += MergeLegacyLanguageForum(connection, transaction, course);
+        }
+
+        transaction.Commit();
+        return new ForumSyncResult(added, renamed, merged);
+    }
+
+    /// <summary>
+    /// Folds a forum the category migration minted from a legacy language name into
+    /// the forum its course owns. Those rows carry no CourseId and a code spelled out
+    /// in full — "italian" where the course says "it" — so neither the CourseId nor the
+    /// code match above adopts them, and the language would otherwise be listed twice.
+    ///
+    /// Matching is by display name, the only thing the two rows share. The posts move
+    /// across first and only the emptied row is dropped, so a legacy forum whose
+    /// language the catalogue no longer carries is left where it is.
+    /// </summary>
+    private static int MergeLegacyLanguageForum(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        CatalogCourse course)
+    {
+        using var move = connection.CreateCommand();
+        move.Transaction = transaction;
+        move.CommandText = """
+            UPDATE Posts SET ForumId = (SELECT Id FROM Forums WHERE CourseId = $courseId)
+             WHERE EXISTS (SELECT 1 FROM Forums WHERE CourseId = $courseId)
+               AND ForumId IN (SELECT Id FROM Forums
+                                WHERE CourseId IS NULL AND Name = $name COLLATE NOCASE);
+            """;
+        Add(move, "$courseId", course.Id);
+        Add(move, "$name", course.Title);
+        move.ExecuteNonQuery();
+
+        using var drop = connection.CreateCommand();
+        drop.Transaction = transaction;
+        drop.CommandText = """
+            DELETE FROM Forums
+             WHERE CourseId IS NULL AND Name = $name COLLATE NOCASE
+               AND EXISTS (SELECT 1 FROM Forums WHERE CourseId = $courseId);
+            """;
+        Add(drop, "$courseId", course.Id);
+        Add(drop, "$name", course.Title);
+        return drop.ExecuteNonQuery();
+    }
+
+    private static Post? GetPostRow(SqliteConnection connection, int id)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = $"{PostSelect} WHERE p.Id = $id;";
+        Add(command, "$id", id);
+        return ReadFirst(command, MapPost);
+    }
 
     public IReadOnlyList<CommentSummary> GetComments(int postId, int limit, int offset, int? viewerId)
     {
@@ -209,12 +367,65 @@ public sealed class DiscussionRepository(string connectionString)
 
     public bool UnlikeComment(int commentId, int userId) => RemoveLike("CommentId", commentId, userId);
 
-    public IReadOnlyList<Image> GetImages()
+    public IReadOnlyList<Image> GetPostImages(int postId) => GetImagesFor("PostId", postId);
+
+    public IReadOnlyList<Image> GetCommentImages(int commentId) => GetImagesFor("CommentId", commentId);
+
+    /// <summary>Every image on every comment of one post, in a single read.</summary>
+    public IReadOnlyList<Image> GetImagesForPostComments(int postId)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, PostId, CommentId, FileUrl, FileName, UploadedAt FROM Images ORDER BY Id;";
+        command.CommandText = $"""
+            {ImageSelect}
+            WHERE CommentId IN (SELECT Id FROM Comments WHERE PostId = $postId)
+            ORDER BY UploadedAt ASC, Id ASC;
+            """;
+        Add(command, "$postId", postId);
         return ReadAll(command, MapImage);
+    }
+
+    public Image? GetImage(int id)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"{ImageSelect} WHERE Id = $id;";
+        Add(command, "$id", id);
+        return ReadFirst(command, MapImage);
+    }
+
+    /// <summary>Returns null when the post does not exist, which SQLite reports as a foreign key violation.</summary>
+    public Image? CreatePostImage(int postId, ImageInput input) => CreateImage("PostId", postId, input);
+
+    /// <summary>Returns null when the comment does not exist.</summary>
+    public Image? CreateCommentImage(int commentId, ImageInput input) => CreateImage("CommentId", commentId, input);
+
+    public bool DeleteImage(int id) => Delete("Images", id);
+
+    /// <summary>
+    /// The storage keys that deleting this post would orphan, including those on its
+    /// comments. Callers read them first, because the cascade removes the rows naming them.
+    /// </summary>
+    public IReadOnlyList<string> GetPostStorageKeys(int postId)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT StorageKey FROM Images
+            WHERE PostId = $postId
+               OR CommentId IN (SELECT Id FROM Comments WHERE PostId = $postId);
+            """;
+        Add(command, "$postId", postId);
+        return ReadAll(command, reader => reader.GetString(0));
+    }
+
+    public IReadOnlyList<string> GetCommentStorageKeys(int commentId)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT StorageKey FROM Images WHERE CommentId = $commentId;";
+        Add(command, "$commentId", commentId);
+        return ReadAll(command, reader => reader.GetString(0));
     }
 
     internal static string? ToLikePattern(string? search)
@@ -277,6 +488,42 @@ public sealed class DiscussionRepository(string connectionString)
         return command.ExecuteNonQuery() > 0;
     }
 
+    private IReadOnlyList<Image> GetImagesFor(string column, int targetId)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"{ImageSelect} WHERE {column} = $targetId ORDER BY UploadedAt ASC, Id ASC;";
+        Add(command, "$targetId", targetId);
+        return ReadAll(command, MapImage);
+    }
+
+    // The column the caller does not name keeps its default of NULL, as the CHECK requires.
+    private Image? CreateImage(string column, int targetId, ImageInput input)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            INSERT INTO Images ({column}, StorageKey, FileName, ContentType, SizeBytes, UploadedAt)
+            VALUES ($targetId, $storageKey, $fileName, $contentType, $sizeBytes, $uploadedAt)
+            RETURNING Id, PostId, CommentId, StorageKey, FileName, ContentType, SizeBytes, UploadedAt;
+            """;
+        Add(command, "$targetId", targetId);
+        Add(command, "$storageKey", input.StorageKey);
+        Add(command, "$fileName", (input.FileName ?? string.Empty).Trim());
+        Add(command, "$contentType", (input.ContentType ?? string.Empty).Trim());
+        Add(command, "$sizeBytes", input.SizeBytes);
+        Add(command, "$uploadedAt", Timestamp());
+
+        try
+        {
+            return ReadFirst(command, MapImage);
+        }
+        catch (SqliteException exception) when (exception.SqliteExtendedErrorCode == ConstraintForeignKey)
+        {
+            return null;
+        }
+    }
+
     private bool Delete(string table, int id)
     {
         using var connection = Open();
@@ -306,13 +553,21 @@ public sealed class DiscussionRepository(string connectionString)
 
     private static Post MapPost(SqliteDataReader reader) => new(
         reader.GetInt32(0), reader.GetInt32(1), reader.GetString(2), reader.GetString(3),
-        reader.GetString(4), reader.GetString(5), ParseDate(reader.GetString(6)), ParseDate(reader.GetString(7)));
+        reader.GetString(4), reader.GetInt32(5), reader.GetString(6), reader.GetString(7),
+        ParseDate(reader.GetString(8)), ParseDate(reader.GetString(9)));
 
     private static PostSummary MapPostSummary(SqliteDataReader reader) => new(
         reader.GetInt32(0), reader.GetInt32(1), reader.GetString(2), reader.GetString(3),
-        reader.GetString(4), reader.GetString(5), ParseDate(reader.GetString(6)), ParseDate(reader.GetString(7)),
-        reader.GetInt32(8), reader.GetInt32(9), reader.GetInt32(10) != 0,
-        reader.IsDBNull(11) ? null : reader.GetString(11));
+        reader.GetString(4), reader.GetInt32(5), reader.GetString(6), reader.GetString(7),
+        ParseDate(reader.GetString(8)), ParseDate(reader.GetString(9)),
+        reader.GetInt32(10), reader.GetInt32(11), reader.GetInt32(12) != 0,
+        reader.IsDBNull(13) ? null : reader.GetString(13));
+
+    private static Forum MapForum(SqliteDataReader reader) => new(
+        reader.GetInt32(0),
+        reader.IsDBNull(1) ? null : reader.GetInt32(1),
+        reader.GetString(2),
+        reader.GetString(3));
 
     private static Comment MapComment(SqliteDataReader reader) => new(
         reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetString(3), reader.GetString(4),
@@ -334,7 +589,8 @@ public sealed class DiscussionRepository(string connectionString)
         reader.GetInt32(0),
         reader.IsDBNull(1) ? null : reader.GetInt32(1),
         reader.IsDBNull(2) ? null : reader.GetInt32(2),
-        reader.GetString(3), reader.GetString(4), ParseDate(reader.GetString(5)));
+        reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetInt64(6),
+        ParseDate(reader.GetString(7)));
 
     /// <summary>
     /// Foreign key enforcement is per-connection in SQLite, so it has to be switched on

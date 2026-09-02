@@ -1,7 +1,6 @@
 <script setup>
 import LikeButton from './LikeButton.vue';
 import { excerpt, formatDate } from '../format.js';
-import { useForums } from '../composables/useForums.js';
 
 const props = defineProps({
     post: { type: Object, required: true },
@@ -9,8 +8,6 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['update', 'error']);
-
-const { displayName } = useForums();
 
 function onLike({ liked, count }) {
     emit('update', { ...props.post, likedByViewer: liked, likeCount: count });
@@ -29,8 +26,8 @@ function onLike({ liked, count }) {
             <span>{{ formatDate(post.createdAt) }}</span>
             <template v-if="showForum">
                 <span aria-hidden="true">·</span>
-                <RouterLink class="lw-badge" :to="{ name: 'forum', params: { code: post.category } }">
-                    {{ displayName(post.category) }}
+                <RouterLink class="lw-badge" :to="{ name: 'forum', params: { code: post.forumCode } }">
+                    {{ post.forumName }}
                 </RouterLink>
             </template>
         </p>
@@ -59,12 +56,21 @@ function onLike({ liked, count }) {
 
 <style scoped>
 .cd-post {
-    margin-bottom: 1rem;
+    margin-bottom: 20px;
+    padding: 26px;
+    transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+
+.cd-post:hover {
+    transform: translateY(-4px);
+    border-color: #d5d9e6;
+    box-shadow: 0 16px 36px rgba(31, 41, 55, .09);
 }
 
 .cd-post__title {
-    margin: 0 0 0.35rem;
-    font-size: 1.15rem;
+    margin: 0 0 0.5rem;
+    font-size: 1.5rem;
+    letter-spacing: -.02em;
 }
 
 .cd-post__title a {

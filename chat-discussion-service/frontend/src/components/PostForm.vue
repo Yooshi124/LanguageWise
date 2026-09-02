@@ -1,28 +1,33 @@
 <script setup>
 import { ref, watch } from 'vue';
+import ImagePicker from './ImagePicker.vue';
 import { useForums } from '../composables/useForums.js';
 
 const props = defineProps({
     initial: { type: Object, default: null },
+    /** Images already stored against the post, shown so they can be removed while editing. */
+    images: { type: Array, default: () => [] },
     submitLabel: { type: String, default: 'Publish' },
     busy: { type: Boolean, default: false },
     error: { type: String, default: '' }
 });
 
-const emit = defineEmits(['submit', 'cancel']);
+const emit = defineEmits(['submit', 'cancel', 'remove-image']);
 
 const { forums } = useForums();
 
 const title = ref('');
 const content = ref('');
-const category = ref('global');
+const forumCode = ref('global');
+
+const pendingImages = ref([]);
 
 watch(
     () => props.initial,
     (post) => {
         title.value = post?.title ?? '';
         content.value = post?.content ?? '';
-        category.value = post?.category ?? 'global';
+        forumCode.value = post?.forumCode ?? 'global';
     },
     { immediate: true }
 );
@@ -31,7 +36,8 @@ function submit() {
     emit('submit', {
         title: title.value.trim(),
         content: content.value.trim(),
-        category: category.value
+        forumCode: forumCode.value,
+        images: pendingImages.value.map((entry) => entry.file)
     });
 }
 </script>
@@ -55,9 +61,9 @@ function submit() {
 
         <div class="lw-field cd-form__field">
             <label class="cd-form__label" for="post-forum">Forum</label>
-            <select id="post-forum" v-model="category" class="cd-form__input" required>
+            <select id="post-forum" v-model="forumCode" class="cd-form__input" required>
                 <option v-for="forum in forums" :key="forum.code" :value="forum.code">
-                    {{ forum.displayName }}
+                    {{ forum.name }}
                 </option>
             </select>
         </div>
@@ -66,6 +72,13 @@ function submit() {
             <label class="cd-form__label" for="post-content">Content</label>
             <textarea id="post-content" v-model="content" class="cd-form__input" rows="10" required></textarea>
         </div>
+
+        <ImagePicker
+            v-model="pendingImages"
+            :existing="images"
+            :busy="busy"
+            @remove-existing="$emit('remove-image', $event)"
+        />
 
         <div class="lw-form-actions">
             <button type="submit" class="lw-command" :disabled="busy || !title.trim() || !content.trim()">
@@ -100,8 +113,9 @@ function submit() {
 }
 
 .cd-form__input:focus {
-    outline: 2px solid var(--lw-colour-primary);
-    outline-offset: 1px;
+    border-color: #818cf8;
+    outline: 0;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, .12);
 }
 
 .cd-form__error {
@@ -109,7 +123,7 @@ function submit() {
     padding: 0.6rem 0.75rem;
     border: 1px solid var(--lw-colour-danger);
     border-radius: var(--lw-radius-sm);
-    background: rgba(179, 38, 30, 0.08);
+    background: rgba(180, 35, 24, 0.08);
     color: var(--lw-colour-danger);
     font-size: 0.9rem;
 }

@@ -1,12 +1,20 @@
 namespace LanguageWise.ChatDiscussionService.Db.Models;
 
+/// <summary>One place a post can live. CourseId is the quizzes and courses
+/// service's own ID, and is null for forums that mirror no course.</summary>
+public sealed record Forum(int Id, int? CourseId, string Code, string Name);
+
+public sealed record CatalogCourse(int Id, string Code, string Title);
+
 public sealed record Post(
     int Id,
     int UserId,
     string AuthorName,
     string Title,
     string Content,
-    string Category,
+    int ForumId,
+    string ForumCode,
+    string ForumName,
     DateTime CreatedAt,
     DateTime UpdatedAt);
 
@@ -21,7 +29,9 @@ public sealed record PostSummary(
     string AuthorName,
     string Title,
     string Content,
-    string Category,
+    int ForumId,
+    string ForumCode,
+    string ForumName,
     DateTime CreatedAt,
     DateTime UpdatedAt,
     int CommentCount,
@@ -29,10 +39,11 @@ public sealed record PostSummary(
     bool LikedByViewer,
     string? MatchedCommentExcerpt);
 
-public sealed record PostInput(int UserId, string? AuthorName, string? Title, string? Content, string? Category);
+/// <summary>The forum arrives as a code; this service resolves it to the FK.</summary>
+public sealed record PostInput(int UserId, string? AuthorName, string? Title, string? Content, string? ForumCode);
 
 /// <summary>Editable fields only. UserId and AuthorName are absent by design: an edit must never reassign authorship.</summary>
-public sealed record PostUpdate(string? Title, string? Content, string? Category);
+public sealed record PostUpdate(string? Title, string? Content, string? ForumCode);
 
 public sealed record Comment(
     int Id,
@@ -64,6 +75,19 @@ public sealed record Like(int Id, int? PostId, int? CommentId, int UserId, DateT
 /// <summary>The target is taken from the route. A like is created or removed, never edited.</summary>
 public sealed record LikeInput(int UserId);
 
-public sealed record Image(int Id, int? PostId, int? CommentId, string FileUrl, string FileName, DateTime UploadedAt);
+/// <summary>The metadata of one uploaded image; <paramref name="StorageKey"/> names the file on disk.</summary>
+public sealed record Image(
+    int Id,
+    int? PostId,
+    int? CommentId,
+    string StorageKey,
+    string FileName,
+    string ContentType,
+    long SizeBytes,
+    DateTime UploadedAt);
 
-public sealed record ImageInput(int? PostId, int? CommentId, string? FileUrl, string? FileName);
+/// <summary>The owning post or comment is taken from the route, not the body.</summary>
+public sealed record ImageInput(string StorageKey, string? FileName, string? ContentType, long SizeBytes);
+
+/// <summary>Merged counts the legacy duplicate forums folded into a course forum.</summary>
+public sealed record ForumSyncResult(int Added, int Renamed, int Merged);

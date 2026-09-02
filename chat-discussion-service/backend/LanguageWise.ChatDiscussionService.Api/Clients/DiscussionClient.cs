@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using LanguageWise.ChatDiscussionService.Api.Models;
 
@@ -21,7 +22,7 @@ public sealed class DiscussionClient(HttpClient httpClient)
 {
     public async Task<IReadOnlyList<PostSummary>> GetPostsAsync(
         int? userId,
-        string? category,
+        string? forumCode,
         string? search,
         int limit,
         int offset,
@@ -30,7 +31,7 @@ public sealed class DiscussionClient(HttpClient httpClient)
     {
         var query = new QueryBuilder()
             .Add("userId", userId)
-            .Add("category", category)
+            .Add("forumCode", forumCode)
             .Add("search", search)
             .Add("limit", limit)
             .Add("offset", offset)
@@ -40,6 +41,9 @@ public sealed class DiscussionClient(HttpClient httpClient)
             $"api/posts{query}",
             cancellationToken) ?? [];
     }
+
+    public async Task<IReadOnlyList<Forum>> GetForumsAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<List<Forum>>("api/forums", cancellationToken) ?? [];
 
     public async Task<PostSummary?> GetPostAsync(
         int id,
@@ -55,12 +59,12 @@ public sealed class DiscussionClient(HttpClient httpClient)
         string authorName,
         string title,
         string content,
-        string category,
+        string forumCode,
         CancellationToken cancellationToken = default)
     {
         using var response = await httpClient.PostAsJsonAsync(
             "api/posts",
-            new { UserId = userId, AuthorName = authorName, Title = title, Content = content, Category = category },
+            new { UserId = userId, AuthorName = authorName, Title = title, Content = content, ForumCode = forumCode },
             cancellationToken);
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<Post>(cancellationToken))!;
@@ -70,12 +74,12 @@ public sealed class DiscussionClient(HttpClient httpClient)
         int id,
         string title,
         string content,
-        string category,
+        string forumCode,
         CancellationToken cancellationToken = default)
     {
         using var response = await httpClient.PutAsJsonAsync(
             $"api/posts/{id}",
-            new { Title = title, Content = content, Category = category },
+            new { Title = title, Content = content, ForumCode = forumCode },
             cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.NotFound)
@@ -187,6 +191,94 @@ public sealed class DiscussionClient(HttpClient httpClient)
         int userId,
         CancellationToken cancellationToken = default) =>
         await DeleteAsync($"api/comments/{commentId}/likes?userId={userId}", cancellationToken);
+
+    public async Task<IReadOnlyList<Image>> GetPostImagesAsync(
+        int postId,
+        CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<List<Image>>($"api/posts/{postId}/images", cancellationToken) ?? [];
+
+    public async Task<IReadOnlyList<Image>> GetCommentImagesAsync(
+        int commentId,
+        CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<List<Image>>($"api/comments/{commentId}/images", cancellationToken) ?? [];
+
+    /// <summary>Every image on every comment of one post, rather than a request per comment.</summary>
+    public async Task<IReadOnlyList<Image>> GetPostCommentImagesAsync(
+        int postId,
+        CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<List<Image>>($"api/posts/{postId}/comment-images", cancellationToken) ?? [];
+
+    public async Task<Image?> GetImageAsync(int id, CancellationToken cancellationToken = default) =>
+        await GetOrNullAsync<Image>($"api/images/{id}", cancellationToken);
+
+    /// <summary>Returns null when the post does not exist.</summary>
+    public async Task<Image?> UploadPostImageAsync(
+        int postId,
+        Stream content,
+        string contentType,
+        string fileName,
+        CancellationToken cancellationToken = default) =>
+        await UploadImageAsync($"api/posts/{postId}/images", content, contentType, fileName, cancellationToken);
+
+    /// <summary>Returns null when the comment does not exist.</summary>
+    public async Task<Image?> UploadCommentImageAsync(
+        int commentId,
+        Stream content,
+        string contentType,
+        string fileName,
+        CancellationToken cancellationToken = default) =>
+        await UploadImageAsync($"api/comments/{commentId}/images", content, contentType, fileName, cancellationToken);
+
+    /// <summary>
+    /// Buffers the whole image rather than streaming it on. <see cref="ImageRules.MaxBytes"/>
+    /// keeps that bounded, and the connection to the database service is released early.
+    /// </summary>
+    public async Task<ImageContent?> DownloadImageAsync(int id, CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync($"api/images/{id}/content", cancellationToken);
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+
+        return new ImageContent(
+            await response.Content.ReadAsByteArrayAsync(cancellationToken),
+            response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream");
+    }
+
+    public async Task<bool> DeleteImageAsync(int id, CancellationToken cancellationToken = default) =>
+        await DeleteAsync($"api/images/{id}", cancellationToken);
+
+    /// <summary>
+    /// Sends the file as a raw body: the caller has already parsed and validated the
+    /// browser's multipart form, so a second form would only add work at both ends.
+    /// </summary>
+    private async Task<Image?> UploadImageAsync(
+        string path,
+        Stream content,
+        string contentType,
+        string fileName,
+        CancellationToken cancellationToken)
+    {
+        using var body = new StreamContent(content);
+        body.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+
+        using var response = await httpClient.PostAsync(
+            $"{path}?fileName={Uri.EscapeDataString(fileName)}",
+            body,
+            cancellationToken);
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<Image>(cancellationToken);
+    }
 
     private async Task<LikeOutcome> LikeAsync(string path, int userId, CancellationToken cancellationToken)
     {
