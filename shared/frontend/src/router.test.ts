@@ -6,6 +6,27 @@ vi.mock('./federation/quizzesCoursesRemote', () => ({
   registerQuizzesCoursesRoutes: vi.fn(),
 }))
 
+vi.mock('./federation/chatDiscussionRemote', () => ({
+  isChatDiscussionPath: (path: string) => path.startsWith('/chat-discussion'),
+  chatDiscussionRoutesReady: () => false,
+  registerChatDiscussionRoutes: vi.fn((router) => {
+    router.addRoute({
+      path: '/chat-discussion',
+      name: 'chat-discussion-test',
+      component: { template: '<div />' },
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: 'posts/:id',
+          name: 'chat-discussion-post-test',
+          component: { template: '<div />' },
+          meta: { requiresAuth: true },
+        },
+      ],
+    })
+  }),
+}))
+
 afterEach(() => {
   vi.unstubAllGlobals()
 })
@@ -51,5 +72,16 @@ describe('router authentication', () => {
     await router.push('/protected-error')
 
     expect(router.currentRoute.value.name).toBe('home')
+  })
+
+  it('redirects a signed-out Discussion deep link after registering its protected routes', async () => {
+    vi.resetModules()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 401 })))
+    const { default: router } = await import('./router')
+
+    await router.push('/chat-discussion/posts/42?from=search')
+
+    expect(router.currentRoute.value.name).toBe('signed-out')
+    expect(router.currentRoute.value.query.returnUrl).toBe('/chat-discussion/posts/42?from=search')
   })
 })

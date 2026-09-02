@@ -65,33 +65,3 @@ function unlike() {
         <span class="cd-like__label">{{ count === 1 ? 'like' : 'likes' }}</span>
     </button>
 </template>
-
-<style scoped>
-.cd-like {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.3rem 0.7rem;
-    border: 1px solid var(--lw-colour-border);
-    border-radius: 999px;
-    background: var(--lw-colour-surface);
-    color: var(--lw-colour-ink-muted);
-    font-family: var(--lw-font);
-    font-size: 0.9rem;
-    cursor: pointer;
-}
-
-.cd-like:hover {
-    border-color: var(--lw-colour-primary);
-    color: var(--lw-colour-primary);
-}
-
-.cd-like--on {
-    border-color: var(--lw-colour-danger);
-    color: var(--lw-colour-danger);
-}
-
-.cd-like__label {
-    color: inherit;
-}
-</style>

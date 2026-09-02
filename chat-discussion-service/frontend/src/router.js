@@ -1,20 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { useAuth } from './composables/useAuth.js';
-
-import ForumIndexView from './views/ForumIndexView.vue';
-import ForumView from './views/ForumView.vue';
-import PostView from './views/PostView.vue';
-import MyPostsView from './views/MyPostsView.vue';
-import PostCreateView from './views/PostCreateView.vue';
-import PostEditView from './views/PostEditView.vue';
+import { routes as featureRoutes } from './federation/feature.js';
 
 const routes = [
-    { path: '/', name: 'forums', component: ForumIndexView },
-    { path: '/forums/:code', name: 'forum', component: ForumView, props: true },
-    { path: '/my-posts', name: 'my-posts', component: MyPostsView },
-    { path: '/new', name: 'post-create', component: PostCreateView },
-    { path: '/posts/:id', name: 'post', component: PostView, props: true },
-    { path: '/posts/:id/edit', name: 'post-edit', component: PostEditView, props: true },
+    ...featureRoutes.map((route) => ({ ...route, path: route.path ? `/${route.path}` : '/' })),
     { path: '/:pathMatch(.*)*', redirect: { name: 'forums' } }
 ];
 

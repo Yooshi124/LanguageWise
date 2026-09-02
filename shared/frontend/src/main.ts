@@ -10,6 +10,7 @@ import router from './router'
 import './styles.css'
 import './features/quizzes-courses.css'
 import './features/mini-games.css'
+import './features/chat-discussion.css'
 
 const vuetify = createVuetify({
   components,

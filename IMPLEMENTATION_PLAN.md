@@ -2,9 +2,9 @@
 
 ## Status
 
-Phases 0 through 5 are complete. `leaderboard-analytics-service` is present
+Phases 0 through 6 are complete. `leaderboard-analytics-service` is present
 with a frontend, backend, database, Docker wiring, and backend tests. The
-migration can proceed to the Phase 6 Discussion Forum remote.
+migration can proceed to the Phase 7 Q/A/N Vue and federation conversion.
 
 The completed system will contain one shared host application and five feature
 remotes:
@@ -559,6 +559,29 @@ statistics behave as before inside the host shell.
 
 Exit criteria: all forum routes and authorization-sensitive actions work from
 the shared shell, including deep links and logout.
+
+Verified result:
+
+- Discussion Forum is exposed as a shell-free `chat_discussion` remote and is
+  registered only when the Shared router enters `/chat-discussion`.
+- All six forum routes retain filtering, search, pagination, post and comment
+  workflows, likes, My Posts, validation, and ownership-sensitive controls.
+- Shared route metadata requires authentication for every Discussion route;
+  signed-out deep links preserve their complete return URL, while the backend
+  continues to enforce authorization and ownership for write operations.
+- The obsolete remote header, cross-service navigation, and app shell are
+  removed. The feature retains only its Forums, My Posts, and New Post nav.
+- All ten SFC style blocks are host-owned under the Discussion feature scope.
+  The remote production build emits `remoteEntry.js` and zero CSS files.
+- Shared nginx serves remote artifacts from `/remotes/chat-discussion/`, keeps
+  `/chat-discussion/api/` stable, and sends page routes to the host SPA.
+- The production workflow passed create, edit, delete, comment, like, My Posts,
+  direct deep-link, logout, and return-to-route checks. The 390px layout has no
+  horizontal overflow.
+- Stopping only the Discussion frontend displays the isolated Shared fallback;
+  restarting it and selecting Retry restores the deep link in the same page.
+- Four Shared router tests, 68 Discussion backend tests, both production
+  frontend builds, Docker Compose validation, and gateway health checks pass.
 
 ### Phase 7 - Q/A/N Vue and federation migration
 

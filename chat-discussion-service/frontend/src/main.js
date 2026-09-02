@@ -4,7 +4,7 @@ import * as components from 'vuetify/components';
 import * as directives from 'vuetify/directives';
 import { aliases, mdi } from 'vuetify/iconsets/mdi-svg';
 import 'vuetify/styles';
-import App from './App.vue';
+import { ChatDiscussionComponent } from './federation/feature.js';
 import { router } from './router.js';
 import './styles.css';
 
@@ -33,4 +33,4 @@ const vuetify = createVuetify({
     }
 });
 
-createApp(App).use(router).use(vuetify).mount('#app');
+createApp(ChatDiscussionComponent).use(router).use(vuetify).mount('#app');

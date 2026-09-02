@@ -48,7 +48,7 @@ export const featureServices: readonly ServiceNavigationItem[] = [
     federation: {
       basePath: '/chat-discussion',
       remoteEntryPath: '/remotes/chat-discussion/remoteEntry.js',
-      requiresAuth: false,
+      requiresAuth: true,
     },
   },
   {

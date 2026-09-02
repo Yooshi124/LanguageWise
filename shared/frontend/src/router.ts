@@ -13,6 +13,11 @@ import {
   miniGamesRoutesReady,
   registerMiniGamesRoutes,
 } from './federation/miniGamesRemote'
+import {
+  chatDiscussionRoutesReady,
+  isChatDiscussionPath,
+  registerChatDiscussionRoutes,
+} from './federation/chatDiscussionRemote'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -42,7 +47,20 @@ router.beforeEach(async (to) => {
 
   if (!isQuizzesCoursesPath(to.path) || quizzesCoursesRoutesReady()) {
     if (!isMiniGamesPath(to.path) || miniGamesRoutesReady()) {
-      return true
+      if (!isChatDiscussionPath(to.path) || chatDiscussionRoutesReady()) {
+        return true
+      }
+
+      if (to.name === 'chat-discussion-unavailable') {
+        return true
+      }
+
+      try {
+        await registerChatDiscussionRoutes(router)
+        return { path: to.path, query: to.query, hash: to.hash, replace: true }
+      } catch {
+        return { path: to.path, query: to.query, hash: to.hash, replace: true }
+      }
     }
 
     if (to.name === 'mini-games-unavailable') {
