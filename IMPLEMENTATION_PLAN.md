@@ -2,9 +2,10 @@
 
 ## Status
 
-Phase 0 baseline verification is complete. `leaderboard-analytics-service` is
-present with a frontend, backend, database, Docker wiring, and backend tests.
-The migration can proceed to the Phase 1 federation and router spike.
+Phase 0 baseline verification and the Phase 1 federation/router spike are
+complete. `leaderboard-analytics-service` is present with a frontend, backend,
+database, Docker wiring, and backend tests. The migration can proceed to the
+Phase 2 shared-authentication backend.
 
 The completed system will contain one shared host application and five feature
 remotes:
@@ -281,10 +282,9 @@ be compared objectively afterward.
   deterministic 30-day course series, and a warmed Ollama summary with summary
   text, trend, and best course.
 - The shared endpoint table now uses the Leaderboard database host port `5006`.
-- Fresh host `npm ci` is currently blocked by HTTP 403 from the configured npm
-  registry. Offline retries also fail because their exact lockfile packages
-  are not all cached. Production Docker images still build and run, but Phase 1
-  must prove a clean dependency restore before changing any lockfile.
+- The configured corporate npm registry returned HTTP 403 for the federation
+  package. Clean installs succeeded through `https://registry.npmjs.org`, and
+  the resulting exact dependency versions are recorded in both lockfiles.
 - Q/A/N currently makes ten avoidable `404` requests for root-relative
   achievement images before its fallback image renders. Analytics has no
   failed requests, but Highcharts reports that its accessibility module is not
@@ -323,6 +323,34 @@ Vite 7 with the older `@vitejs/plugin-vue` 5.2.4 used by the Vite 6 projects.
 Exit criteria: a production-built reference component works through nginx with
 one router/Vuetify instance and a documented repeatable remote template.
 
+#### Verified Phase 1 result
+
+- Shared and Quizzes/Courses clean installs and production builds pass with
+  exact dependency pins. Their rebuilt Docker frontend containers are healthy.
+- Quizzes/Courses exposes a CSS-free reference module; Shared dynamically adds
+  its root and `details` child routes while retaining the existing shell.
+- A fresh Home load makes no `/remotes/` requests. Entering the reference route
+  loads `remoteEntry.js` and every referenced chunk from
+  `/remotes/quizzes-courses/`; no remote stylesheet is loaded.
+- Direct refresh at `/federation-spike/details`, child navigation, and browser
+  back/forward all render correctly. Client-side navigation retains one browser
+  navigation entry, proving that it does not reload the document.
+- Runtime inspection shows one compatible shared provider for Vue 3.5.42, Vue
+  Router 4.6.4, Vuetify 3.13.2, and `@mdi/js` 7.4.47 across the host and remote.
+- During a deliberate remote outage, Shared remains healthy and displays only
+  the feature fallback. After the remote returns, Retry uses a cache-busted
+  entry and restores the same deep route without a document reload.
+- `remoteEntry.js` returns `200` as JavaScript with no-store/no-cache headers;
+  hashed JavaScript chunks return `200` with a one-year immutable policy.
+- The repeatable interface, ownership rules, loading pattern, nginx policy, and
+  migration checks are documented in `docs/federation-module-contract.md`.
+
+Static host remote declarations are not the migration template. With
+`@module-federation/vite` 1.21.2 they fetched the reference entry during Home
+bootstrap even when snapshot and Vite module preloading were disabled. Future
+features must use route-time `registerRemotes` and `loadRemote`, with a unique
+entry query on retry to bypass the browser's failed-module cache.
+
 ### Phase 2 - Shared authentication backend
 
 - Change shared token validation to return an authenticated-user record.
@@ -345,8 +373,8 @@ with old consumers.
 - Keep the existing host auth state, login view, logout action, and safe return
   URL handling. Upgrade it to `{ id, name }`, add route guards, and ensure auth
   bootstrap occurs once at the host boundary rather than in the sidebar.
-- Add the federation host configuration and TanStack Query provider established
-  by the Phase 1 spike.
+- Extend the route-time federation registry established by the Phase 1 spike,
+  and add the TanStack Query provider. Do not add static host remote entries.
 - Preserve the redesigned Shared home and runtime map. The former HTMX
   sample-items view has already been intentionally removed.
 - Add accessible loading, signed-out, missing-remote, and general error states.
