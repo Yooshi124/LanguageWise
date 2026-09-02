@@ -195,19 +195,21 @@ function onKeydown(event) {
     flex-direction: column;
     width: min(24rem, calc(100vw - 2.5rem));
     max-height: min(32rem, calc(100vh - 2.5rem));
-    padding: 0.9rem;
-    border: 1px solid var(--lw-colour-border);
-    border-radius: var(--lw-radius-sm);
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid rgba(79, 70, 229, .16);
+    border-radius: 26px;
     background: var(--lw-colour-surface);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+    box-shadow: var(--shadow-floating);
 }
 
 .cd-assistant__head {
     display: flex;
     align-items: flex-start;
     gap: 0.4rem;
-    padding-bottom: 0.6rem;
-    border-bottom: 1px solid var(--lw-colour-border);
+    padding: 16px 18px;
+    color: white;
+    background: linear-gradient(135deg, #3730a3, #4f46e5);
 }
 
 .cd-assistant__title {
@@ -217,8 +219,8 @@ function onKeydown(event) {
 
 .cd-assistant__hint {
     margin: 0.1rem 0 0;
-    font-size: 0.8rem;
-    opacity: 0.7;
+    color: #e0e7ff;
+    font-size: 0.78rem;
 }
 
 .cd-assistant__head div {
@@ -227,16 +229,16 @@ function onKeydown(event) {
 
 .cd-assistant__icon {
     padding: 0.2rem 0.5rem;
-    border: 1px solid var(--lw-colour-border);
-    border-radius: var(--lw-radius-sm);
-    background: none;
-    color: var(--lw-colour-ink);
+    border: 1px solid rgba(255, 255, 255, .3);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, .12);
+    color: white;
     font-size: 0.8rem;
     cursor: pointer;
 }
 
 .cd-assistant__icon:hover:not(:disabled) {
-    border-color: var(--lw-colour-primary);
+    background: rgba(255, 255, 255, .22);
 }
 
 .cd-assistant__icon:disabled {
@@ -247,7 +249,7 @@ function onKeydown(event) {
 .cd-assistant__transcript {
     flex: 1;
     overflow-y: auto;
-    padding: 0.75rem 0.1rem;
+    padding: 0.9rem 1.1rem;
 }
 
 .cd-assistant__welcome p {
@@ -342,6 +344,7 @@ function onKeydown(event) {
     display: flex;
     flex-wrap: wrap;
     gap: 0.35rem;
+    padding: 0 1.1rem;
 }
 
 .cd-assistant__suggestion {
@@ -355,7 +358,9 @@ function onKeydown(event) {
 }
 
 .cd-assistant__suggestion:hover:not(:disabled) {
-    border-color: var(--lw-colour-primary);
+    border-color: #a5b4fc;
+    background: #eef2ff;
+    color: #3730a3;
 }
 
 .cd-assistant__error {
@@ -363,11 +368,11 @@ function onKeydown(event) {
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
-    margin: 0 0 0.6rem;
+    margin: 0.6rem 1.1rem;
     padding: 0.45rem 0.6rem;
     border: 1px solid var(--lw-colour-danger);
     border-radius: var(--lw-radius-sm);
-    background: rgba(179, 38, 30, 0.08);
+    background: rgba(180, 35, 24, 0.08);
     color: var(--lw-colour-danger);
     font-size: 0.82rem;
 }
@@ -376,7 +381,8 @@ function onKeydown(event) {
     display: flex;
     gap: 0.4rem;
     align-items: flex-end;
-    padding-top: 0.6rem;
+    margin-top: 0.6rem;
+    padding: 0.75rem 1.1rem;
     border-top: 1px solid var(--lw-colour-border);
 }
 
@@ -411,8 +417,10 @@ function onKeydown(event) {
 }
 
 .cd-assistant__note {
-    margin: 0.45rem 0 0;
-    font-size: 0.72rem;
-    opacity: 0.65;
+    margin: 0 0 0.7rem;
+    padding: 0 1.1rem;
+    color: #98a2b3;
+    font-size: 0.7rem;
+    text-align: center;
 }
 </style>

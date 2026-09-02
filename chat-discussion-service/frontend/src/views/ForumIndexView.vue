@@ -58,25 +58,35 @@ onMounted(load);
 <style scoped>
 .cd-forums {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 20px;
+    margin-top: 30px;
 }
 
 .cd-forum {
     display: block;
+    padding: 26px;
     text-decoration: none;
     color: inherit;
-    transition: border-color 120ms ease;
+    transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
 }
 
 .cd-forum:hover {
-    border-color: var(--lw-colour-primary);
+    transform: translateY(-6px);
+    border-color: #d5d9e6;
+    box-shadow: 0 18px 40px rgba(31, 41, 55, .1);
+}
+
+.cd-forum:focus-visible {
+    outline: 3px solid rgba(79, 70, 229, .35);
+    outline-offset: 3px;
 }
 
 .cd-forum__name {
     margin: 0 0 0.35rem;
-    font-size: 1.1rem;
-    color: var(--lw-colour-primary);
+    font-size: 1.55rem;
+    letter-spacing: -.02em;
+    color: var(--lw-colour-ink);
 }
 
 .cd-forum__hint {

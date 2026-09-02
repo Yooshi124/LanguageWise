@@ -113,8 +113,9 @@ function submit() {
 }
 
 .cd-form__input:focus {
-    outline: 2px solid var(--lw-colour-primary);
-    outline-offset: 1px;
+    border-color: #818cf8;
+    outline: 0;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, .12);
 }
 
 .cd-form__error {
@@ -122,7 +123,7 @@ function submit() {
     padding: 0.6rem 0.75rem;
     border: 1px solid var(--lw-colour-danger);
     border-radius: var(--lw-radius-sm);
-    background: rgba(179, 38, 30, 0.08);
+    background: rgba(180, 35, 24, 0.08);
     color: var(--lw-colour-danger);
     font-size: 0.9rem;
 }

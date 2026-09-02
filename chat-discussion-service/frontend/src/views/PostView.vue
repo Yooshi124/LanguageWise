@@ -329,7 +329,7 @@ watch(postId, load, { immediate: true });
     padding: 0.6rem 0.75rem;
     border: 1px solid var(--lw-colour-danger);
     border-radius: var(--lw-radius-sm);
-    background: rgba(179, 38, 30, 0.08);
+    background: rgba(180, 35, 24, 0.08);
     color: var(--lw-colour-danger);
     font-size: 0.9rem;
 }

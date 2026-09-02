@@ -1,0 +1,234 @@
+/* ============================================================================
+   Chat discussion — app shell and theme, aligned with the quizzes and courses
+   frontend so the two services read as one product.
+
+   The shared theme.css still loads first and supplies the base reset and the
+   lw-* component classes. Redefining its custom properties here re-skins every
+   one of those components at once, so most of the restyle happens through the
+   token block below rather than through per-component rules.
+   ========================================================================== */
+
+:root {
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: #172033;
+    background: #f6f7fb;
+
+    --app-sidebar-collapsed-width: 88px;
+    --app-sidebar-expanded-width: 278px;
+    --app-sidebar-width: var(--app-sidebar-collapsed-width);
+    --space-page: clamp(28px, 5vw, 72px);
+    --radius-card: 24px;
+    --radius-control: 12px;
+    --shadow-floating: 0 24px 56px rgba(15, 23, 42, .24);
+
+    /* Shared theme tokens, repointed at the quizzes palette. */
+    --lw-colour-bg: #f6f7fb;
+    --lw-colour-surface: #ffffff;
+    --lw-colour-border: #e2e5ed;
+    --lw-colour-ink: #172033;
+    --lw-colour-ink-muted: #667085;
+    --lw-colour-primary: #4f46e5;
+    --lw-colour-primary-dark: #4338ca;
+    --lw-colour-accent: #0f766e;
+    --lw-colour-danger: #b42318;
+
+    --lw-radius: var(--radius-card);
+    --lw-radius-sm: var(--radius-control);
+    --lw-shadow: 0 8px 24px rgba(15, 23, 42, .05);
+    --lw-font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --lw-max-width: 1240px;
+}
+
+* { box-sizing: border-box; }
+button, a { -webkit-tap-highlight-color: transparent; }
+
+/* --------------------------------------------------------------- shell --- */
+
+.v-application.sidebar-expanded { --app-sidebar-width: var(--app-sidebar-expanded-width); }
+.v-application { background: var(--lw-colour-bg) !important; }
+.app-icon { display: block; flex: 0 0 auto; }
+
+.app-shell-content {
+    min-height: 100vh;
+    margin-left: var(--app-sidebar-width);
+    transition: margin-left .32s cubic-bezier(.22, 1, .36, 1);
+}
+
+.forum-page {
+    max-width: var(--lw-max-width);
+    padding: 44px var(--space-page) 90px;
+}
+
+.local-topbar {
+    position: relative;
+    z-index: 4;
+    display: flex;
+    min-height: 64px;
+    padding: 0 var(--space-page);
+    align-items: center;
+    justify-content: flex-end;
+    background: rgba(255, 255, 255, .9);
+    border-bottom: 1px solid rgba(15, 23, 42, .07);
+    backdrop-filter: blur(12px);
+}
+
+.local-topbar-nav { display: flex; align-items: center; gap: 8px; }
+.local-topbar-nav .v-btn { text-transform: none; font-weight: 700; letter-spacing: 0; }
+.topbar-cta { margin-left: 8px; }
+
+/* ------------------------------------------------------------- sidebar --- */
+
+.app-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 1005;
+    display: flex;
+    width: var(--app-sidebar-width);
+    padding: 24px 14px;
+    flex-direction: column;
+    color: #eef2ff;
+    background: #151a2d;
+    border-right: 1px solid rgba(255, 255, 255, .08);
+    box-shadow: 8px 0 30px rgba(15, 23, 42, .08);
+    overflow: hidden;
+    transition: width .32s cubic-bezier(.22, 1, .36, 1), transform .32s cubic-bezier(.22, 1, .36, 1);
+}
+
+.sidebar-header { display: flex; min-height: 48px; align-items: center; gap: 10px; padding-inline: 8px; }
+.sidebar-brand { display: flex; min-width: 0; align-items: center; gap: 12px; color: white; font-size: 1.05rem; font-weight: 800; text-decoration: none; white-space: nowrap; }
+.brand-mark { display: block; width: 44px; height: 44px; flex: 0 0 44px; border-radius: 13px; object-fit: cover; box-shadow: 0 8px 20px rgba(79, 70, 229, .35); }
+.brand-name { overflow: hidden; text-overflow: ellipsis; }
+.sidebar-toggle { display: grid; width: 34px; height: 34px; margin-left: auto; flex: 0 0 34px; place-items: center; border: 1px solid rgba(255, 255, 255, .14); border-radius: 10px; color: #d8ddf0; background: rgba(255, 255, 255, .07); cursor: pointer; }
+.sidebar-toggle:hover { color: white; background: rgba(255, 255, 255, .13); }
+.mobile-sidebar-close { display: none; }
+.sidebar-services, .sidebar-utilities { display: flex; flex-direction: column; gap: 7px; }
+.sidebar-services { margin-top: 56px; }
+.sidebar-utilities { margin-top: auto; }
+.sidebar-account-error { margin: 4px 8px 0; color: #fda4af; font-size: .75rem; line-height: 1.35; }
+.app-sidebar:not(.expanded) .sidebar-account-error { display: none; }
+
+.sidebar-nav-item {
+    display: flex;
+    width: 100%;
+    min-height: 52px;
+    padding: 0 18px;
+    align-items: center;
+    gap: 16px;
+    border: 0;
+    border-radius: var(--radius-control);
+    color: #cbd1e4;
+    background: transparent;
+    font: inherit;
+    font-weight: 650;
+    text-align: left;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color .15s ease, background .15s ease;
+}
+
+.app-sidebar:not(.expanded) .sidebar-nav-item { justify-content: center; padding-inline: 0; }
+.sidebar-nav-item:hover { color: white; background: rgba(255, 255, 255, .08); }
+.sidebar-nav-item-static { cursor: default; }
+.sidebar-nav-item-static:hover { color: #cbd1e4; background: transparent; }
+.sidebar-nav-item.active { color: #312e81; background: white; box-shadow: 0 7px 20px rgba(0, 0, 0, .15); }
+.sidebar-nav-item:disabled { color: #858da7; cursor: not-allowed; opacity: .62; }
+.sidebar-nav-item:disabled:hover { background: transparent; }
+
+.mobile-nav-trigger {
+    position: fixed;
+    top: 14px;
+    left: 14px;
+    z-index: 1000;
+    display: none;
+    width: 44px;
+    height: 44px;
+    place-items: center;
+    border: 1px solid #e2e5ed;
+    border-radius: var(--radius-control);
+    color: #312e81;
+    background: white;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, .14);
+}
+
+.sidebar-scrim { position: fixed; inset: 0; z-index: 1004; border: 0; background: rgba(15, 23, 42, .45); }
+
+/* ----------------------------------------------- shared lw-* components --- */
+
+.lw-section-heading {
+    font-size: clamp(2.1rem, 4vw, 3.2rem);
+    line-height: 1.06;
+    letter-spacing: -.045em;
+    margin: 0 0 10px;
+}
+
+.lw-card {
+    border: 1px solid var(--lw-colour-border);
+    border-radius: var(--radius-card);
+    background: var(--lw-colour-surface);
+    box-shadow: var(--lw-shadow);
+}
+
+.lw-card__hint { color: var(--lw-colour-ink-muted); line-height: 1.6; }
+
+.lw-badge {
+    display: inline-block;
+    padding: 4px 11px;
+    border-radius: 999px;
+    color: #4338ca;
+    background: #eef2ff;
+    font-size: .72rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.lw-command {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 0 20px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
+    color: white;
+    background: var(--lw-colour-primary);
+    font: inherit;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+
+.lw-command:hover:not(:disabled) { background: var(--lw-colour-primary-dark); box-shadow: 0 8px 20px rgba(79, 70, 229, .28); }
+.lw-command:focus-visible { outline: 3px solid #a5b4fc; outline-offset: 2px; }
+.lw-command:disabled { opacity: .55; cursor: not-allowed; }
+
+.lw-auth-status { display: inline-flex; align-items: center; gap: 12px; color: var(--lw-colour-ink-muted); }
+
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+
+/* ---------------------------------------------------------- responsive --- */
+
+@media (max-width: 800px) {
+    :root { --app-sidebar-width: 0px; }
+    .v-application.sidebar-expanded { --app-sidebar-width: 0px; }
+    .app-sidebar { width: min(280px, calc(100vw - 48px)); transform: translateX(-110%); }
+    .app-sidebar.mobile-open { transform: translateX(0); }
+    .app-sidebar.mobile-open:not(.expanded) .sidebar-nav-item { justify-content: flex-start; padding-inline: 18px; }
+    .mobile-sidebar-close { display: grid; }
+    .mobile-nav-trigger { display: grid; }
+    .app-shell-content { margin-left: 0; }
+    .local-topbar { padding-left: 70px; }
+    .forum-page { padding-top: 30px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition-duration: .01ms !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+    }
+}

@@ -153,9 +153,15 @@ onBeforeUnmount(() => window.clearTimeout(debounce));
     font-size: 0.9rem;
 }
 
+.cd-search__input:focus {
+    border-color: #818cf8;
+    outline: 0;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, .12);
+}
+
 .cd-search__input {
     width: 100%;
-    padding: 0.6rem 0.75rem;
+    padding: 0.7rem 0.9rem;
     border: 1px solid var(--lw-colour-border);
     border-radius: var(--lw-radius-sm);
     font-family: var(--lw-font);
