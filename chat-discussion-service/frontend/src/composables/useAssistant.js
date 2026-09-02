@@ -1,4 +1,4 @@
-import { readonly, ref } from 'vue';
+import { readonly, ref, watch } from 'vue';
 import {
     api,
     ApiError,
@@ -16,6 +16,8 @@ const SUGGESTIONS = [
     'How do likes work?',
     'How do I find the posts I wrote?'
 ];
+
+const { me } = useAuth();
 
 const open = ref(false);
 const messages = ref([]);
@@ -37,7 +39,6 @@ function storageKey(userId) {
  * component can call it on every render.
  */
 function initialise() {
-    const { me } = useAuth();
     const userId = me.value?.id ?? null;
 
     if (userId === loadedUserId) {
@@ -51,6 +52,12 @@ function initialise() {
     error.value = '';
     messages.value = userId === null ? [] : load(userId);
 }
+
+// The panel's setup runs while the router guard is still awaiting the account, so
+// reading the user only once would leave the transcript owned by nobody and every
+// question dropped before it was sent. Watching picks the user up when they arrive,
+// and swaps transcripts if a different one signs in later.
+watch(() => me.value?.id ?? null, initialise, { immediate: true });
 
 function expand() {
     open.value = true;
@@ -82,7 +89,14 @@ function cancel() {
 async function ask(question, context) {
     const text = question.trim();
 
-    if (!text || streaming.value || loadedUserId === null) {
+    if (!text || streaming.value) {
+        return;
+    }
+
+    // Said out loud rather than dropped: a question that disappears with nothing on
+    // screen looks like a broken composer.
+    if (loadedUserId === null) {
+        error.value = 'Please sign in again to talk to Garry.';
         return;
     }
 
