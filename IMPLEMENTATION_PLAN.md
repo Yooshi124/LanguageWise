@@ -2,10 +2,10 @@
 
 ## Status
 
-Phase 0 baseline verification and the Phase 1 federation/router spike are
-complete. `leaderboard-analytics-service` is present with a frontend, backend,
-database, Docker wiring, and backend tests. The migration can proceed to the
-Phase 2 shared-authentication backend.
+Phase 0 baseline verification, the Phase 1 federation/router spike, and the
+Phase 2 shared-authentication backend are complete. `leaderboard-analytics-service`
+is present with a frontend, backend, database, Docker wiring, and backend tests.
+The migration can proceed to the Phase 3 Shared Vue host and visual system.
 
 The completed system will contain one shared host application and five feature
 remotes:
@@ -43,14 +43,15 @@ the feature-content reference while Shared is the canonical shell reference.
 | Q/A/N | Static HTML, HTMX, vanilla JS | One dashboard page | Requires complete Vue conversion |
 | Leaderboard and Analytics | Vue 3, TypeScript, Vuetify, TanStack Query, Highcharts | Own sidebar and single view | Duplicates shell/auth/CSS and needs host query-provider integration |
 
-Auth is currently checked in three incompatible ways:
+Auth is still checked in several ways during migration:
 
-- Shared `POST /api/check-login` returns only a JSON string containing the name;
-  the new Shared Vue auth composable consumes that legacy contract.
+- Shared `POST /api/check-login` is cookie-only and returns `{ id, name }`.
+  Shared currently retains a name-only local state until Phase 3.
 - Quizzes and Courses `GET /api/me` returns `{ id, username }`.
 - Discussion Forum `GET /api/me` returns `{ id, username }`.
 - Leaderboard and Analytics `GET /api/me` returns `{ id, username }`.
-- Mini Games calls the shared check directly and constructs a username-only user.
+- Mini Games consumes the shared identity response but temporarily constructs a
+  username-only local user until its remote migration.
 - Q/A/N infers signed-in state from `GET /api/profile` and renders an HTMX auth fragment.
 
 Shared now provides the intended canonical navigation, login/logout UI, app
@@ -363,6 +364,26 @@ entry query on retry to bypass the browser's failed-module cache.
 
 Exit criteria: the new endpoint contract is tested and temporarily coexists
 with old consumers.
+
+#### Verified Phase 2 result
+
+- Token validation returns a typed authenticated user only when the RS256
+  signature and lifetime are valid and both a positive numeric `sub` and a
+  nonblank `name` claim are present. Expiry uses zero clock skew.
+- `POST /api/check-login` reads only the HttpOnly `token` cookie and returns
+  `{ id, name }`; a valid token supplied only in a JSON request body receives
+  `401 Unauthorized`.
+- Eight focused endpoint tests cover a valid cookie, absent cookie, invalid
+  signature, expired token, missing subject, invalid subject, missing name, and
+  rejection of request-body tokens. The complete Shared test project passes
+  with 13 tests.
+- `/api/login`, `/api/logout`, `/api/check-login/fragment`, and feature-local
+  `/api/me` endpoints remain available for migration compatibility.
+- Shared and Mini Games parse the new response without changing their broader
+  local auth models. Their production builds pass, and a live `amber` session
+  displays correctly in both frontends.
+- Rebuilt Shared backend, Shared frontend, and Mini Games frontend containers
+  run successfully through the production gateway.
 
 ### Phase 3 - Shared Vue host and visual system
 

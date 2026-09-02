@@ -60,7 +60,8 @@ export async function ensureAuthenticated() {
 			throw new Error(`Unable to verify login (${response.status} ${response.statusText})`);
 		}
 
-		user.value = { username: await response.json() };
+		const authenticatedUser = await response.json();
+		user.value = { username: authenticatedUser.name };
 		status.value = 'authenticated';
 		return true;
 	})().finally(() => {

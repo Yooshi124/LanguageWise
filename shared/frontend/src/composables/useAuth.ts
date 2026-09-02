@@ -2,6 +2,11 @@ import { computed, readonly, ref } from 'vue'
 
 type AuthStatus = 'loading' | 'authenticated' | 'signed-out' | 'error'
 
+interface AuthenticatedUserResponse {
+  id: number
+  name: string
+}
+
 const username = ref<string | null>(null)
 const status = ref<AuthStatus>('loading')
 let authRequest: Promise<boolean> | undefined
@@ -55,7 +60,8 @@ export async function ensureAuthenticated(): Promise<boolean> {
       throw new Error(`Unable to verify login (${response.status} ${response.statusText})`)
     }
 
-    username.value = (await response.json()) as string
+    const user = (await response.json()) as AuthenticatedUserResponse
+    username.value = user.name
     status.value = 'authenticated'
     return true
   })().finally(() => {

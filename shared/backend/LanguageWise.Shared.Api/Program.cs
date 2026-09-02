@@ -24,21 +24,31 @@ var rsa = RSA.Create();
 rsa.ImportFromPem(File.ReadAllText(signingKeyPath));
 var signingKey = new RsaSecurityKey(rsa);
 
-string? ValidateToken(string token)
+AuthenticatedUser? ValidateToken(string token)
 {
-    var tokenHandler = new JwtSecurityTokenHandler();
+    var tokenHandler = new JwtSecurityTokenHandler
+    {
+        MapInboundClaims = false
+    };
     var validationParams = new TokenValidationParameters
     {
         ValidateIssuer = false,
         ValidateAudience = false,
         ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ClockSkew = TimeSpan.Zero,
         IssuerSigningKey = signingKey
     };
 
     try
     {
         var claims = tokenHandler.ValidateToken(token, validationParams, out _);
-        return claims.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Name)?.Value;
+        var subject = claims.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+        var name = claims.FindFirst(JwtRegisteredClaimNames.Name)?.Value;
+
+        return int.TryParse(subject, out var id) && id > 0 && !string.IsNullOrWhiteSpace(name)
+            ? new AuthenticatedUser(id, name)
+            : null;
     }
     catch
     {
@@ -88,26 +98,16 @@ app.MapPost("/api/login", async (HttpContext ctx, UsersClient usersClient) =>
     return Results.Ok();
 });
 
-app.MapPost("/api/check-login", async (HttpContext ctx) =>
+app.MapPost("/api/check-login", (HttpContext ctx) =>
 {
-    CheckLoginRequest? request = null;
-    if (ctx.Request.HasJsonContentType() && ctx.Request.ContentLength is > 0)
-    {
-        request = await ctx.Request.ReadFromJsonAsync<CheckLoginRequest>();
-    }
-    else
-    {
-        request = new CheckLoginRequest(ctx.Request.Cookies["token"] ?? "");
-    }
-
-    var token = request?.token;
+    var token = ctx.Request.Cookies["token"];
     if (string.IsNullOrEmpty(token))
     {
         return Results.Unauthorized();
     }
 
-    var name = ValidateToken(token);
-    return name is not null ? Results.Ok(name) : Results.Unauthorized();
+    var user = ValidateToken(token);
+    return user is not null ? Results.Ok(user) : Results.Unauthorized();
 });
 
 app.MapPost("/api/logout", (HttpContext ctx) =>
@@ -119,11 +119,11 @@ app.MapPost("/api/logout", (HttpContext ctx) =>
 app.MapPost("/api/check-login/fragment", (HttpContext ctx) =>
 {
     var token = ctx.Request.Cookies["token"] ?? "";
-    var name = ValidateToken(token);
+    var user = ValidateToken(token);
 
-    return name is not null
+    return user is not null
         ? Results.Content(
-            $"""<span>Logged in as {WebUtility.HtmlEncode(name)}</span> <button hx-post="/api/logout" hx-on::after-request="window.location.reload()">Log out</button>""",
+            $"""<span>Logged in as {WebUtility.HtmlEncode(user.Name)}</span> <button hx-post="/api/logout" hx-on::after-request="window.location.reload()">Log out</button>""",
             "text/html")
         : Results.Content(
             """<a href="/login.html">Sign in</a>""",
@@ -136,4 +136,6 @@ internal sealed record LoginRequest(string Username, string Password);
 
 internal sealed record VerifyResponse(bool Authenticated, int UserId);
 
-internal sealed record CheckLoginRequest(string token);
+internal sealed record AuthenticatedUser(int Id, string Name);
+
+public sealed class SharedApiAssemblyMarker;
