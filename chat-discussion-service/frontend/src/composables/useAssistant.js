@@ -1,6 +1,7 @@
 import { readonly, ref } from 'vue';
 import {
     api,
+    ApiError,
     ASSISTANT_MAX_CONVERSATION,
     ASSISTANT_MAX_HISTORY
 } from '../api.js';
@@ -166,7 +167,9 @@ async function retry(context) {
 }
 
 function describe(failure) {
-    if (failure?.name !== 'ApiError') {
+    // A stream that broke part-way throws a plain Error carrying its own wording,
+    // so only a genuine ApiError is worth translating into one of ours.
+    if (!(failure instanceof ApiError)) {
         return failure instanceof Error
             ? failure.message
             : 'The assistant could not answer that. Please try again.';

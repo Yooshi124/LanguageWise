@@ -28,10 +28,8 @@ builder.Services.AddHttpClient<DiscussionClient>(client =>
 });
 
 // AI mode. The model runs in the shared 'ollama' container, so there is nothing
-// to configure beyond its address — but it is also the thing most likely to be
-// missing, and the endpoint reports that rather than failing obscurely.
-// Inside Docker this resolves to the shared model container by name, matching
-// how the database address above is supplied.
+// to configure beyond its address, which resolves by container name inside
+// Docker exactly as the database address above does.
 var ollamaServiceUrl = builder.Configuration["Services:Ollama"] ?? "http://localhost:11434";
 
 builder.Services
@@ -50,7 +48,7 @@ builder.Services.AddHttpClient<IAssistantCompletionClient, OllamaAssistantClient
     client.BaseAddress = new Uri(ollamaServiceUrl.TrimEnd('/') + "/");
 
     // No timeout: the response is a stream that stays open for as long as the
-    // model keeps writing, and a cold first token on a 12B model is slow.
+    // model keeps writing, and the first token after a cold start is slow.
     // HttpClient's default would abort a long answer part-way.
     client.Timeout = Timeout.InfiniteTimeSpan;
 });
