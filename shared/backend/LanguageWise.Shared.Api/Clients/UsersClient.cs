@@ -1,6 +1,5 @@
 
 using System.Net.Http.Json;
-using LanguageWise.Shared.Api.Models;
 
 namespace LanguageWise.Shared.Api.Clients;
 

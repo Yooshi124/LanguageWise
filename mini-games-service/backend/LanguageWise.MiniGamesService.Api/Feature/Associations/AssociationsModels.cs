@@ -8,7 +8,8 @@ public sealed record AssociationsState(
     int FailedAttempts,
     bool IsComplete,
     bool IsWon,
-    IReadOnlyList<AssociationGroup> RevealedGroups);
+    IReadOnlyList<AssociationGroup> RevealedGroups,
+    IReadOnlyDictionary<string, string>? Definitions = null);
 
 public sealed record AssociationGroup(string Summary, IReadOnlyList<string> Words);
 

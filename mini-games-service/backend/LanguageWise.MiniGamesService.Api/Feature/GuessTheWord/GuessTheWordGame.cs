@@ -34,6 +34,9 @@ public sealed class GuessTheWordGame
     public GuessTheWordState GetState() =>
         new(language, attempts, isComplete, isWon, guesses.ToArray(), isComplete ? answer : null, specialLetters);
 
+    /// <summary>The current answer, exposed so the round can be persisted when the game starts.</summary>
+    public string Solution => answer;
+
     public GuessTheWordGuessResult SubmitGuess(string guess)
     {
         var normalisedGuess = NormalizeWord(guess);

@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/backend/">
+    <Project Path="backend/LanguageWise.LeaderboardAnalyticsService.Api/LanguageWise.LeaderboardAnalyticsService.Api.csproj" />
+    <File Path="backend/Dockerfile" />
+  </Folder>
+  <Folder Name="/database/">
+    <Project Path="database/LanguageWise.LeaderboardAnalyticsService.Db/LanguageWise.LeaderboardAnalyticsService.Db.csproj" />
+    <File Path="database/Dockerfile" />
+    <File Path="database/LanguageWise.LeaderboardAnalyticsService.Db/sql/schema.sql" />
+    <File Path="database/LanguageWise.LeaderboardAnalyticsService.Db/sql/seed.sql" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/LanguageWise.LeaderboardAnalyticsService.Api.Tests/LanguageWise.LeaderboardAnalyticsService.Api.Tests.csproj" />
+  </Folder>
+</Solution>

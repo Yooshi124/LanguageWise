@@ -11,5 +11,5 @@ export const serviceNavigation = [
 	{ label: 'Discussion Forum', href: `${sharedFrontend}/chat-discussion/`, icon: 'discussion' },
 	{ label: 'Quizzes & Courses', href: `${sharedFrontend}/quizzes-and-courses/`, icon: 'courses' },
 	{ label: 'Quests & Achievements', href: `${sharedFrontend}/quests-and-achievements/`, icon: 'quests' },
-	{ label: 'Leaderboard & Analytics', icon: 'analytics', disabled: true },
+	{ label: 'Leaderboard & Analytics', href: `${sharedFrontend}/analytics/`, icon: 'analytics' },
 ];

@@ -2,8 +2,11 @@ using LanguageWise.MiniGamesService.Api.Clients;
 
 namespace LanguageWise.MiniGamesService.Api.Feature.Vocabulary;
 
+/// <summary>A playable vocabulary word with an optional definition shown once the game completes.</summary>
+public sealed record WordEntry(string Word, string? Definition);
+
 /// <summary>A named group of playable vocabulary words, typically the words from one completed lesson.</summary>
-public sealed record VocabularyGroup(string Title, IReadOnlyList<string> Words);
+public sealed record VocabularyGroup(string Title, IReadOnlyList<WordEntry> Words);
 
 /// <summary>Provides vocabulary words from course content based on the user's completed milestones.</summary>
 public interface IVocabularyProvider
@@ -13,7 +16,7 @@ public interface IVocabularyProvider
     /// started. Empty when the user has completed nothing. When <paramref name="courseCode"/> is
     /// given, only that course's vocabulary is included.
     /// </summary>
-    Task<IReadOnlyList<string>> GetVocabularyAsync(string? courseCode, string? accessToken, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<WordEntry>> GetVocabularyAsync(string? courseCode, string? accessToken, CancellationToken cancellationToken = default);
 
     /// <summary>Playable vocabulary grouped by the lesson it came from (completed lessons only).</summary>
     Task<IReadOnlyList<VocabularyGroup>> GetVocabularyGroupsAsync(string? courseCode, string? accessToken, CancellationToken cancellationToken = default);
@@ -98,10 +101,10 @@ public static class PlayableWords
 /// </summary>
 public sealed class CourseVocabularyProvider(CourseVocabularyClient courseClient, ILogger<CourseVocabularyProvider> logger) : IVocabularyProvider
 {
-    public async Task<IReadOnlyList<string>> GetVocabularyAsync(string? courseCode, string? accessToken, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<WordEntry>> GetVocabularyAsync(string? courseCode, string? accessToken, CancellationToken cancellationToken = default)
     {
         var groups = await GetVocabularyGroupsAsync(courseCode, accessToken, cancellationToken);
-        return groups.SelectMany(group => group.Words).Distinct().ToList();
+        return groups.SelectMany(group => group.Words).DistinctBy(entry => entry.Word).ToList();
     }
 
     public async Task<IReadOnlyList<VocabularyGroup>> GetVocabularyGroupsAsync(string? courseCode, string? accessToken, CancellationToken cancellationToken = default)
@@ -129,7 +132,12 @@ public sealed class CourseVocabularyProvider(CourseVocabularyClient courseClient
                     var words = PlayableWords.Extract(lesson.Vocabulary.Select(entry => entry.Word));
                     if (words.Count > 0)
                     {
-                        groups.Add(new VocabularyGroup($"{course.Title} — {lesson.Title}", words));
+                        // Definitions come from the course meaning; tokens split out of phrases
+                        // (e.g. GUTEN from "Guten Tag") reuse the phrase's meaning.
+                        var entries = words
+                            .Select(word => new WordEntry(word, FindMeaning(lesson.Vocabulary, word)))
+                            .ToArray();
+                        groups.Add(new VocabularyGroup($"{course.Title} — {lesson.Title}", entries));
                     }
                 }
             }
@@ -146,5 +154,20 @@ public sealed class CourseVocabularyProvider(CourseVocabularyClient courseClient
             logger.LogError(exception, "Error retrieving vocabulary from the courses service (course filter: {CourseCode})", courseCode ?? "none");
             return [];
         }
+    }
+
+    /// <summary>The meaning of the raw vocabulary entry containing this playable token, if any.</summary>
+    private static string? FindMeaning(IReadOnlyList<VocabularyWord> vocabulary, string word)
+    {
+        foreach (var entry in vocabulary)
+        {
+            var tokens = PlayableWords.Extract([entry.Word]);
+            if (tokens.Contains(word))
+            {
+                return string.IsNullOrWhiteSpace(entry.Meaning) ? null : entry.Meaning;
+            }
+        }
+
+        return null;
     }
 }

@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../backend/LanguageWise.Shared.Api/LanguageWise.Shared.Api.csproj" />
+    <ProjectReference Include="../../database/LanguageWise.Shared.Db/LanguageWise.Shared.Db.csproj" />
   </ItemGroup>
 
   <ItemGroup>
