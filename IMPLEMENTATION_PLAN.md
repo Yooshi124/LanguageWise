@@ -2,9 +2,9 @@
 
 ## Status
 
-Phases 0 through 6 are complete. `leaderboard-analytics-service` is present
+Phases 0 through 7 are complete. `leaderboard-analytics-service` is present
 with a frontend, backend, database, Docker wiring, and backend tests. The
-migration can proceed to the Phase 7 Q/A/N Vue and federation conversion.
+migration can proceed to the Phase 8 Leaderboard and Analytics remote.
 
 The completed system will contain one shared host application and five feature
 remotes:
@@ -615,6 +615,31 @@ Verified result:
 
 Exit criteria: profile, achievements, preferences, and notification history
 have feature parity in Vue and match the shared Quizzes-style UI.
+
+Verified result:
+
+- The static HTMX dashboard is replaced by a typed Vue 3/Vite remote exposing
+  a shell-free component and relative dashboard route.
+- Profile loading, username and achievement summaries, earned/progress states,
+  email and all preference controls, master-toggle disabling without value
+  loss, and save loading/success/validation/failure feedback are reactive.
+- Preferences are sent as JSON while the backend temporarily retains form
+  compatibility. Three component tests cover profile mapping, toggle value
+  retention, the JSON contract, save feedback, and Escape dialog closure.
+- Notifications are rendered newest-first with count and empty states. Details
+  open in an accessible native dialog and close by button, backdrop, or Escape.
+- The remote owns one explicit achievement fallback asset at
+  `/remotes/quests-achievements/achievement.svg`; all ten cards load it without
+  the previous root-relative image 404s.
+- All authored Q/A/N CSS is host-owned and feature-scoped. The remote emits no
+  CSS files, and the 390px production layout has no horizontal overflow.
+- Shared nginx serves `/remotes/quests-achievements/*`, retains the stable
+  `/quests-and-achievements/api/*` path, and routes feature pages to the SPA.
+- Stopping only the Q/A/N frontend displays the isolated Shared fallback;
+  restarting and selecting Retry restores the dashboard in the same document.
+- The legacy `app.js`, bundled HTMX library, static templates, duplicated shell,
+  and imperative DOM mutation are removed. Three frontend tests, 34 backend
+  tests, both production builds, Compose validation, and gateway checks pass.
 
 ### Phase 8 - Leaderboard and Analytics remote
 

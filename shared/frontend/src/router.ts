@@ -18,6 +18,11 @@ import {
   isChatDiscussionPath,
   registerChatDiscussionRoutes,
 } from './federation/chatDiscussionRemote'
+import {
+  isQuestsAchievementsPath,
+  questsAchievementsRoutesReady,
+  registerQuestsAchievementsRoutes,
+} from './federation/questsAchievementsRemote'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -48,7 +53,20 @@ router.beforeEach(async (to) => {
   if (!isQuizzesCoursesPath(to.path) || quizzesCoursesRoutesReady()) {
     if (!isMiniGamesPath(to.path) || miniGamesRoutesReady()) {
       if (!isChatDiscussionPath(to.path) || chatDiscussionRoutesReady()) {
-        return true
+        if (!isQuestsAchievementsPath(to.path) || questsAchievementsRoutesReady()) {
+          return true
+        }
+
+        if (to.name === 'quests-achievements-unavailable') {
+          return true
+        }
+
+        try {
+          await registerQuestsAchievementsRoutes(router)
+          return { path: to.path, query: to.query, hash: to.hash, replace: true }
+        } catch {
+          return { path: to.path, query: to.query, hash: to.hash, replace: true }
+        }
       }
 
       if (to.name === 'chat-discussion-unavailable') {
