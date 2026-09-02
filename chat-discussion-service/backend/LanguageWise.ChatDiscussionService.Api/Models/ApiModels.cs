@@ -40,7 +40,8 @@ public sealed record PostDetail(
     int CommentCount,
     int LikeCount,
     bool LikedByViewer,
-    IReadOnlyList<CommentSummary> Comments,
+    IReadOnlyList<AttachedImage> Images,
+    IReadOnlyList<CommentDetail> Comments,
     bool CommentsHasMore);
 
 public sealed record CommentSummary(
@@ -54,6 +55,19 @@ public sealed record CommentSummary(
     int LikeCount,
     bool LikedByViewer);
 
+/// <summary>A comment as the browser receives it: the database service's shape plus its images.</summary>
+public sealed record CommentDetail(
+    int Id,
+    int PostId,
+    int UserId,
+    string AuthorName,
+    string Content,
+    DateTime CreatedAt,
+    DateTime UpdatedAt,
+    int LikeCount,
+    bool LikedByViewer,
+    IReadOnlyList<AttachedImage> Images);
+
 public sealed record Comment(
     int Id,
     int PostId,
@@ -64,6 +78,31 @@ public sealed record Comment(
     DateTime UpdatedAt);
 
 public sealed record Like(int Id, int? PostId, int? CommentId, int UserId, DateTime CreatedAt);
+
+/// <summary>
+/// One image attached to a post or a comment. The bytes are not inlined: the client
+/// fetches them from /api/images/{id}/content.
+/// </summary>
+public sealed record AttachedImage(
+    int Id,
+    string FileName,
+    string ContentType,
+    long SizeBytes,
+    DateTime UploadedAt);
+
+/// <summary>The shape the database service returns, including its own storage key.</summary>
+public sealed record Image(
+    int Id,
+    int? PostId,
+    int? CommentId,
+    string StorageKey,
+    string FileName,
+    string ContentType,
+    long SizeBytes,
+    DateTime UploadedAt);
+
+/// <summary>Image bytes on their way back to the browser.</summary>
+public sealed record ImageContent(byte[] Bytes, string ContentType);
 
 public sealed record Forum(string Code, string DisplayName, int SortOrder);
 

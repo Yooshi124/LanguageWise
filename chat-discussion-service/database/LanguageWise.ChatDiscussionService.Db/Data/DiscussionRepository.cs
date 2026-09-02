@@ -30,6 +30,9 @@ public sealed class DiscussionRepository(string connectionString)
         FROM Posts p
         """;
 
+    private const string ImageSelect =
+        "SELECT Id, PostId, CommentId, StorageKey, FileName, ContentType, SizeBytes, UploadedAt FROM Images";
+
     private const string CommentSummarySelect = """
         SELECT c.Id, c.PostId, c.UserId, c.AuthorName, c.Content, c.CreatedAt, c.UpdatedAt,
                (SELECT COUNT(*) FROM Likes l WHERE l.CommentId = c.Id) AS LikeCount,
@@ -209,12 +212,65 @@ public sealed class DiscussionRepository(string connectionString)
 
     public bool UnlikeComment(int commentId, int userId) => RemoveLike("CommentId", commentId, userId);
 
-    public IReadOnlyList<Image> GetImages()
+    public IReadOnlyList<Image> GetPostImages(int postId) => GetImagesFor("PostId", postId);
+
+    public IReadOnlyList<Image> GetCommentImages(int commentId) => GetImagesFor("CommentId", commentId);
+
+    /// <summary>Every image on every comment of one post, in a single read.</summary>
+    public IReadOnlyList<Image> GetImagesForPostComments(int postId)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, PostId, CommentId, FileUrl, FileName, UploadedAt FROM Images ORDER BY Id;";
+        command.CommandText = $"""
+            {ImageSelect}
+            WHERE CommentId IN (SELECT Id FROM Comments WHERE PostId = $postId)
+            ORDER BY UploadedAt ASC, Id ASC;
+            """;
+        Add(command, "$postId", postId);
         return ReadAll(command, MapImage);
+    }
+
+    public Image? GetImage(int id)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"{ImageSelect} WHERE Id = $id;";
+        Add(command, "$id", id);
+        return ReadFirst(command, MapImage);
+    }
+
+    /// <summary>Returns null when the post does not exist, which SQLite reports as a foreign key violation.</summary>
+    public Image? CreatePostImage(int postId, ImageInput input) => CreateImage("PostId", postId, input);
+
+    /// <summary>Returns null when the comment does not exist.</summary>
+    public Image? CreateCommentImage(int commentId, ImageInput input) => CreateImage("CommentId", commentId, input);
+
+    public bool DeleteImage(int id) => Delete("Images", id);
+
+    /// <summary>
+    /// The storage keys that deleting this post would orphan, including those on its
+    /// comments. Callers read them first, because the cascade removes the rows naming them.
+    /// </summary>
+    public IReadOnlyList<string> GetPostStorageKeys(int postId)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT StorageKey FROM Images
+            WHERE PostId = $postId
+               OR CommentId IN (SELECT Id FROM Comments WHERE PostId = $postId);
+            """;
+        Add(command, "$postId", postId);
+        return ReadAll(command, reader => reader.GetString(0));
+    }
+
+    public IReadOnlyList<string> GetCommentStorageKeys(int commentId)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT StorageKey FROM Images WHERE CommentId = $commentId;";
+        Add(command, "$commentId", commentId);
+        return ReadAll(command, reader => reader.GetString(0));
     }
 
     internal static string? ToLikePattern(string? search)
@@ -277,6 +333,42 @@ public sealed class DiscussionRepository(string connectionString)
         return command.ExecuteNonQuery() > 0;
     }
 
+    private IReadOnlyList<Image> GetImagesFor(string column, int targetId)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"{ImageSelect} WHERE {column} = $targetId ORDER BY UploadedAt ASC, Id ASC;";
+        Add(command, "$targetId", targetId);
+        return ReadAll(command, MapImage);
+    }
+
+    // The column the caller does not name keeps its default of NULL, as the CHECK requires.
+    private Image? CreateImage(string column, int targetId, ImageInput input)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            INSERT INTO Images ({column}, StorageKey, FileName, ContentType, SizeBytes, UploadedAt)
+            VALUES ($targetId, $storageKey, $fileName, $contentType, $sizeBytes, $uploadedAt)
+            RETURNING Id, PostId, CommentId, StorageKey, FileName, ContentType, SizeBytes, UploadedAt;
+            """;
+        Add(command, "$targetId", targetId);
+        Add(command, "$storageKey", input.StorageKey);
+        Add(command, "$fileName", (input.FileName ?? string.Empty).Trim());
+        Add(command, "$contentType", (input.ContentType ?? string.Empty).Trim());
+        Add(command, "$sizeBytes", input.SizeBytes);
+        Add(command, "$uploadedAt", Timestamp());
+
+        try
+        {
+            return ReadFirst(command, MapImage);
+        }
+        catch (SqliteException exception) when (exception.SqliteExtendedErrorCode == ConstraintForeignKey)
+        {
+            return null;
+        }
+    }
+
     private bool Delete(string table, int id)
     {
         using var connection = Open();
@@ -334,7 +426,8 @@ public sealed class DiscussionRepository(string connectionString)
         reader.GetInt32(0),
         reader.IsDBNull(1) ? null : reader.GetInt32(1),
         reader.IsDBNull(2) ? null : reader.GetInt32(2),
-        reader.GetString(3), reader.GetString(4), ParseDate(reader.GetString(5)));
+        reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetInt64(6),
+        ParseDate(reader.GetString(7)));
 
     /// <summary>
     /// Foreign key enforcement is per-connection in SQLite, so it has to be switched on

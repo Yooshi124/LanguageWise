@@ -1,21 +1,26 @@
 <script setup>
 import { ref, watch } from 'vue';
+import ImagePicker from './ImagePicker.vue';
 import { useForums } from '../composables/useForums.js';
 
 const props = defineProps({
     initial: { type: Object, default: null },
+    /** Images already stored against the post, shown so they can be removed while editing. */
+    images: { type: Array, default: () => [] },
     submitLabel: { type: String, default: 'Publish' },
     busy: { type: Boolean, default: false },
     error: { type: String, default: '' }
 });
 
-const emit = defineEmits(['submit', 'cancel']);
+const emit = defineEmits(['submit', 'cancel', 'remove-image']);
 
 const { forums } = useForums();
 
 const title = ref('');
 const content = ref('');
 const category = ref('global');
+
+const pendingImages = ref([]);
 
 watch(
     () => props.initial,
@@ -31,7 +36,8 @@ function submit() {
     emit('submit', {
         title: title.value.trim(),
         content: content.value.trim(),
-        category: category.value
+        category: category.value,
+        images: pendingImages.value.map((entry) => entry.file)
     });
 }
 </script>
@@ -66,6 +72,13 @@ function submit() {
             <label class="cd-form__label" for="post-content">Content</label>
             <textarea id="post-content" v-model="content" class="cd-form__input" rows="10" required></textarea>
         </div>
+
+        <ImagePicker
+            v-model="pendingImages"
+            :existing="images"
+            :busy="busy"
+            @remove-existing="$emit('remove-image', $event)"
+        />
 
         <div class="lw-form-actions">
             <button type="submit" class="lw-command" :disabled="busy || !title.trim() || !content.trim()">

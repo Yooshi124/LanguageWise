@@ -56,6 +56,4 @@ INSERT INTO Likes (Id, UserId, PostId, CommentId, CreatedAt) VALUES
     (6, 1, NULL, 3,    '2026-02-12T12:15:00Z'),
     (7, 2, NULL, 4,    '2026-02-13T12:20:00Z');
 
-INSERT INTO Images (Id, PostId, CommentId, FileUrl, FileName, UploadedAt) VALUES
-    (1, 1,    NULL, '/uploads/welcome.png',    'welcome.png',    '2026-02-12T12:20:00Z'),
-    (2, NULL, 2,    '/uploads/flashcards.jpg', 'flashcards.jpg', '2026-02-12T12:25:00Z');
+-- Images are deliberately not seeded: a row is only meaningful beside the file it names.

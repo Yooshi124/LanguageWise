@@ -52,16 +52,20 @@ CREATE UNIQUE INDEX IF NOT EXISTS UX_Likes_User_Post
 CREATE UNIQUE INDEX IF NOT EXISTS UX_Likes_User_Comment
     ON Likes (UserId, CommentId) WHERE CommentId IS NOT NULL;
 
+-- One row per uploaded image. The bytes are not stored here: StorageKey names a file
+-- under the image store directory.
 CREATE TABLE IF NOT EXISTS Images (
     Id          INTEGER PRIMARY KEY AUTOINCREMENT,
     PostId      INTEGER,
     CommentId   INTEGER,
-    FileUrl     TEXT NOT NULL,
+    StorageKey  TEXT NOT NULL UNIQUE,
     FileName    TEXT NOT NULL,
+    ContentType TEXT NOT NULL,
+    SizeBytes   INTEGER NOT NULL,
     UploadedAt  TEXT NOT NULL,
     FOREIGN KEY (PostId) REFERENCES Posts (Id) ON DELETE CASCADE,
     FOREIGN KEY (CommentId) REFERENCES Comments (Id) ON DELETE CASCADE,
-    CHECK (PostId IS NOT NULL OR CommentId IS NOT NULL)
+    CHECK ((PostId IS NULL) <> (CommentId IS NULL))
 );
 
 CREATE INDEX IF NOT EXISTS IX_Images_PostId ON Images (PostId);

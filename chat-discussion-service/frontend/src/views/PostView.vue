@@ -2,12 +2,15 @@
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import CommentItem from '../components/CommentItem.vue';
+import ImageGallery from '../components/ImageGallery.vue';
+import ImagePicker from '../components/ImagePicker.vue';
 import LikeButton from '../components/LikeButton.vue';
 import StateBlock from '../components/StateBlock.vue';
 import { api, PAGE_SIZE } from '../api.js';
 import { formatDate } from '../format.js';
 import { useAuth } from '../composables/useAuth.js';
 import { useForums } from '../composables/useForums.js';
+import { uploadCommentImages } from '../composables/useImageUploads.js';
 
 const props = defineProps({ id: { type: [String, Number], required: true } });
 
@@ -25,6 +28,7 @@ const error = ref(null);
 const actionError = ref('');
 
 const draft = ref('');
+const draftImages = ref([]);
 const posting = ref(false);
 const loadingMore = ref(false);
 const deleting = ref(false);
@@ -79,16 +83,43 @@ async function addComment() {
     posting.value = true;
     actionError.value = '';
 
-    try {
-        const created = await api.createComment(postId.value, content);
+    let created;
 
-        comments.value = [...comments.value, { ...created, likeCount: 0, likedByViewer: false }];
-        commentCount.value += 1;
-        draft.value = '';
+    try {
+        created = await api.createComment(postId.value, content);
     } catch (failure) {
         reportAction(failure, 'Your comment could not be posted.');
-    } finally {
         posting.value = false;
+        return;
+    }
+
+    const chosen = draftImages.value;
+    const imageError = await uploadCommentImages(created.id, chosen.map((entry) => entry.file));
+
+    if (imageError) {
+        actionError.value = `Your comment was posted, but ${imageError}`;
+    }
+
+    comments.value = [
+        ...comments.value,
+        {
+            ...created,
+            likeCount: 0,
+            likedByViewer: false,
+            images: await storedImages(created.id)
+        }
+    ];
+    commentCount.value += 1;
+    draft.value = '';
+    draftImages.value = [];
+    posting.value = false;
+}
+
+async function storedImages(commentId) {
+    try {
+        return await api.commentImages(commentId);
+    } catch {
+        return [];
     }
 }
 
@@ -186,6 +217,8 @@ watch(postId, load, { immediate: true });
 
             <p class="cd-detail__body">{{ post.content }}</p>
 
+            <ImageGallery :images="post.images" />
+
             <footer class="cd-detail__actions">
                 <LikeButton
                     kind="post"
@@ -222,6 +255,9 @@ watch(postId, load, { immediate: true });
                     rows="3"
                     placeholder="Share what you think…"
                 ></textarea>
+
+                <ImagePicker v-model="draftImages" :busy="posting" />
+
                 <div class="lw-form-actions">
                     <button type="submit" class="lw-command" :disabled="posting || !draft.trim()">
                         {{ posting ? 'Posting…' : 'Post comment' }}

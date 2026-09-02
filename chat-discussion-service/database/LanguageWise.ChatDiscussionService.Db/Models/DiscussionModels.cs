@@ -64,6 +64,16 @@ public sealed record Like(int Id, int? PostId, int? CommentId, int UserId, DateT
 /// <summary>The target is taken from the route. A like is created or removed, never edited.</summary>
 public sealed record LikeInput(int UserId);
 
-public sealed record Image(int Id, int? PostId, int? CommentId, string FileUrl, string FileName, DateTime UploadedAt);
+/// <summary>The metadata of one uploaded image; <paramref name="StorageKey"/> names the file on disk.</summary>
+public sealed record Image(
+    int Id,
+    int? PostId,
+    int? CommentId,
+    string StorageKey,
+    string FileName,
+    string ContentType,
+    long SizeBytes,
+    DateTime UploadedAt);
 
-public sealed record ImageInput(int? PostId, int? CommentId, string? FileUrl, string? FileName);
+/// <summary>The owning post or comment is taken from the route, not the body.</summary>
+public sealed record ImageInput(string StorageKey, string? FileName, string? ContentType, long SizeBytes);

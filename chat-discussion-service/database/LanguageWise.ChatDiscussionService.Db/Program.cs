@@ -20,6 +20,10 @@ builder.Services.AddSingleton(serviceProvider => new DatabaseInitializer(
     serviceProvider.GetRequiredService<ILogger<DatabaseInitializer>>()));
 builder.Services.AddSingleton(new DiscussionRepository(connectionString));
 
+// Uploaded bytes sit beside the SQLite file, so one volume holds the whole dataset.
+var imagePath = builder.Configuration["Images:Path"] ?? "data/images";
+builder.Services.AddSingleton(new ImageStore(imagePath));
+
 var app = builder.Build();
 app.Services.GetRequiredService<DatabaseInitializer>().Initialise();
 
@@ -63,8 +67,20 @@ app.MapPost("/api/posts", (PostInput input, DiscussionRepository repository) =>
 app.MapPut("/api/posts/{id:int}", (int id, PostUpdate update, DiscussionRepository repository) =>
     repository.UpdatePost(id, update) is { } updated ? Results.Ok(updated) : Results.NotFound());
 
-app.MapDelete("/api/posts/{id:int}", (int id, DiscussionRepository repository) =>
-    repository.DeletePost(id) ? Results.NoContent() : Results.NotFound());
+// The rows below a post go with it by ON DELETE CASCADE, but the files those rows
+// named do not, so their keys are read before the cascade removes them.
+app.MapDelete("/api/posts/{id:int}", (int id, DiscussionRepository repository, ImageStore images) =>
+{
+    var orphaned = repository.GetPostStorageKeys(id);
+
+    if (!repository.DeletePost(id))
+    {
+        return Results.NotFound();
+    }
+
+    images.DeleteAll(orphaned);
+    return Results.NoContent();
+});
 
 // ---------------------------------------------------------------------------
 // Comments
@@ -94,8 +110,18 @@ app.MapGet("/api/comments/{id:int}", (int id, DiscussionRepository repository) =
 app.MapPut("/api/comments/{id:int}", (int id, CommentUpdate update, DiscussionRepository repository) =>
     repository.UpdateComment(id, update) is { } updated ? Results.Ok(updated) : Results.NotFound());
 
-app.MapDelete("/api/comments/{id:int}", (int id, DiscussionRepository repository) =>
-    repository.DeleteComment(id) ? Results.NoContent() : Results.NotFound());
+app.MapDelete("/api/comments/{id:int}", (int id, DiscussionRepository repository, ImageStore images) =>
+{
+    var orphaned = repository.GetCommentStorageKeys(id);
+
+    if (!repository.DeleteComment(id))
+    {
+        return Results.NotFound();
+    }
+
+    images.DeleteAll(orphaned);
+    return Results.NoContent();
+});
 
 // ---------------------------------------------------------------------------
 // Likes
@@ -120,12 +146,94 @@ app.MapDelete("/api/comments/{commentId:int}/likes", (int commentId, int userId,
     repository.UnlikeComment(commentId, userId) ? Results.NoContent() : Results.NotFound());
 
 // ---------------------------------------------------------------------------
-// Images: retained unchanged. Uploads are deliberately not implemented yet.
+// Images. The upload arrives as a raw body, not a multipart form: the backend has
+// already parsed the browser's form and validated the file.
 // ---------------------------------------------------------------------------
 
-app.MapGet("/api/images", (DiscussionRepository repository) => Results.Ok(repository.GetImages()));
+app.MapGet("/api/posts/{postId:int}/images", (int postId, DiscussionRepository repository) =>
+    Results.Ok(repository.GetPostImages(postId)));
+
+app.MapPost("/api/posts/{postId:int}/images", (
+    int postId,
+    HttpRequest request,
+    DiscussionRepository repository,
+    ImageStore images,
+    CancellationToken cancellationToken,
+    string? fileName = null) =>
+    Store(request, images, fileName, cancellationToken,
+        input => repository.CreatePostImage(postId, input)));
+
+app.MapGet("/api/posts/{postId:int}/comment-images", (int postId, DiscussionRepository repository) =>
+    Results.Ok(repository.GetImagesForPostComments(postId)));
+
+app.MapGet("/api/comments/{commentId:int}/images", (int commentId, DiscussionRepository repository) =>
+    Results.Ok(repository.GetCommentImages(commentId)));
+
+app.MapPost("/api/comments/{commentId:int}/images", (
+    int commentId,
+    HttpRequest request,
+    DiscussionRepository repository,
+    ImageStore images,
+    CancellationToken cancellationToken,
+    string? fileName = null) =>
+    Store(request, images, fileName, cancellationToken,
+        input => repository.CreateCommentImage(commentId, input)));
+
+app.MapGet("/api/images/{id:int}", (int id, DiscussionRepository repository) =>
+    repository.GetImage(id) is { } image ? Results.Ok(image) : Results.NotFound());
+
+app.MapGet("/api/images/{id:int}/content", (int id, DiscussionRepository repository, ImageStore images) =>
+{
+    if (repository.GetImage(id) is not { } image)
+    {
+        return Results.NotFound();
+    }
+
+    var content = images.Open(image.StorageKey);
+    return content is null ? Results.NotFound() : Results.Stream(content, image.ContentType);
+});
+
+app.MapDelete("/api/images/{id:int}", (int id, DiscussionRepository repository, ImageStore images) =>
+{
+    if (repository.GetImage(id) is not { } image)
+    {
+        return Results.NotFound();
+    }
+
+    if (!repository.DeleteImage(id))
+    {
+        return Results.NotFound();
+    }
+
+    images.Delete(image.StorageKey);
+    return Results.NoContent();
+});
 
 app.Run();
+
+// The file is written before the row that names it, so a row never points at bytes
+// that are not there. If the post or comment has since been deleted the insert fails
+// on its foreign key, and the file just written is removed again.
+static async Task<IResult> Store(
+    HttpRequest request,
+    ImageStore images,
+    string? fileName,
+    CancellationToken cancellationToken,
+    Func<ImageInput, Image?> insert)
+{
+    var storageKey = ImageStore.NewKey();
+    var sizeBytes = await images.SaveAsync(storageKey, request.Body, cancellationToken);
+
+    var created = insert(new ImageInput(storageKey, fileName, request.ContentType, sizeBytes));
+
+    if (created is null)
+    {
+        images.Delete(storageKey);
+        return Results.NotFound();
+    }
+
+    return Results.Created($"/api/images/{created.Id}", created);
+}
 
 static IResult LikeResult(LikeOutcome outcome) => outcome switch
 {

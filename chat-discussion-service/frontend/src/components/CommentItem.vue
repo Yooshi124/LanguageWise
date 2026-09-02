@@ -1,8 +1,11 @@
 <script setup>
 import { ref } from 'vue';
+import ImageGallery from './ImageGallery.vue';
+import ImagePicker from './ImagePicker.vue';
 import LikeButton from './LikeButton.vue';
 import { api } from '../api.js';
 import { formatDate } from '../format.js';
+import { uploadCommentImages } from '../composables/useImageUploads.js';
 
 const props = defineProps({
     comment: { type: Object, required: true },
@@ -14,9 +17,13 @@ const emit = defineEmits(['update', 'deleted', 'error']);
 const editing = ref(false);
 const draft = ref('');
 const saving = ref(false);
+const pendingImages = ref([]);
+const imageError = ref('');
 
 function startEditing() {
     draft.value = props.comment.content;
+    pendingImages.value = [];
+    imageError.value = '';
     editing.value = true;
 }
 
@@ -28,15 +35,60 @@ async function save() {
     }
 
     saving.value = true;
+    imageError.value = '';
 
     try {
         const updated = await api.updateComment(props.comment.id, content);
-        emit('update', { ...props.comment, ...updated });
-        editing.value = false;
+
+        // The text is saved; the images are their own resources and go up after it.
+        const failure = await uploadCommentImages(props.comment.id, pendingImages.value.map((entry) => entry.file));
+
+        if (failure) {
+            imageError.value = `Your comment was saved, but ${failure}`;
+        }
+
+        emit('update', { ...props.comment, ...updated, images: await currentImages() });
+
+        if (!failure) {
+            editing.value = false;
+        }
+
+        pendingImages.value = [];
     } catch (error) {
         emit('error', error);
     } finally {
         saving.value = false;
+    }
+}
+
+// Removing an image takes effect at once: it is its own resource, not a field of
+// the comment that Save could carry with it.
+async function removeImage(image) {
+    if (!window.confirm(`Remove ${image.fileName}? This cannot be undone.`) || saving.value) {
+        return;
+    }
+
+    saving.value = true;
+
+    try {
+        await api.deleteImage(image.id);
+        emit('update', {
+            ...props.comment,
+            images: props.comment.images.filter((stored) => stored.id !== image.id)
+        });
+    } catch (error) {
+        emit('error', error);
+    } finally {
+        saving.value = false;
+    }
+}
+
+/** Re-read rather than guess, so a partial upload is reflected exactly. */
+async function currentImages() {
+    try {
+        return await api.commentImages(props.comment.id);
+    } catch {
+        return props.comment.images ?? [];
     }
 }
 
@@ -69,6 +121,16 @@ function onLike({ liked, count }) {
 
         <form v-if="editing" class="cd-comment__edit" @submit.prevent="save">
             <textarea v-model="draft" class="cd-comment__input" rows="3" required></textarea>
+
+            <p v-if="imageError" class="cd-comment__error">{{ imageError }}</p>
+
+            <ImagePicker
+                v-model="pendingImages"
+                :existing="comment.images ?? []"
+                :busy="saving"
+                @remove-existing="removeImage"
+            />
+
             <div class="lw-form-actions">
                 <button type="submit" class="lw-command" :disabled="saving || !draft.trim()">
                     {{ saving ? 'Saving…' : 'Save' }}
@@ -79,6 +141,8 @@ function onLike({ liked, count }) {
 
         <template v-else>
             <p class="cd-comment__body">{{ comment.content }}</p>
+
+            <ImageGallery :images="comment.images ?? []" />
 
             <div class="cd-comment__actions">
                 <LikeButton
@@ -144,6 +208,12 @@ function onLike({ liked, count }) {
     font-size: 1rem;
     background: var(--lw-colour-surface);
     color: var(--lw-colour-ink);
+}
+
+.cd-comment__error {
+    margin: 0.5rem 0;
+    color: var(--lw-colour-danger);
+    font-size: 0.85rem;
 }
 
 .cd-comment__link {
