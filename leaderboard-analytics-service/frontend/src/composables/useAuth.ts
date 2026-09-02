@@ -8,7 +8,6 @@ export interface AuthenticatedUser {
 type AuthStatus = 'loading' | 'authenticated' | 'signed-out' | 'error'
 
 const apiBase = `${import.meta.env.BASE_URL}api`
-const sharedFrontend = `${window.location.protocol}//${window.location.hostname}:3000`
 
 const user = ref<AuthenticatedUser | null>(null)
 const status = ref<AuthStatus>('loading')
@@ -19,9 +18,7 @@ function currentReturnUrl() {
 }
 
 export function loginUrl() {
-  const url = new URL('/login.html')
-  url.searchParams.set('returnUrl', currentReturnUrl())
-  return url.toString()
+  return `/login.html?returnUrl=${encodeURIComponent(currentReturnUrl())}`
 }
 
 export function markSignedOut() {

@@ -297,6 +297,9 @@ services:
       context: ./leaderboard-analytics-service/backend
     environment:
       Services__Database: http://leaderboard-analytics-service-db:8080
+      Auth__VerificationKeyPath: /run/secrets/signing_public_key
+    secrets:
+      - signing_public_key
     ports:
       - "127.0.0.1:5005:8080"
     networks: [languagewise]
