@@ -9,6 +9,7 @@ import App from './App.vue'
 import router from './router'
 import './styles.css'
 import './features/quizzes-courses.css'
+import './features/mini-games.css'
 
 const vuetify = createVuetify({
   components,

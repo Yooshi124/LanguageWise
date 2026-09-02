@@ -8,6 +8,11 @@ import {
   quizzesCoursesRoutesReady,
   registerQuizzesCoursesRoutes,
 } from './federation/quizzesCoursesRemote'
+import {
+  isMiniGamesPath,
+  miniGamesRoutesReady,
+  registerMiniGamesRoutes,
+} from './federation/miniGamesRemote'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -36,7 +41,20 @@ router.beforeEach(async (to) => {
   }
 
   if (!isQuizzesCoursesPath(to.path) || quizzesCoursesRoutesReady()) {
-    return true
+    if (!isMiniGamesPath(to.path) || miniGamesRoutesReady()) {
+      return true
+    }
+
+    if (to.name === 'mini-games-unavailable') {
+      return true
+    }
+
+    try {
+      await registerMiniGamesRoutes(router)
+      return { path: to.fullPath, replace: true }
+    } catch {
+      return { path: to.fullPath, replace: true }
+    }
   }
 
   if (to.name === 'quizzes-courses-unavailable') {

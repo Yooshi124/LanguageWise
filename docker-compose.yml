@@ -115,6 +115,9 @@ services:
     environment:
       Services__Database: http://mini-games-service-db:8080
       Services__Courses: http://quizzes-courses-service-backend:8080
+      Auth__VerificationKeyPath: /run/secrets/signing_public_key
+    secrets:
+      - signing_public_key
     ports:
       - "127.0.0.1:5001:8080"
     networks: [languagewise]

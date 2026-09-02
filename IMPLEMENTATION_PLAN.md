@@ -2,9 +2,9 @@
 
 ## Status
 
-Phases 0 through 4 are complete. `leaderboard-analytics-service` is present
+Phases 0 through 5 are complete. `leaderboard-analytics-service` is present
 with a frontend, backend, database, Docker wiring, and backend tests. The
-migration can proceed to the Phase 5 Mini Games remote.
+migration can proceed to the Phase 6 Discussion Forum remote.
 
 The completed system will contain one shared host application and five feature
 remotes:
@@ -510,6 +510,36 @@ a federated component and establish the template for other remotes.
 
 Exit criteria: direct game links, gameplay, generated content, and completion
 statistics behave as before inside the host shell.
+
+#### Verified Phase 5 result
+
+- Mini Games exposes a shell-free `MiniGamesComponent` and four relative route
+  records. Home and all three game deep links render through the Shared router
+  without a document reload.
+- The backend validates the shared RS256 JWT from the HttpOnly cookie or bearer
+  header, requires a positive numeric `sub`, and derives every game/session and
+  completion-statistics user ID from that claim. Legacy caller-supplied
+  `userId` query parameters are explicitly rejected.
+- Seven HTTP integration cases cover missing/invalid authentication, invalid
+  subjects, valid subject access, and identity-override rejection. The complete
+  Mini Games backend suite passes with 46 tests.
+- An idempotent development seed marks German lessons complete for the primary
+  `amber` account. Guess the Word, Word Search, and Associations all initialize
+  successfully in content mode without OpenRouter, while AI availability
+  remains an independent optional state.
+- Browser traffic uses `/mini-games/api/*` and `/remotes/mini-games/*`; game
+  requests contain no user ID and the remote loads no CSS. All former SFC CSS
+  is host-owned with per-component scopes, including a separate global scope
+  only for the teleported definitions dialog.
+- Home and all three games render without horizontal overflow at 1440 x 900 and
+  390 x 844. The Guess the Word alphabet uses flexible mobile columns.
+- Stopping the Mini Games frontend displays the isolated host fallback on a
+  deep link. Restarting the remote and selecting Retry restores that route in
+  the same document through a cache-busted entry.
+- The local auth composable, duplicated sidebar/navigation, manual pathname
+  router, global remote stylesheet, and obsolete shell component are removed.
+- Mini Games and Shared production builds, Shared's eight frontend tests,
+  Docker Compose validation, and all affected service health checks pass.
 
 ### Phase 6 - Discussion Forum remote
 

@@ -1,9 +1,9 @@
 <template>
-	<main class="game-page">
-		<a class="back-button" :href="gameHome" aria-label="Return to the main game page">
+	<main class="game-page word-search-game">
+		<RouterLink class="back-button" :to="gameHome" aria-label="Return to the main game page">
 			<AppIcon name="arrow-left" :size="18" />
 			Back to games
-		</a>
+		</RouterLink>
 		<GameHelp :steps="howToPlay" />
 		<header class="game-header">
 			<p class="eyebrow">Find the connection</p>
@@ -82,7 +82,7 @@ import WordDefinitions from './components/WordDefinitions.vue';
 import GeneratingState from './components/GeneratingState.vue';
 
 // App base path ('/mini-games/' through the gateway, '/' in local dev).
-const gameHome = `${import.meta.env.BASE_URL}game`;
+const gameHome = { name: 'mini-games-home' };
 
 const howToPlay = [
 	'Words from your course vocabulary are hidden as a chain of connected letters in the grid.',
@@ -296,45 +296,3 @@ onMounted(async () => {
 });
 onUnmounted(() => window.removeEventListener('pointerup', finishSelection));
 </script>
-
-<style scoped>
-.game-page { position: relative; min-height: 100vh; padding: 2rem; font-family: var(--lw-font, system-ui, sans-serif); color: #1c2b45; background: radial-gradient(circle at 50% 20%, #fffaf0 0, #fff1dc 45%, #f4e4cb 100%); }
-.game-header { margin: 2rem auto; text-align: center; }
-.eyebrow, .hint-label { color: #bd6a25; font-size: 0.75rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
-.eyebrow { margin: 0 0 0.5rem; }
-h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.25rem); }
-.game-header p:last-child { margin: 0.65rem 0 0; color: #806f5d; }
-.game-layout { display: flex; align-items: center; justify-content: center; gap: clamp(1.5rem, 5vw, 4rem); margin: 0 auto; }
-.board-shell { padding: 1.25rem; background: rgba(255, 255, 255, 0.7); border: 1px solid rgba(189, 106, 37, 0.24); border-radius: 10px; box-shadow: 0 12px 32px rgba(118, 77, 31, 0.12); }
-.empty-state { text-align: center; }
-.empty-state__message { margin: 1rem 0; color: #65709d; font-weight: 600; line-height: 1.6; }
-.scoreline { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 0.75rem; color: #806f5d; }
-.scoreline strong { color: #1c2b45; font-size: 1.5rem; }
-.game-grid { position: relative; display: grid; grid-template-columns: repeat(var(--columns), minmax(2rem, 1fr)); grid-template-rows: repeat(var(--rows), minmax(2rem, 1fr)); gap: 0.15rem; width: min(70vw, 30rem); aspect-ratio: 6 / 8; touch-action: none; user-select: none; }
-.path-layer { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-.word-path { fill: none; stroke: #3d8b72; stroke-linecap: round; stroke-linejoin: round; stroke-width: 0.62; opacity: 0.62; }
-.path-featured { stroke: #4c45a5; opacity: 0.95; }
-.path-missed { stroke: #c85b70; opacity: 0.7; }
-.grid-letter { position: relative; z-index: 1; display: grid; place-items: center; aspect-ratio: 1; padding: 0; border: 0; border-radius: 50%; color: #1c2b45; background: transparent; font: inherit; font-size: clamp(1rem, 3vw, 1.6rem); font-weight: 800; cursor: pointer; }
-.grid-letter:hover, .grid-letter.selected { color: #fff; background: #bd6a25; }
-.grid-letter.found { color: #fff; background: #3d8b72; }
-.grid-letter.foundFeatured { background: #4c45a5; }
-.grid-letter.hinted { box-shadow: inset 0 0 0 2px #bd6a25; }
-.grid-letter.missed { color: #fff; background: #c85b70; }
-.grid-letter.pulsing { color: #fff; background: #bd6a25; transform: translateY(-0.2rem); transition: transform 0.18s ease, background 0.18s ease; }
-.current-word, .game-message { min-height: 1.5rem; margin: 0.75rem 0 0; text-align: center; font-weight: 700; }
-.game-message.is-error { color: #a13d31; }
-.game-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
-.game-actions button { padding: 0.55rem 0.8rem; color: #1c2b45; border: 1px solid #d9b783; border-radius: 6px; background: #fff; font: inherit; font-weight: 700; cursor: pointer; }
-.game-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
-.hint-box { width: min(22vw, 13rem); min-width: 9rem; padding: 1rem; border: 1px solid #d9b783; border-radius: 10px; background: rgba(255, 255, 255, 0.82); box-shadow: 0 8px 20px rgba(118, 77, 31, 0.1); }
-.hint-label { font-size: 0.72rem; }
-.hint-box p { margin: 0.6rem 0; line-height: 1.45; }
-.hint-box ul { padding-left: 1.2rem; margin-bottom: 0; }
-.hint-box li { margin: 0.2rem 0; }
-.hint-box .foundWord { color: #3d8b72; font-weight: 800; }
-.hint-box .missedWord { color: #c85b70; font-weight: 800; }
-.back-button { position: absolute; top: 2rem; left: 2rem; display: inline-flex; align-items: center; gap: 0.35rem; margin-left: -0.85rem; padding: 0.45rem 0.85rem; border: none; border-radius: 6px; color: #1c2b45; background: transparent; font-weight: 600; text-decoration: none; }
-.back-button:hover, .back-button:focus-visible { background: rgba(180, 83, 9, 0.1); outline: 3px solid rgba(180, 83, 9, 0.18); }
-@media (max-width: 40rem) { .game-layout { flex-direction: column; } .game-grid { width: min(88vw, 30rem); } .hint-box { width: min(70vw, 16rem); } }
-</style>

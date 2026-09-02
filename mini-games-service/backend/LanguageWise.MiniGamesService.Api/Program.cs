@@ -1,3 +1,5 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Cryptography;
 using LanguageWise.MiniGamesService.Api.Clients;
 using LanguageWise.MiniGamesService.Api.Feature.Associations;
 using LanguageWise.MiniGamesService.Api.Feature.GuessTheWord;
@@ -6,6 +8,9 @@ using LanguageWise.MiniGamesService.Api.Feature.WordSearch;
 using LanguageWise.MiniGamesService.Api.Models;
 using LanguageWise.MiniGamesService.Api.Options;
 using LanguageWise.MiniGamesService.Api.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.Extensions.Options;
 
 const string ServiceName = "mini-games-service-backend";
@@ -61,9 +66,72 @@ builder.Services.AddSingleton<IVocabularyProvider>(serviceProvider =>
 // Register the game session manager to handle concurrent games
 builder.Services.AddSingleton<GameSessionManager>();
 
+var verificationKeyPath = builder.Configuration["Auth:VerificationKeyPath"] ?? "/run/secrets/signing_public_key";
+var rsa = RSA.Create();
+rsa.ImportFromPem(File.ReadAllText(verificationKeyPath));
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new RsaSecurityKey(rsa),
+            ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
+            NameClaimType = JwtRegisteredClaimNames.Name,
+            ClockSkew = TimeSpan.Zero
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                if (string.IsNullOrEmpty(context.Token))
+                {
+                    context.Token = context.Request.Cookies["token"];
+                }
+
+                return Task.CompletedTask;
+            }
+        };
+    });
+
+builder.Services.AddAuthorizationBuilder()
+    .SetFallbackPolicy(new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .RequireAssertion(context =>
+            int.TryParse(
+                context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value,
+                out var userId) && userId > 0)
+        .Build());
+
 var app = builder.Build();
 
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = ServiceName }));
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api") &&
+        context.Request.Query.ContainsKey("userId"))
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await context.Response.WriteAsJsonAsync(new
+        {
+            error = "userId is derived from the authenticated session and must not be supplied"
+        });
+        return;
+    }
+
+    await next(context);
+});
+
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = ServiceName }))
+    .AllowAnonymous();
 
 // Languages the user has unlocked vocabulary in (started courses with completed lessons).
 // The frontend offers these as the per-user language selection for the games.
@@ -102,15 +170,12 @@ app.MapGet("/api/game-modes", async (HttpContext context, CourseVocabularyClient
 
 // Successful completions per game type for the user, optionally scoped to one course
 // (the language selected on the game page). Powers the completion tracker on the frontend.
-app.MapGet("/api/stats/completions", async (int? userId, string? courseCode, GamesDatabaseClient databaseClient, CancellationToken cancellationToken) =>
+app.MapGet("/api/stats/completions", async (HttpContext context, string? courseCode, GamesDatabaseClient databaseClient, CancellationToken cancellationToken) =>
 {
-    if (userId is null)
-    {
-        return Results.BadRequest(new { error = "userId query parameter is required" });
-    }
+    var userId = GetUserId(context);
 
-    var games = await databaseClient.GetGamesByUserIdAsync(userId.Value, cancellationToken);
-    var attempts = await databaseClient.GetGameAttemptsByUserIdAsync(userId.Value, cancellationToken);
+    var games = await databaseClient.GetGamesByUserIdAsync(userId, cancellationToken);
+    var attempts = await databaseClient.GetGameAttemptsByUserIdAsync(userId, cancellationToken);
 
     var gameTypesById = games
         .Where(game => courseCode is null || string.Equals(game.CourseCode, courseCode, StringComparison.OrdinalIgnoreCase))
@@ -156,27 +221,23 @@ static string ResolveMode(string? mode, bool contentAvailable) =>
         : contentAvailable ? GameModes.Content : GameModes.Ai;
 
 // Guess the Word endpoints
-app.MapGet("/api/guess-the-word", (int? userId, GameSessionManager gameManager) =>
+app.MapGet("/api/guess-the-word", (HttpContext context, GameSessionManager gameManager) =>
 {
-    if (userId is null)
-    {
-        return Results.BadRequest(new { error = "userId query parameter is required" });
-    }
-    var state = gameManager.GetGuessTheWordGameState(userId.Value);
+    var state = gameManager.GetGuessTheWordGameState(GetUserId(context));
     return state is not null ? Results.Ok(state) : Results.NotFound(new { error = "No active game. Use POST /api/guess-the-word/init to start one" });
 });
 
-app.MapPost("/api/guess-the-word/init", async (int userId, HttpContext context, GameSessionManager gameManager, CourseVocabularyClient courseClient, string? courseCode, string? mode, string? language, CancellationToken cancellationToken) =>
+app.MapPost("/api/guess-the-word/init", async (HttpContext context, GameSessionManager gameManager, CourseVocabularyClient courseClient, string? courseCode, string? mode, string? language, CancellationToken cancellationToken) =>
 {
     var resolvedMode = ResolveMode(mode, await IsContentAvailableAsync(courseClient, context, cancellationToken));
-    return await InitializeGameAsync(() => gameManager.StartGuessTheWordGameAsync(userId, courseCode, GetAccessToken(context), resolvedMode, language));
+    return await InitializeGameAsync(() => gameManager.StartGuessTheWordGameAsync(GetUserId(context), courseCode, GetAccessToken(context), resolvedMode, language));
 });
 
-app.MapPost("/api/guess-the-word/guess", async (int userId, GuessTheWordGuessRequest request, GameSessionManager gameManager) =>
+app.MapPost("/api/guess-the-word/guess", async (HttpContext context, GuessTheWordGuessRequest request, GameSessionManager gameManager) =>
 {
     try
     {
-        var result = await gameManager.SubmitGuessTheWordGuessAsync(userId, request.Guess);
+        var result = await gameManager.SubmitGuessTheWordGuessAsync(GetUserId(context), request.Guess);
         return Results.Ok(result);
     }
     catch (ArgumentException exception)
@@ -192,34 +253,30 @@ app.MapPost("/api/guess-the-word/guess", async (int userId, GuessTheWordGuessReq
     }
 });
 
-app.MapPost("/api/guess-the-word/reset", (int userId, GameSessionManager gameManager) =>
+app.MapPost("/api/guess-the-word/reset", (HttpContext context, GameSessionManager gameManager) =>
 {
-    gameManager.ResetGuessTheWordGame(userId);
+    gameManager.ResetGuessTheWordGame(GetUserId(context));
     return Results.NoContent();
 });
 
 // Word Search endpoints
-app.MapGet("/api/word-search", (int? userId, GameSessionManager gameManager) =>
+app.MapGet("/api/word-search", (HttpContext context, GameSessionManager gameManager) =>
 {
-    if (userId is null)
-    {
-        return Results.BadRequest(new { error = "userId query parameter is required" });
-    }
-    var state = gameManager.GetWordSearchGameState(userId.Value);
+    var state = gameManager.GetWordSearchGameState(GetUserId(context));
     return state is not null ? Results.Ok(state) : Results.NotFound(new { error = "No active game. Use POST /api/word-search/init to start one" });
 });
 
-app.MapPost("/api/word-search/init", async (int userId, HttpContext context, GameSessionManager gameManager, CourseVocabularyClient courseClient, string? courseCode, string? mode, string? language, CancellationToken cancellationToken) =>
+app.MapPost("/api/word-search/init", async (HttpContext context, GameSessionManager gameManager, CourseVocabularyClient courseClient, string? courseCode, string? mode, string? language, CancellationToken cancellationToken) =>
 {
     var resolvedMode = ResolveMode(mode, await IsContentAvailableAsync(courseClient, context, cancellationToken));
-    return await InitializeGameAsync(() => gameManager.StartWordSearchGameAsync(userId, courseCode, GetAccessToken(context), resolvedMode, language));
+    return await InitializeGameAsync(() => gameManager.StartWordSearchGameAsync(GetUserId(context), courseCode, GetAccessToken(context), resolvedMode, language));
 });
 
-app.MapPost("/api/word-search/guess", async (int userId, WordSearchGuessRequest request, GameSessionManager gameManager) =>
+app.MapPost("/api/word-search/guess", async (HttpContext context, WordSearchGuessRequest request, GameSessionManager gameManager) =>
 {
     try
     {
-        var result = await gameManager.SubmitWordSearchWordAsync(userId, request.Word, request.Indices);
+        var result = await gameManager.SubmitWordSearchWordAsync(GetUserId(context), request.Word, request.Indices);
         return Results.Ok(result);
     }
     catch (ArgumentException exception)
@@ -232,11 +289,11 @@ app.MapPost("/api/word-search/guess", async (int userId, WordSearchGuessRequest 
     }
 });
 
-app.MapPost("/api/word-search/hint", (int userId, GameSessionManager gameManager) =>
+app.MapPost("/api/word-search/hint", (HttpContext context, GameSessionManager gameManager) =>
 {
     try
     {
-        var result = gameManager.UseWordSearchHint(userId);
+        var result = gameManager.UseWordSearchHint(GetUserId(context));
         return Results.Ok(result);
     }
     catch (InvalidOperationException exception)
@@ -245,11 +302,11 @@ app.MapPost("/api/word-search/hint", (int userId, GameSessionManager gameManager
     }
 });
 
-app.MapPost("/api/word-search/give-up", async (int userId, GameSessionManager gameManager) =>
+app.MapPost("/api/word-search/give-up", async (HttpContext context, GameSessionManager gameManager) =>
 {
     try
     {
-        var result = await gameManager.GiveUpWordSearchAsync(userId);
+        var result = await gameManager.GiveUpWordSearchAsync(GetUserId(context));
         return Results.Ok(result);
     }
     catch (InvalidOperationException exception)
@@ -258,34 +315,30 @@ app.MapPost("/api/word-search/give-up", async (int userId, GameSessionManager ga
     }
 });
 
-app.MapPost("/api/word-search/reset", (int userId, GameSessionManager gameManager) =>
+app.MapPost("/api/word-search/reset", (HttpContext context, GameSessionManager gameManager) =>
 {
-    gameManager.ResetWordSearchGame(userId);
+    gameManager.ResetWordSearchGame(GetUserId(context));
     return Results.NoContent();
 });
 
 // Associations endpoints
-app.MapGet("/api/associations", (int? userId, GameSessionManager gameManager) =>
+app.MapGet("/api/associations", (HttpContext context, GameSessionManager gameManager) =>
 {
-    if (userId is null)
-    {
-        return Results.BadRequest(new { error = "userId query parameter is required" });
-    }
-    var state = gameManager.GetAssociationsGameState(userId.Value);
+    var state = gameManager.GetAssociationsGameState(GetUserId(context));
     return state is not null ? Results.Ok(state) : Results.NotFound(new { error = "No active game. Use POST /api/associations/init to start one" });
 });
 
-app.MapPost("/api/associations/init", async (int userId, HttpContext context, GameSessionManager gameManager, CourseVocabularyClient courseClient, string? courseCode, string? mode, string? language, CancellationToken cancellationToken) =>
+app.MapPost("/api/associations/init", async (HttpContext context, GameSessionManager gameManager, CourseVocabularyClient courseClient, string? courseCode, string? mode, string? language, CancellationToken cancellationToken) =>
 {
     var resolvedMode = ResolveMode(mode, await IsContentAvailableAsync(courseClient, context, cancellationToken));
-    return await InitializeGameAsync(() => gameManager.StartAssociationsGameAsync(userId, courseCode, GetAccessToken(context), resolvedMode, language));
+    return await InitializeGameAsync(() => gameManager.StartAssociationsGameAsync(GetUserId(context), courseCode, GetAccessToken(context), resolvedMode, language));
 });
 
-app.MapPost("/api/associations/guess", async (int userId, AssociationsGuessRequest request, GameSessionManager gameManager) =>
+app.MapPost("/api/associations/guess", async (HttpContext context, AssociationsGuessRequest request, GameSessionManager gameManager) =>
 {
     try
     {
-        var result = await gameManager.SubmitAssociationsGuessAsync(userId, request.Words);
+        var result = await gameManager.SubmitAssociationsGuessAsync(GetUserId(context), request.Words);
         return Results.Ok(result);
     }
     catch (ArgumentException exception)
@@ -298,9 +351,9 @@ app.MapPost("/api/associations/guess", async (int userId, AssociationsGuessReque
     }
 });
 
-app.MapPost("/api/associations/reset", (int userId, GameSessionManager gameManager) =>
+app.MapPost("/api/associations/reset", (HttpContext context, GameSessionManager gameManager) =>
 {
-    gameManager.ResetAssociationsGame(userId);
+    gameManager.ResetAssociationsGame(GetUserId(context));
     return Results.NoContent();
 });
 
@@ -322,3 +375,8 @@ static string? GetAccessToken(HttpContext context)
         ? header["Bearer ".Length..].Trim()
         : context.Request.Cookies["token"];
 }
+
+static int GetUserId(HttpContext context) =>
+    int.Parse(context.User.FindFirst(JwtRegisteredClaimNames.Sub)!.Value);
+
+public sealed class MiniGamesApiAssemblyMarker;
