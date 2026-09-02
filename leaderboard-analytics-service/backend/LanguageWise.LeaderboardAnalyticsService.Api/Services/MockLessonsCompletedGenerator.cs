@@ -15,6 +15,12 @@ internal static class MockLessonsCompletedGenerator
         ("pl", "Polish"),
     ];
 
+    public static LessonsCompletedResponse GenerateForLast30Days(int userId)
+    {
+        var to = DateOnly.FromDateTime(DateTime.UtcNow);
+        return Generate(userId, to.AddDays(-29), to);
+    }
+
     public static LessonsCompletedResponse Generate(int userId, DateOnly from, DateOnly to)
     {
         if (to < from)

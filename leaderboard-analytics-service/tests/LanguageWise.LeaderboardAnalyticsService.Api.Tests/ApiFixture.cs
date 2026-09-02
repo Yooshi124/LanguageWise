@@ -1,9 +1,13 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using LanguageWise.LeaderboardAnalyticsService.Api.Models;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.Tokens;
 
 namespace LanguageWise.LeaderboardAnalyticsService.Api.Tests;
@@ -19,6 +23,8 @@ internal sealed class ApiFixture : WebApplicationFactory<Program>
     {
         File.WriteAllText(publicKeyPath, rsa.ExportSubjectPublicKeyInfoPem());
     }
+
+    internal ISummaryGenerator SummaryGenerator { get; set; } = new FakeSummaryGenerator();
 
     internal string CreateToken(int userId = 7, string username = "justin")
     {
@@ -49,6 +55,11 @@ internal sealed class ApiFixture : WebApplicationFactory<Program>
                 ["Auth:VerificationKeyPath"] = publicKeyPath
             });
         });
+        builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<ISummaryGenerator>();
+            services.AddSingleton(SummaryGenerator);
+        });
     }
 
     protected override void Dispose(bool disposing)
@@ -59,5 +70,21 @@ internal sealed class ApiFixture : WebApplicationFactory<Program>
             rsa.Dispose();
             File.Delete(publicKeyPath);
         }
+    }
+}
+
+internal sealed class FakeSummaryGenerator : ISummaryGenerator
+{
+    public LessonsCompletedResponse? LastChartData { get; private set; }
+
+    public LessonsCompletedSummaryResponse Response { get; set; } =
+        new("You made steady progress across your courses.", "up", "German");
+
+    public Task<LessonsCompletedSummaryResponse> GenerateAsync(
+        LessonsCompletedResponse chartData,
+        CancellationToken cancellationToken = default)
+    {
+        LastChartData = chartData;
+        return Task.FromResult(Response);
     }
 }

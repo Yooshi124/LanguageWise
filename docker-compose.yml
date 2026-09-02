@@ -297,6 +297,8 @@ services:
       context: ./leaderboard-analytics-service/backend
     environment:
       Services__Database: http://leaderboard-analytics-service-db:8080
+      Services__Ollama: http://ollama:11434
+      Ollama__Model: gemma4:e4b
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
     secrets:
       - signing_public_key
@@ -306,6 +308,8 @@ services:
     depends_on:
       leaderboard-analytics-service-db:
         condition: service_healthy
+      ollama-model-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   leaderboard-analytics-service-frontend:
