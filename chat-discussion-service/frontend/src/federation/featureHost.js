@@ -1,3 +1,5 @@
+import { computed } from 'vue';
+
 let hostContext = null;
 
 export function setFeatureHostContext(context) {
@@ -8,12 +10,13 @@ export function getFeatureUser() {
     return hostContext?.user ?? null;
 }
 
-export function hasFeatureHostContext() {
-    return hostContext !== null;
+export function useFeatureUser() {
+    return computed(() => getFeatureUser());
 }
 
-export function redirectToSignIn(returnUrl) {
-    hostContext?.signIn(returnUrl);
+export function isOwnedByFeatureUser(item) {
+    const user = getFeatureUser();
+    return user !== null && item != null && item.userId === user.id;
 }
 
 export async function signOut() {

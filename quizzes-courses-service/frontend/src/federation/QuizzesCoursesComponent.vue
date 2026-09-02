@@ -6,12 +6,12 @@ import type { FeatureHostContext } from './contracts'
 import { setFeatureHostContext } from './featureHost'
 
 const props = defineProps<{
-  hostContext: FeatureHostContext
+  hostContext?: FeatureHostContext
 }>()
 
 const route = useRoute()
 const showAssistant = computed(
-  () => props.hostContext.user !== null && !route.meta.hideAssistant,
+  () => props.hostContext?.user != null && !route.meta.hideAssistant,
 )
 
 setFeatureHostContext(props.hostContext)
@@ -22,7 +22,7 @@ onBeforeUnmount(() => setFeatureHostContext(undefined))
   <section class="feature-quizzes-courses">
     <router-view />
     <GarryAssistant
-      v-if="showAssistant && hostContext.user"
+      v-if="showAssistant && hostContext?.user"
       :key="hostContext.user.id"
       :user-id="hostContext.user.id"
     />

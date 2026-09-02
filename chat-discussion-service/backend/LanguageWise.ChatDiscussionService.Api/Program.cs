@@ -138,15 +138,6 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = Servi
 app.MapGet("/api/forums", (DiscussionClient client, CancellationToken cancellationToken) =>
     Guard(async () => Results.Ok(await client.GetForumsAsync(cancellationToken)), "read forums"));
 
-app.MapGet("/api/me", (HttpContext context) =>
-{
-    var userId = DiscussionRules.GetUserId(context.User);
-    return userId is null
-        ? Results.Unauthorized()
-        : Results.Ok(new Me(userId.Value, DiscussionRules.GetUserName(context.User)));
-})
-    .RequireAuthorization();
-
 // ---------------------------------------------------------------------------
 // Reads. Anonymous callers are welcome; a signed-in one additionally gets
 // likedByViewer populated so the like button renders correctly on first paint.

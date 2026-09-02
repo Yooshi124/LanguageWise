@@ -1,7 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
-using System.Net;
 using LanguageWise.Shared.Api.Clients;
 using Microsoft.IdentityModel.Tokens;
 
@@ -114,20 +113,6 @@ app.MapPost("/api/logout", (HttpContext ctx) =>
 {
     ctx.Response.Cookies.Delete("token");
     return Results.Ok();
-});
-
-app.MapPost("/api/check-login/fragment", (HttpContext ctx) =>
-{
-    var token = ctx.Request.Cookies["token"] ?? "";
-    var user = ValidateToken(token);
-
-    return user is not null
-        ? Results.Content(
-            $"""<span>Logged in as {WebUtility.HtmlEncode(user.Name)}</span> <button hx-post="/api/logout" hx-on::after-request="window.location.reload()">Log out</button>""",
-            "text/html")
-        : Results.Content(
-            """<a href="/login.html">Sign in</a>""",
-            "text/html");
 });
 
 app.Run();

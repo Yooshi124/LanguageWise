@@ -113,6 +113,17 @@ public sealed class AuthenticationTests
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
     }
 
+    [Test]
+    public async Task LegacyCheckLoginFragment_ReturnsNotFound()
+    {
+        using var fixture = new ApiFixture();
+        using var client = fixture.CreateClient();
+
+        var response = await client.PostAsync("/api/check-login/fragment", null);
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+    }
+
     private sealed record AuthenticatedUserResponse(int Id, string Name);
 
     private sealed class ApiFixture : WebApplicationFactory<SharedApiAssemblyMarker>

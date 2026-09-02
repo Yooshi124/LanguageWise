@@ -128,7 +128,7 @@ public sealed class AuthorizationTests
     }
 
     [Test]
-    public async Task Me_WithBearerToken_ReturnsIdentity()
+    public async Task LegacyMe_WithBearerToken_ReturnsNotFound()
     {
         using var fixture = new ApiFixture();
         using var client = fixture.CreateClient();
@@ -136,58 +136,8 @@ public sealed class AuthorizationTests
             new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
 
         var response = await client.GetAsync("/api/me");
-        var me = await response.Content.ReadFromJsonAsync<MeResponse>();
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
-            Assert.That(me!.Id, Is.EqualTo(7));
-            Assert.That(me.Username, Is.EqualTo("justin"));
-        });
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
     }
-
-    [Test]
-    public async Task Me_WithTokenCookie_ReturnsIdentity()
-    {
-        using var fixture = new ApiFixture();
-        using var client = fixture.CreateClient(new WebApplicationFactoryClientOptions
-        {
-            HandleCookies = false
-        });
-        client.DefaultRequestHeaders.Add("Cookie", $"token={fixture.CreateToken()}");
-
-        var response = await client.GetAsync("/api/me");
-
-        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
-    }
-
-    [Test]
-    public async Task Me_WithExpiredToken_ReturnsUnauthorized()
-    {
-        using var fixture = new ApiFixture();
-        using var client = fixture.CreateClient();
-        client.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", fixture.CreateToken(DateTime.UtcNow.AddMinutes(-1)));
-
-        var response = await client.GetAsync("/api/me");
-
-        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
-    }
-
-    [Test]
-    public async Task Me_WithMalformedToken_ReturnsUnauthorized()
-    {
-        using var fixture = new ApiFixture();
-        using var client = fixture.CreateClient();
-        client.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", "not-a-jwt");
-
-        var response = await client.GetAsync("/api/me");
-
-        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
-    }
-
-    private sealed record MeResponse(int Id, string Username);
 
     private sealed class ApiFixture : WebApplicationFactory<Program>
     {

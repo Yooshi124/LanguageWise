@@ -2,11 +2,11 @@
 
 ## Status
 
-Phases 0 through 8 are complete. All five feature frontends now load as
-federated remotes through the Shared host. The migration can proceed to the
-Phase 9 gateway and legacy cleanup.
+Phases 0 through 9 are complete. All five feature frontends load as federated
+remotes through the Shared host, and legacy frontend/auth/gateway paths have
+been removed.
 
-The completed system will contain one shared host application and five feature
+The completed system contains one shared host application and five feature
 remotes:
 
 1. Quizzes and Courses
@@ -29,30 +29,22 @@ Vue: its responsive sidebar, spacing, typography, colour usage, module cards,
 and Vuetify controls are the host-shell baseline. Quizzes and Courses remains
 the feature-content reference while Shared is the canonical shell reference.
 
-## Current-State Findings
+## Final-State Findings
 
 ### Frontend stacks
 
 | Application | Current stack | Shell/routing | Main issue |
 | --- | --- | --- | --- |
-| Shared | Vue 3, TypeScript, Vue Router, Vuetify, Vite | Own responsive sidebar/router/login | Host foundation, auth boundary, query provider, and federation runtime exist; feature migrations remain |
-| Quizzes and Courses | Vue 3, TypeScript, Vue Router, Vuetify | Own sidebar/top bar/router | Best visual baseline, but duplicates shell/auth |
-| Mini Games | Vue 3, JavaScript | Own sidebar and manual pathname routing | Duplicates shell/auth and has no Vue Router |
-| Discussion Forum | Vue 3, JavaScript, Vue Router | Own header/nav/router | Different layout and auth conventions |
-| Q/A/N | Static HTML, HTMX, vanilla JS | One dashboard page | Requires complete Vue conversion |
-| Leaderboard and Analytics | Vue 3, TypeScript, Vuetify, TanStack Query, Highcharts | Own sidebar and single view | Duplicates shell/auth/CSS and needs host query-provider integration |
+| Shared | Vue 3, TypeScript, Vue Router, Vuetify, Vite | Responsive shell/router/login | Owns auth, query, UI, CSS, routing, and federation runtime |
+| Quizzes and Courses | Vue 3, TypeScript, Vue Router, Vuetify | Federated child routes | Shell-free feature remote |
+| Mini Games | Vue 3, JavaScript, Vue Router | Federated child routes | Shell-free feature remote |
+| Discussion Forum | Vue 3, JavaScript, Vue Router | Federated child routes | Shell-free feature remote |
+| Q/A/N | Vue 3, TypeScript, Vue Router | Federated dashboard route | Shell-free feature remote |
+| Leaderboard and Analytics | Vue 3, TypeScript, TanStack Query, Highcharts | Federated dashboard route | Shell-free feature remote |
 
-Auth is still checked in several ways during migration:
-
-- Shared `POST /api/check-login` is cookie-only and returns `{ id, name }`.
-  Shared retains the full authenticated user and bootstraps it once at the host
-  boundary.
-- Quizzes and Courses `GET /api/me` returns `{ id, username }`.
-- Discussion Forum `GET /api/me` returns `{ id, username }`.
-- Leaderboard and Analytics `GET /api/me` returns `{ id, username }`.
-- Mini Games consumes the shared identity response but temporarily constructs a
-  username-only local user until its remote migration.
-- Q/A/N infers signed-in state from `GET /api/profile` and renders an HTMX auth fragment.
+Shared `POST /api/check-login` is the only browser session-discovery endpoint.
+It is cookie-only, returns `{ id, name }`, and is bootstrapped at the host
+boundary. Feature backends independently validate the same JWT for API access.
 
 Shared now provides the intended canonical navigation, login/logout UI, app
 shell, icon handling, and responsive sidebar behavior. Equivalent concerns are
@@ -727,6 +719,29 @@ shell or authored CSS.
 
 Exit criteria: one browser SPA and five separately served remote artifacts
 remain, with no legacy auth or navigation path in use.
+
+#### Verified Phase 9 result
+
+- All five `/remotes/<feature>/` gateways serve no-cache federation entries and
+  immutable chunks. Feature APIs retain their owning prefixes and the Quizzes
+  assistant keeps its 120-second unbuffered streaming location.
+- Remote frontend health checks now probe `remoteEntry.js`. Shared has no
+  dependency on remote startup, while every production remote container is
+  independently healthy and observable.
+- Redundant feature SPA locations and Chat's standalone host port are removed.
+  Shared's catch-all owns every non-API application path, and `index.html` is
+  no-store to prevent stale pre-cutover pages after deployment.
+- Service-local `/api/me`, the Shared auth fragment, Q/A/N form compatibility,
+  remote auth composables, duplicate shells/navigation, stale CSS links, and
+  obsolete HTMX paths are removed. All authored CSS remains in Shared.
+- Sidebar links now use Vue Router. An authenticated traversal of all five
+  remotes stays within one browser document, performs no per-remote auth checks,
+  and reports no console or network errors. Representative deep refreshes work
+  at desktop and mobile widths without horizontal overflow.
+- Clean installs and production builds pass for all six frontends. Every remote
+  emits `remoteEntry.js` and zero CSS files. The available frontend suites pass
+  18 tests, all seven backend projects pass 249 tests, Compose validation
+  passes, and the complete production stack starts healthy.
 
 ## Verification Strategy
 

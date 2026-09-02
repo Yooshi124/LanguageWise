@@ -283,32 +283,14 @@ public sealed class AuthorizationTests
     }
 
     [Test]
-    public async Task GetMe_WithoutToken_ReturnsUnauthorized()
-    {
-        using var fixture = new ApiFixture();
-        using var client = fixture.CreateClient();
-
-        var response = await client.GetAsync("/api/me");
-
-        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
-    }
-
-    [Test]
-    public async Task GetMe_WithBearerToken_ReturnsTheIdentityFromTheToken()
+    public async Task LegacyMe_WithBearerToken_ReturnsNotFound()
     {
         using var fixture = new ApiFixture();
         using var client = fixture.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
 
         var response = await client.GetAsync("/api/me");
-        var me = await response.Content.ReadFromJsonAsync<MeResponse>();
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
-            Assert.That(me!.Id, Is.EqualTo(FakeDiscussionDatabase.SignedInUserId));
-            Assert.That(me.Username, Is.EqualTo("lachlan"));
-        });
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
     }
 
     [Test]

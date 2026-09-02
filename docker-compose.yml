@@ -222,8 +222,6 @@ services:
     container_name: chat-discussion-service-frontend
     build:
       context: ./chat-discussion-service/frontend
-    ports:
-      - "127.0.0.1:3002:80"
     networks: [languagewise]
     depends_on:
       chat-discussion-service-backend:

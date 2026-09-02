@@ -323,25 +323,9 @@ static async Task<PreferenceUpdateRequest?> ReadPreferencesAsync(
     HttpRequest request,
     CancellationToken cancellationToken)
 {
-    if (request.HasJsonContentType())
-    {
-        return await request.ReadFromJsonAsync<PreferenceUpdateRequest>(cancellationToken);
-    }
-
-    if (!request.HasFormContentType)
-    {
-        return null;
-    }
-
-    var form = await request.ReadFormAsync(cancellationToken);
-    return new PreferenceUpdateRequest(
-        form["email"].ToString(),
-        form.ContainsKey("notifyAll"),
-        form.ContainsKey("notifyPostEngagement"),
-        form.ContainsKey("notifyCourseCompletion"),
-        form.ContainsKey("notifyQuizResults"),
-        form.ContainsKey("notifyStreaks"),
-        form.ContainsKey("notifyAchievements"));
+    return request.HasJsonContentType()
+        ? await request.ReadFromJsonAsync<PreferenceUpdateRequest>(cancellationToken)
+        : null;
 }
 
     public partial class Program;

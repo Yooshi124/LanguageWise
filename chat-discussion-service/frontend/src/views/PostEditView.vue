@@ -4,13 +4,12 @@ import { useRouter } from 'vue-router';
 import PostForm from '../components/PostForm.vue';
 import StateBlock from '../components/StateBlock.vue';
 import { api } from '../api.js';
-import { useAuth } from '../composables/useAuth.js';
 import { uploadPostImages } from '../composables/useImageUploads.js';
+import { isOwnedByFeatureUser } from '../federation/featureHost.js';
 
 const props = defineProps({ id: { type: [String, Number], required: true } });
 
 const router = useRouter();
-const { isOwnedByViewer } = useAuth();
 
 const post = ref(null);
 const images = ref([]);
@@ -112,7 +111,7 @@ onMounted(load);
     />
 
     <StateBlock
-        v-else-if="!isOwnedByViewer(post)"
+        v-else-if="!isOwnedByFeatureUser(post)"
         title="You can only edit your own posts"
         message="This post belongs to somebody else."
         tone="error"

@@ -8,13 +8,14 @@ import LikeButton from '../components/LikeButton.vue';
 import StateBlock from '../components/StateBlock.vue';
 import { api, PAGE_SIZE } from '../api.js';
 import { formatDate } from '../format.js';
-import { useAuth } from '../composables/useAuth.js';
 import { uploadCommentImages } from '../composables/useImageUploads.js';
+import { isOwnedByFeatureUser } from '../federation/featureHost.js';
+import { useForums } from '../composables/useForums.js';
 
 const props = defineProps({ id: { type: [String, Number], required: true } });
 
 const router = useRouter();
-const { isOwnedByViewer } = useAuth();
+const { displayName } = useForums();
 
 const post = ref(null);
 const comments = ref([]);
@@ -32,7 +33,7 @@ const loadingMore = ref(false);
 const deleting = ref(false);
 
 const postId = computed(() => Number(props.id));
-const isMine = computed(() => isOwnedByViewer(post.value));
+const isMine = computed(() => isOwnedByFeatureUser(post.value));
 
 async function load() {
     loading.value = true;
@@ -272,7 +273,7 @@ watch(postId, load, { immediate: true });
                     v-for="comment in comments"
                     :key="comment.id"
                     :comment="comment"
-                    :can-edit="isOwnedByViewer(comment)"
+                    :can-edit="isOwnedByFeatureUser(comment)"
                     @update="onCommentUpdated"
                     @deleted="onCommentDeleted"
                     @error="reportAction($event, 'That change could not be saved.')"

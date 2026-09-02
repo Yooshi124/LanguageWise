@@ -231,7 +231,6 @@ function readFrame(frame, onDelta, onDone) {
 }
 
 export const api = {
-    me: () => request('/me'),
     forums: () => request('/forums'),
 
     posts: ({ userId, forumCode, q, limit, offset } = {}) =>

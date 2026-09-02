@@ -110,8 +110,6 @@ public sealed record ImageContent(byte[] Bytes, string ContentType);
 /// <summary>One place a post can live. CourseId is null for forums that mirror no course.</summary>
 public sealed record Forum(int Id, int? CourseId, string Code, string Name);
 
-public sealed record Me(int Id, string Username);
-
 // ---------------------------------------------------------------------------
 // Requests.
 //

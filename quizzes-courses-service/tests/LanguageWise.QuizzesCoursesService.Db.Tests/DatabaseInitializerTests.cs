@@ -15,7 +15,8 @@ public sealed class DatabaseInitializerTests
         "30-it.sql",
         "40-nl.sql",
         "50-es.sql",
-        "60-pl.sql"
+        "60-pl.sql",
+        "70-development-progress.sql"
     ];
 
     [Test]

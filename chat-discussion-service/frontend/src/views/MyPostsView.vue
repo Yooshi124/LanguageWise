@@ -4,11 +4,11 @@ import { useRoute, useRouter } from 'vue-router';
 import PostCard from '../components/PostCard.vue';
 import StateBlock from '../components/StateBlock.vue';
 import { usePostList } from '../composables/usePostList.js';
-import { useAuth } from '../composables/useAuth.js';
+import { useFeatureUser } from '../federation/featureHost.js';
 
 const route = useRoute();
 const router = useRouter();
-const { me } = useAuth();
+const me = useFeatureUser();
 const { posts, loading, loadingMore, error, hasMore, load, loadMore, replace } = usePostList();
 
 const term = ref(typeof route.query.q === 'string' ? route.query.q : '');

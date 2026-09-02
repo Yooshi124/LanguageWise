@@ -20,18 +20,20 @@ const emit = defineEmits<{
 <template>
   <v-tooltip :text="label" location="end" :disabled="showLabel">
     <template #activator="{ props }">
-      <a
-        v-if="href"
-        v-bind="props"
-        :href="href"
-        class="sidebar-nav-item"
-        :class="{ active }"
-        :aria-current="active ? 'page' : undefined"
-        :aria-label="showLabel ? undefined : label"
-      >
-        <AppIcon :name="icon" />
-        <span v-if="showLabel">{{ label }}</span>
-      </a>
+      <RouterLink v-if="href" :to="href" custom v-slot="{ href: routeHref, navigate }">
+        <a
+          v-bind="props"
+          :href="routeHref"
+          class="sidebar-nav-item"
+          :class="{ active }"
+          :aria-current="active ? 'page' : undefined"
+          :aria-label="showLabel ? undefined : label"
+          @click="navigate"
+        >
+          <AppIcon :name="icon" />
+          <span v-if="showLabel">{{ label }}</span>
+        </a>
+      </RouterLink>
       <button
         v-else-if="!static"
         v-bind="props"
