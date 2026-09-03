@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import AppIcon from '../components/AppIcon.vue';
 import CommentItem from '../components/CommentItem.vue';
+import ConfirmDialog from '../components/ConfirmDialog.vue';
 import ImageGallery from '../components/ImageGallery.vue';
 import ImagePicker from '../components/ImagePicker.vue';
 import LikeButton from '../components/LikeButton.vue';
@@ -32,6 +33,7 @@ const draftImages = ref([]);
 const posting = ref(false);
 const loadingMore = ref(false);
 const deleting = ref(false);
+const confirmingDelete = ref(false);
 
 const postId = computed(() => Number(props.id));
 const isMine = computed(() => isOwnedByFeatureUser(post.value));
@@ -124,11 +126,7 @@ async function storedImages(commentId) {
 }
 
 async function removePost() {
-    const confirmed = window.confirm(
-        'Delete this post? Its comments and likes are deleted with it, and this cannot be undone.'
-    );
-
-    if (!confirmed || deleting.value) {
+    if (deleting.value) {
         return;
     }
 
@@ -140,6 +138,7 @@ async function removePost() {
     } catch (failure) {
         reportAction(failure, 'The post could not be deleted.');
         deleting.value = false;
+        confirmingDelete.value = false;
     }
 }
 
@@ -230,7 +229,7 @@ watch(postId, load, { immediate: true });
                     <RouterLink class="lw-command" :to="{ name: 'post-edit', params: { id: post.id } }">
                         Edit
                     </RouterLink>
-                    <button type="button" class="lw-command" :disabled="deleting" @click="removePost">
+                    <button type="button" class="lw-command" :disabled="deleting" @click="confirmingDelete = true">
                         {{ deleting ? 'Deleting…' : 'Delete' }}
                     </button>
                 </template>
@@ -285,5 +284,13 @@ watch(postId, load, { immediate: true });
                 </button>
             </p>
         </section>
+
+        <ConfirmDialog
+            v-model="confirmingDelete"
+            title="Delete this post?"
+            message="Its comments are deleted with it, and this cannot be undone."
+            :busy="deleting"
+            @confirm="removePost"
+        />
     </template>
 </template>
