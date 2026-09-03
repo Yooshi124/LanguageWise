@@ -60,6 +60,6 @@ export const routes = [
     path: 'courses/:courseCode/completion',
     name: 'course-completion',
     component: CourseCompletionView,
-    meta: { hideAssistant: true },
+    meta: { hideAssistant: true, hideTopBar: true },
   },
 ] as const

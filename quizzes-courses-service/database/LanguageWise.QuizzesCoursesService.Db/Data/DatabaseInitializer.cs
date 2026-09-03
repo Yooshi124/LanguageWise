@@ -16,7 +16,7 @@ public sealed class DatabaseInitializer(string connectionString, string sqlDirec
         "40-nl.sql",
         "50-es.sql",
         "60-pl.sql",
-        "70-development-progress.sql"
+        "70-seed-milestone-sample-data.sql"
     ];
 
     public void Initialise()
