@@ -517,8 +517,8 @@ public sealed class LearningRepository(string connectionString)
                 DomainErrorKind.NotFound, "lesson_not_found", "Lesson was not found.");
         }
 
-        InsertMilestone(connection, userId, "LessonId", lessonId);
-        return DomainResult<MilestoneState>.Success(new MilestoneState(true));
+        var changed = InsertMilestone(connection, userId, "LessonId", lessonId);
+        return DomainResult<MilestoneState>.Success(new MilestoneState(true, changed));
     }
 
     public DomainResult<MilestoneState> UncompleteLesson(int lessonId, int userId)
@@ -536,7 +536,7 @@ public sealed class LearningRepository(string connectionString)
         }
 
         DeleteMilestone(connection, userId, "LessonId", lessonId);
-        return DomainResult<MilestoneState>.Success(new MilestoneState(false));
+        return DomainResult<MilestoneState>.Success(new MilestoneState(false, true));
     }
 
     public DomainResult<MilestoneState> CompleteCourse(string courseCode, int userId)
@@ -558,8 +558,8 @@ public sealed class LearningRepository(string connectionString)
 
         using var connection = Open();
         var course = GetCourseIdentity(connection, courseCode)!.Value;
-        InsertMilestone(connection, userId, "CourseId", course.Id);
-        return DomainResult<MilestoneState>.Success(new MilestoneState(true));
+        var changed = InsertMilestone(connection, userId, "CourseId", course.Id);
+        return DomainResult<MilestoneState>.Success(new MilestoneState(true, changed));
     }
 
     public DomainResult<MilestoneState> UncompleteCourse(string courseCode, int userId)
@@ -578,7 +578,7 @@ public sealed class LearningRepository(string connectionString)
         }
 
         DeleteMilestone(connection, userId, "CourseId", course.Value.Id);
-        return DomainResult<MilestoneState>.Success(new MilestoneState(false));
+        return DomainResult<MilestoneState>.Success(new MilestoneState(false, true));
     }
 
     public MilestonePage GetMilestones(int? userId, int afterId, int limit)
@@ -812,7 +812,7 @@ public sealed class LearningRepository(string connectionString)
         return Convert.ToInt64(command.ExecuteScalar()) == 1;
     }
 
-    private static void InsertMilestone(
+    private static bool InsertMilestone(
         SqliteConnection connection,
         int userId,
         string targetColumn,
@@ -827,7 +827,7 @@ public sealed class LearningRepository(string connectionString)
         command.Parameters.AddWithValue("$userId", userId);
         command.Parameters.AddWithValue("$targetId", targetId);
         command.Parameters.AddWithValue("$completedAt", FormatTimestamp(DateTimeOffset.UtcNow));
-        command.ExecuteNonQuery();
+        return command.ExecuteNonQuery() > 0;
     }
 
     private static void DeleteMilestone(

@@ -31,10 +31,13 @@ CREATE TABLE api.user_preferences (
     user_id integer PRIMARY KEY,
     email text,
     notify_all boolean NOT NULL DEFAULT true,
+    notify_community_contribution boolean NOT NULL DEFAULT true,
     notify_post_engagement boolean NOT NULL DEFAULT true,
+    notify_lesson_completion boolean NOT NULL DEFAULT true,
     notify_course_completion boolean NOT NULL DEFAULT true,
-    notify_quiz_results boolean NOT NULL DEFAULT true,
-    notify_streaks boolean NOT NULL DEFAULT true,
+    notify_quiz_result boolean NOT NULL DEFAULT true,
+    notify_minigame_win boolean NOT NULL DEFAULT true,
+    notify_login_streak boolean NOT NULL DEFAULT true,
     notify_achievements boolean NOT NULL DEFAULT true
 );
 

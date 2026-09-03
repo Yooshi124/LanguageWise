@@ -14,9 +14,11 @@ const selectedNotification = ref<Notification | null>(null)
 const dialog = ref<HTMLDialogElement | null>(null)
 const achievementImage = '/remotes/quests-achievements/achievement.svg'
 const preferences = reactive<Preferences>({
-  email: '', notifyAll: true, notifyPostEngagement: true,
-  notifyCourseCompletion: true, notifyQuizResults: true,
-  notifyStreaks: true, notifyAchievements: true,
+  email: '', notifyAll: true,
+  notifyCommunityContribution: true, notifyPostEngagement: true,
+  notifyLessonCompletion: true, notifyCourseCompletion: true,
+  notifyQuizResult: true, notifyMinigameWin: true,
+  notifyLoginStreak: true, notifyAchievements: true,
 })
 
 const completed = computed(() => profile.value?.achievements.filter(
@@ -108,11 +110,14 @@ onMounted(load)
           </label>
           <fieldset class="notification-types" :disabled="!preferences.notifyAll">
             <legend>Notification types</legend>
-            <label><input v-model="preferences.notifyPostEngagement" type="checkbox"> Post engagement</label>
+            <label><input v-model="preferences.notifyCommunityContribution" type="checkbox"> Community contribution</label>
             <label><input v-model="preferences.notifyCourseCompletion" type="checkbox"> Course completion</label>
-            <label><input v-model="preferences.notifyQuizResults" type="checkbox"> Quiz results</label>
-            <label><input v-model="preferences.notifyStreaks" type="checkbox"> Learning streaks</label>
+            <label><input v-model="preferences.notifyLessonCompletion" type="checkbox"> Lesson completion</label>
+            <label><input v-model="preferences.notifyLoginStreak" type="checkbox"> Login streak</label>
+            <label><input v-model="preferences.notifyMinigameWin" type="checkbox"> Mini-game win</label>
             <label><input v-model="preferences.notifyAchievements" type="checkbox"> New achievements</label>
+            <label><input v-model="preferences.notifyPostEngagement" type="checkbox"> Post engagement</label>
+            <label><input v-model="preferences.notifyQuizResult" type="checkbox"> Quiz result</label>
           </fieldset>
           <div class="lw-form-actions">
             <button class="lw-command" type="submit" :disabled="saving">{{ saving ? 'Saving...' : 'Save preferences' }}</button>

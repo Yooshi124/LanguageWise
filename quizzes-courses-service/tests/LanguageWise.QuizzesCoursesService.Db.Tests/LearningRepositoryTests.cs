@@ -438,6 +438,22 @@ public sealed class LearningRepositoryTests
     }
 
     [Test]
+    public void CompleteLesson_WhenRepeated_ReportsOnlyTheFirstTransition()
+    {
+        const int userId = 18;
+        var lesson = catalog.GetLessons("de")[0];
+
+        var first = learning.CompleteLesson(lesson.Id, userId);
+        var repeated = learning.CompleteLesson(lesson.Id, userId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.Value, Is.EqualTo(new MilestoneState(true, true)));
+            Assert.That(repeated.Value, Is.EqualTo(new MilestoneState(true, false)));
+        });
+    }
+
+    [Test]
     public void CourseCompletion_RequiresEveryLessonAndAvailableQuizAndSupportsDeletion()
     {
         const int userId = 17;

@@ -99,6 +99,8 @@ public sealed record CourseProgress(
     IReadOnlyList<LessonProgress> Lessons,
     IReadOnlyList<QuizProgress> Quizzes);
 
+public sealed record MilestoneState(bool Completed, bool Changed);
+
 public sealed record LessonMilestone(
     int LessonId,
     string Slug,

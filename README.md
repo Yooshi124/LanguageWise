@@ -65,7 +65,7 @@ Where students talk to each other about their progress.
 - Question-and-answer interactions, e.g. clicking words in order to build a sentence
 - **AI integration:** generate your own questions and flashcards (RAG), mark quizzes (RAG)
 
-### Student 4: Quests / Achievements / Notifications — *Amber*
+### Student 4: Achievements / Notifications — *Amber*
 
 - Event-driven push notifications and emails, e.g. complete 5 courses, earn a silver medal
 - Sends emails

@@ -59,7 +59,7 @@ export const serviceMappings: readonly ServiceMapping[] = [
     technology: 'SQLite',
   },
   {
-    service: 'Quests & Achievements',
+    service: 'Achievements & Notifications',
     gateway: '/quests-and-achievements/',
     frontend: 'Gateway -> quests-achievements-notifications-service-frontend:80',
     backend: 'localhost:5004 -> quests-achievements-notifications-service-backend:8080',

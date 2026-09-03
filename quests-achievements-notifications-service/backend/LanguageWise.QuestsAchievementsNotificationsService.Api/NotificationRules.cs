@@ -16,7 +16,14 @@ internal static class NotificationRules
     {
         var errors = new Dictionary<string, string[]>();
 
-        if (request.Trigger is not ("post-engagement" or "course-completion" or "quiz-result" or "login-streak"))
+        if (request.Trigger is not (
+            "community-contribution"
+            or "post-engagement"
+            or "lesson-completion"
+            or "course-completion"
+            or "quiz-result"
+            or "minigame-win"
+            or "login-streak"))
         {
             errors["trigger"] = ["Trigger is not supported."];
         }
@@ -64,10 +71,13 @@ internal static class NotificationRules
 
         var eventEnabled = trigger switch
         {
+            "community-contribution" => preferences.NotifyCommunityContribution,
             "post-engagement" => preferences.NotifyPostEngagement,
+            "lesson-completion" => preferences.NotifyLessonCompletion,
             "course-completion" => preferences.NotifyCourseCompletion,
-            "quiz-result" => preferences.NotifyQuizResults,
-            "login-streak" => preferences.NotifyStreaks,
+            "quiz-result" => preferences.NotifyQuizResult,
+            "minigame-win" => preferences.NotifyMinigameWin,
+            "login-streak" => preferences.NotifyLoginStreak,
             _ => false
         };
 

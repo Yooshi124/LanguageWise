@@ -4,9 +4,15 @@ import QuestsDashboard from './QuestsDashboard.vue'
 
 const profile = {
   username: 'amber',
-  preferences: { email: 'amber@example.com', notifyAll: false, notifyPostEngagement: true, notifyCourseCompletion: false, notifyQuizResults: true, notifyStreaks: false, notifyAchievements: true },
+  preferences: {
+    email: 'amber@example.com', notifyAll: false,
+    notifyCommunityContribution: true, notifyPostEngagement: true,
+    notifyLessonCompletion: false, notifyCourseCompletion: false,
+    notifyQuizResult: true, notifyMinigameWin: true,
+    notifyLoginStreak: false, notifyAchievements: true,
+  },
   achievements: [{ achievementId: 1, name: 'First Steps', image: '/images/missing.png', progress: 1, progressNeeded: 1 }],
-  notifications: [{ notificationId: 1, trigger: 'quiz-result', time: '2026-01-01T00:00:00Z', emailSubject: 'Quiz result', emailBody: 'Well done.' }],
+  notifications: [{ notificationId: 1, trigger: 'minigame-win', time: '2026-01-01T00:00:00Z', emailSubject: 'Mini-game win', emailBody: 'Well done.' }],
 }
 
 afterEach(() => vi.unstubAllGlobals())
@@ -54,7 +60,13 @@ describe('QuestsDashboard', () => {
 
     const request = fetchMock.mock.calls[1][1]
     expect(request.headers['Content-Type']).toBe('application/json')
+    expect(JSON.parse(request.body).notifyCommunityContribution).toBe(true)
     expect(JSON.parse(request.body).notifyPostEngagement).toBe(true)
+    expect(JSON.parse(request.body).notifyLessonCompletion).toBe(false)
+    expect(JSON.parse(request.body).notifyCourseCompletion).toBe(false)
+    expect(JSON.parse(request.body).notifyQuizResult).toBe(true)
+    expect(JSON.parse(request.body).notifyMinigameWin).toBe(true)
+    expect(JSON.parse(request.body).notifyLoginStreak).toBe(false)
     expect(wrapper.text()).toContain('Notification preferences saved.')
   })
 

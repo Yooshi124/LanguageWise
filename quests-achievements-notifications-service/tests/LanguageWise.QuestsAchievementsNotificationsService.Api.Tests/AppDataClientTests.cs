@@ -15,7 +15,7 @@ public sealed class AppDataClientTests
 
         await client.CreateNotificationAsync(new NotificationInput(
             1,
-            "course-completion",
+            "lesson-completion",
             DateTimeOffset.UtcNow,
             "Course progress",
             "You made progress."));
@@ -35,11 +35,11 @@ public sealed class AppDataClientTests
         var handler = new StubHttpMessageHandler(HttpStatusCode.OK, "[]");
         var client = CreateClient(handler);
 
-        await client.GetAchievementsByTriggerAsync("course-completion");
+        await client.GetAchievementsByTriggerAsync("lesson-completion");
 
         Assert.That(
             handler.LastRequestUri?.PathAndQuery,
-            Is.EqualTo("/achievements?trigger=eq.course-completion&select=achievement_id,name,description,image,trigger,progress_needed&order=progress_needed.asc"));
+            Is.EqualTo("/achievements?trigger=eq.lesson-completion&select=achievement_id,name,description,image,trigger,progress_needed&order=progress_needed.asc"));
     }
 
     [Test]
@@ -78,7 +78,8 @@ public sealed class AppDataClientTests
     {
         var handler = new StubHttpMessageHandler(HttpStatusCode.OK, "{}");
         var client = CreateClient(handler);
-        var preferences = new UserPreferences(7, "learner@example.com", true, true, false, true, false, true);
+        var preferences = new UserPreferences(
+            7, "learner@example.com", true, true, false, true, false, true, false, true, false);
 
         await client.UpsertPreferencesAsync(preferences);
 

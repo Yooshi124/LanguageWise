@@ -59,9 +59,9 @@ public sealed class AuthorizationTests
             Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
             Assert.That(notifications.GetArrayLength(), Is.EqualTo(1));
             Assert.That(notifications[0].GetProperty("notificationId").GetInt64(), Is.EqualTo(12));
-            Assert.That(notifications[0].GetProperty("trigger").GetString(), Is.EqualTo("course-completion"));
-            Assert.That(notifications[0].GetProperty("emailSubject").GetString(), Is.EqualTo("Course complete"));
-            Assert.That(notifications[0].GetProperty("emailBody").GetString(), Is.EqualTo("You completed a course."));
+            Assert.That(notifications[0].GetProperty("trigger").GetString(), Is.EqualTo("lesson-completion"));
+            Assert.That(notifications[0].GetProperty("emailSubject").GetString(), Is.EqualTo("Lesson complete"));
+            Assert.That(notifications[0].GetProperty("emailBody").GetString(), Is.EqualTo("You completed a lesson."));
             Assert.That(notifications[0].TryGetProperty("userId", out _), Is.False);
         });
     }
@@ -134,7 +134,7 @@ public sealed class AuthorizationTests
     }
 
     private static PreferenceUpdateRequest EnabledPreferences() => new(
-        "learner@example.com", true, true, true, true, true, true);
+        "learner@example.com", true, true, true, true, true, true, true, true, true);
 
     private sealed class ApiFixture : WebApplicationFactory<Program>
     {
@@ -222,8 +222,8 @@ public sealed class AuthorizationTests
 
             var body = request.RequestUri?.AbsolutePath switch
             {
-                "/user_preferences" when request.Method == HttpMethod.Get => $"[{{\"user_id\":1,\"email\":\"learner@example.com\",\"notify_all\":{notifyAll.ToString().ToLowerInvariant()},\"notify_post_engagement\":true,\"notify_course_completion\":true,\"notify_quiz_results\":true,\"notify_streaks\":true,\"notify_achievements\":true}}]",
-                "/notifications" when request.RequestUri.Query.Contains("user_id=eq.1") => "[{\"notification_id\":12,\"user_id\":1,\"trigger\":\"course-completion\",\"time\":\"2026-08-29T10:00:00Z\",\"email_subject\":\"Course complete\",\"email_body\":\"You completed a course.\"}]",
+                "/user_preferences" when request.Method == HttpMethod.Get => $"[{{\"user_id\":1,\"email\":\"learner@example.com\",\"notify_all\":{notifyAll.ToString().ToLowerInvariant()},\"notify_community_contribution\":true,\"notify_post_engagement\":true,\"notify_lesson_completion\":true,\"notify_course_completion\":true,\"notify_quiz_result\":true,\"notify_minigame_win\":true,\"notify_login_streak\":true,\"notify_achievements\":true}}]",
+                "/notifications" when request.RequestUri.Query.Contains("user_id=eq.1") => "[{\"notification_id\":12,\"user_id\":1,\"trigger\":\"lesson-completion\",\"time\":\"2026-08-29T10:00:00Z\",\"email_subject\":\"Lesson complete\",\"email_body\":\"You completed a lesson.\"}]",
                 _ => "[]"
             };
 
