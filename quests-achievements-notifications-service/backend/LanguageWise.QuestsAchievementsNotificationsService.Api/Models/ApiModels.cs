@@ -5,6 +5,7 @@ namespace LanguageWise.QuestsAchievementsNotificationsService.Api.Models;
 public sealed record Achievement(
     [property: JsonPropertyName("achievement_id")] int AchievementId,
     [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("description")] string Description,
     [property: JsonPropertyName("image")] string Image,
     [property: JsonPropertyName("trigger")] string Trigger,
     [property: JsonPropertyName("progress_needed")] int ProgressNeeded);
@@ -42,6 +43,7 @@ public sealed record Notification(
 public sealed record AchievementUpdate(
     int AchievementId,
     string Name,
+    string Description,
     int Progress,
     int ProgressNeeded,
     bool NewlyAttained);
@@ -58,7 +60,9 @@ public sealed record PreferenceUpdateRequest(
 public sealed record EventRequest(
     string Trigger,
     string Subject,
-    int RecipientUserId);
+    int RecipientUserId,
+    string RecipientName,
+    int? Value = null);
 
 public sealed record AchievementProgress(
     int AchievementId,

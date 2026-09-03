@@ -122,11 +122,16 @@ Accepts a noteworthy event from another service:
 {
   "trigger": "post-engagement",
   "subject": "Tips for practising Spanish every day",
-  "recipientUserId": 7
+  "recipientUserId": 7,
+  "recipientName": "Amber"
 }
 ```
 
-Supported triggers are `post-engagement`, `course-completion`, `quiz-result`, and `streak`. The subject is a human-readable description used to generate the notification. Every accepted request represents a new occurrence, adds one progress unit to every achievement tier mapped to that trigger, and uses the server's current time for notification history.
+Supported triggers are `post-engagement`, `course-completion`, `quiz-result`, and `login-streak`. The subject is a human-readable description used to generate the notification. Every accepted request represents a new occurrence, adds one progress unit to every achievement tier mapped to that trigger, and uses the server's current time for notification history.
+
+Callers may provide an optional non-negative `value`. When present, achievement progress is updated only when the supplied value is greater than stored progress. Bounded achievements are capped at their target; the `Longest Login Streak` achievement uses `progressNeeded: -1` to retain an uncapped personal best. Shared authentication supplies this value once per UTC day: yesterday's login continues the streak, a gap resets the current streak to zero, and another check on the same day sends no event.
+
+Generated and fallback notifications address the recipient by name. The generation context contains human-readable event and achievement descriptions, never achievement IDs or internal trigger names.
 
 A successful response includes all updated achievements, stored notification content, preference eligibility, and email status:
 
@@ -142,8 +147,8 @@ A successful response includes all updated achievements, stored notification con
     }
   ],
   "notification": {
-    "subject": "Achievement unlocked: First Applause",
-    "body": "You unlocked First Applause. Congratulations!",
+    "subject": "Achievement unlocked",
+    "body": "Hi Amber, congratulations! You unlocked: Receive engagement on a community post.",
     "usedFallback": false
   },
   "shouldNotify": true,

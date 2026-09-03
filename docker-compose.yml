@@ -69,6 +69,7 @@ services:
       context: ./shared/backend
     environment:
       Services__Database: http://shared-db:8080
+      Services__Achievements: http://quests-achievements-notifications-service-backend:8080
       Auth__SigningKeyPath: /run/secrets/signing_private_key
     secrets:
       - signing_private_key
@@ -78,6 +79,8 @@ services:
     depends_on:
       shared-db:
         condition: service_healthy
+      quests-achievements-notifications-service-backend:
+        condition: service_started
     restart: unless-stopped
 
   shared-frontend:

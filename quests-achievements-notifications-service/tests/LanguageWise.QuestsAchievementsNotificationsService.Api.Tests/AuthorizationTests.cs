@@ -108,7 +108,9 @@ public sealed class AuthorizationTests
         Assert.That(fixture.DataHandler.NotificationBodies[0], Does.Contain("\"trigger\":\"notifications-enabled\""));
         await fixture.EmailGenerator.Received(1).GenerateAsync(
             Arg.Is<EmailContext>(context =>
-                context.Trigger == "notifications-enabled" && context.Achievements.Count == 0),
+                context.UserName == "amber"
+                && context.IsNotificationsWelcome
+                && context.Achievements.Count == 0),
             Arg.Any<CancellationToken>());
         await fixture.EmailSender.Received(1).SendAsync(
             "learner@example.com",

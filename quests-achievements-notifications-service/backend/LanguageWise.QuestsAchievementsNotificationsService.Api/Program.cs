@@ -198,7 +198,8 @@ app.MapPut("/api/preferences", async (
         if (notificationsEnabled)
         {
             var email = await emailGenerator.GenerateAsync(new EmailContext(
-                "notifications-enabled",
+                context.User.Identity?.Name ?? "LanguageWise learner",
+                true,
                 "Welcome the learner to LanguageWise notifications. Explain that they can receive post engagement, course completion, quiz result, learning streak, and achievement notifications.",
                 []), cancellationToken);
 
@@ -270,17 +271,20 @@ app.MapPost("/api/events", async (
         {
             var progressUpdate = NotificationRules.CalculateProgress(
                 currentProgress.GetValueOrDefault(achievement.AchievementId),
-                achievement.ProgressNeeded);
+                achievement.ProgressNeeded,
+                request.Value);
             return new AchievementUpdate(
                 achievement.AchievementId,
                 achievement.Name,
+                achievement.Description,
                 progressUpdate.Progress,
                 achievement.ProgressNeeded,
                 progressUpdate.NewlyAttained);
         }).ToList();
 
         var email = await emailGenerator.GenerateAsync(new EmailContext(
-            request.Trigger,
+            request.RecipientName.Trim(),
+            false,
             request.Subject,
             achievementUpdates), cancellationToken);
 

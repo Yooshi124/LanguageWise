@@ -39,7 +39,7 @@ public sealed class AppDataClientTests
 
         Assert.That(
             handler.LastRequestUri?.PathAndQuery,
-            Is.EqualTo("/achievements?trigger=eq.course-completion&select=achievement_id,name,image,trigger,progress_needed&order=progress_needed.asc"));
+            Is.EqualTo("/achievements?trigger=eq.course-completion&select=achievement_id,name,description,image,trigger,progress_needed&order=progress_needed.asc"));
     }
 
     [Test]
