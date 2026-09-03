@@ -10,9 +10,18 @@ INSERT INTO api.achievements (achievement_id, name, description, image, trigger,
     (9,  'Three Day Streak',     'Log in on three consecutive days',                   '/images/achievements/three-day-streak.png',     'login-streak',      3),
     (10, 'Seven Day Streak',     'Log in on seven consecutive days',                   '/images/achievements/seven-day-streak.png',     'login-streak',      7),
     (11, 'Longest Login Streak', 'Your longest run of consecutive daily LanguageWise logins', '/images/achievements/longest-login-streak.png', 'login-streak',     -1),
-    (12, 'Games Master',         'Win fifty mini-games',                               '/images/achievements/games-master.png',          'minigame-win',          50);
+    (12, 'Games Master',         'Win fifty mini-games',                               '/images/achievements/games-master.png',          'minigame-win',          50),
+    (13, 'First Reaction',       'Receive your first community interaction',           '/images/achievements/first-reaction.png',        'post-engagement',        1),
+    (14, 'Conversation Starter', 'Receive ten community interactions',                 '/images/achievements/conversation-starter.png',  'post-engagement',       10),
+    (15, 'Community Favourite',  'Receive fifty community interactions',               '/images/achievements/community-favourite.png',   'post-engagement',       50),
+    (16, 'First Course',         'Complete your first course',                         '/images/achievements/first-course.png',          'course-completion',      1),
+    (17, 'Course Explorer',      'Complete three courses',                             '/images/achievements/course-explorer.png',       'course-completion',      3),
+    (18, 'Course Champion',      'Complete five courses',                              '/images/achievements/course-champion.png',       'course-completion',      5),
+    (19, 'First Quiz',           'Complete your first quiz',                           '/images/achievements/first-quiz.png',            'quiz-result',            1),
+    (20, 'Quiz Regular',         'Complete ten quizzes',                               '/images/achievements/quiz-regular.png',          'quiz-result',           10),
+    (21, 'Quiz Veteran',         'Complete fifty quizzes',                             '/images/achievements/quiz-veteran.png',          'quiz-result',           50);
 
-SELECT setval(pg_get_serial_sequence('api.achievements', 'achievement_id'), 12);
+SELECT setval(pg_get_serial_sequence('api.achievements', 'achievement_id'), 21);
 
 INSERT INTO api.user_preferences (user_id, email) VALUES
     (1, 'amber@example.com'),

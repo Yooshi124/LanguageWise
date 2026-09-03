@@ -19,10 +19,13 @@ public sealed record UserPreferences(
     [property: JsonPropertyName("user_id")] int UserId,
     [property: JsonPropertyName("email")] string? Email,
     [property: JsonPropertyName("notify_all")] bool NotifyAll,
+    [property: JsonPropertyName("notify_community_contribution")] bool NotifyCommunityContribution,
     [property: JsonPropertyName("notify_post_engagement")] bool NotifyPostEngagement,
+    [property: JsonPropertyName("notify_lesson_completion")] bool NotifyLessonCompletion,
     [property: JsonPropertyName("notify_course_completion")] bool NotifyCourseCompletion,
-    [property: JsonPropertyName("notify_quiz_results")] bool NotifyQuizResults,
-    [property: JsonPropertyName("notify_streaks")] bool NotifyStreaks,
+    [property: JsonPropertyName("notify_quiz_result")] bool NotifyQuizResult,
+    [property: JsonPropertyName("notify_minigame_win")] bool NotifyMinigameWin,
+    [property: JsonPropertyName("notify_login_streak")] bool NotifyLoginStreak,
     [property: JsonPropertyName("notify_achievements")] bool NotifyAchievements);
 
 public sealed record NotificationInput(
@@ -51,10 +54,13 @@ public sealed record AchievementUpdate(
 public sealed record PreferenceUpdateRequest(
     string Email,
     bool NotifyAll,
+    bool NotifyCommunityContribution,
     bool NotifyPostEngagement,
+    bool NotifyLessonCompletion,
     bool NotifyCourseCompletion,
-    bool NotifyQuizResults,
-    bool NotifyStreaks,
+    bool NotifyQuizResult,
+    bool NotifyMinigameWin,
+    bool NotifyLoginStreak,
     bool NotifyAchievements);
 
 public sealed record EventRequest(

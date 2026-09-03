@@ -377,13 +377,29 @@ app.MapPost("/api/quiz-attempts/{attemptId:int}/submit", async (
     SubmitQuizAttemptRequest request,
     HttpContext context,
     CatalogClient client,
+    AchievementEventsClient achievementEventsClient,
     CancellationToken cancellationToken) =>
     await ExecuteForUserAsync(context, async userId =>
-        ToResult(await client.SubmitQuizAttemptAsync(
+    {
+        var response = await client.SubmitQuizAttemptAsync(
             attemptId,
             userId,
             request,
-            cancellationToken)), app.Logger));
+            cancellationToken);
+        if (response is { IsSuccess: true, Value: not null })
+        {
+            await RecordEventAsync(
+                achievementEventsClient,
+                context,
+                userId,
+                (client, name, token) => client.RecordQuizResultAsync(
+                    userId, name, response.Value, token, cancellationToken),
+                "quiz result",
+                app.Logger);
+        }
+
+        return ToResult(response);
+    }, app.Logger));
 
 app.MapGet("/api/courses/{code}/flashcard-decks", async (
     string code,
@@ -527,13 +543,29 @@ app.MapPut("/api/courses/{code}/milestone", async (
     string code,
     HttpContext context,
     CatalogClient client,
+    AchievementEventsClient achievementEventsClient,
     CancellationToken cancellationToken) =>
     await ExecuteForUserAsync(context, async userId =>
-        ToResult(await client.SetCourseMilestoneAsync(
+    {
+        var response = await client.SetCourseMilestoneAsync(
             Normalize(code),
             userId,
             completed: true,
-            cancellationToken)), app.Logger));
+            cancellationToken);
+        if (response is { IsSuccess: true, Value.Changed: true })
+        {
+            await RecordEventAsync(
+                achievementEventsClient,
+                context,
+                userId,
+                (client, name, token) => client.RecordCourseCompletionAsync(
+                    userId, name, token, cancellationToken),
+                "course completion",
+                app.Logger);
+        }
+
+        return ToResult(response);
+    }, app.Logger));
 
 app.MapDelete("/api/courses/{code}/milestone", async (
     string code,
@@ -571,6 +603,24 @@ static async Task RecordLessonCompletionAsync(
     catch (Exception exception) when (exception is not OperationCanceledException)
     {
         logger.LogError(exception, "Failed to record lesson completion for user {UserId}.", userId);
+    }
+}
+
+static async Task RecordEventAsync(
+    AchievementEventsClient client,
+    HttpContext context,
+    int userId,
+    Func<AchievementEventsClient, string, string, Task> record,
+    string eventName,
+    ILogger logger)
+{
+    try
+    {
+        await record(client, context.User.Identity!.Name!, GetAccessToken(context));
+    }
+    catch (Exception exception) when (exception is not OperationCanceledException)
+    {
+        logger.LogError(exception, "Failed to record {EventName} for user {UserId}.", eventName, userId);
     }
 }
 

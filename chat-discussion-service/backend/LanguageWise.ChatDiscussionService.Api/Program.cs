@@ -426,6 +426,14 @@ app.MapPost("/api/posts/{id:int}/comments", (
                 "Added a comment to a community discussion",
                 cancellationToken,
                 app.Logger);
+            await RecordPostEngagementAsync(
+                achievementEventsClient,
+                context,
+                userId.Value,
+                () => client.GetPostAsync(id, null, cancellationToken),
+                "Received a comment on a community post",
+                cancellationToken,
+                app.Logger);
         }
 
         return created is null
@@ -478,6 +486,7 @@ app.MapDelete("/api/comments/{id:int}", (
     int id,
     HttpContext context,
     DiscussionClient client,
+    AchievementEventsClient achievementEventsClient,
     CancellationToken cancellationToken) =>
     Guard(async () =>
     {
@@ -513,13 +522,30 @@ app.MapPost("/api/posts/{id:int}/likes", (
     int id,
     HttpContext context,
     DiscussionClient client,
+    AchievementEventsClient achievementEventsClient,
     CancellationToken cancellationToken) =>
     Guard(async () =>
     {
         var userId = DiscussionRules.GetUserId(context.User);
-        return userId is null
-            ? Results.Unauthorized()
-            : Describe(await client.LikePostAsync(id, userId.Value, cancellationToken));
+        if (userId is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var outcome = await client.LikePostAsync(id, userId.Value, cancellationToken);
+        if (outcome == LikeOutcome.Created)
+        {
+            await RecordPostEngagementAsync(
+                achievementEventsClient,
+                context,
+                userId.Value,
+                () => client.GetPostAsync(id, null, cancellationToken),
+                "Received a like on a community post",
+                cancellationToken,
+                app.Logger);
+        }
+
+        return Describe(outcome);
     }, "like post"))
     .RequireAuthorization();
 
@@ -546,13 +572,30 @@ app.MapPost("/api/comments/{id:int}/likes", (
     int id,
     HttpContext context,
     DiscussionClient client,
+    AchievementEventsClient achievementEventsClient,
     CancellationToken cancellationToken) =>
     Guard(async () =>
     {
         var userId = DiscussionRules.GetUserId(context.User);
-        return userId is null
-            ? Results.Unauthorized()
-            : Describe(await client.LikeCommentAsync(id, userId.Value, cancellationToken));
+        if (userId is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var outcome = await client.LikeCommentAsync(id, userId.Value, cancellationToken);
+        if (outcome == LikeOutcome.Created)
+        {
+            await RecordPostEngagementAsync(
+                achievementEventsClient,
+                context,
+                userId.Value,
+                () => client.GetCommentAsync(id, cancellationToken),
+                "Received a like on a community comment",
+                cancellationToken,
+                app.Logger);
+        }
+
+        return Describe(outcome);
     }, "like comment"))
     .RequireAuthorization();
 
@@ -897,6 +940,42 @@ static async Task RecordContributionAsync(
     catch (Exception exception) when (exception is not OperationCanceledException)
     {
         logger.LogError(exception, "Failed to record community contribution for user {UserId}.", userId);
+    }
+}
+
+static async Task RecordPostEngagementAsync<T>(
+    AchievementEventsClient achievementEventsClient,
+    HttpContext context,
+    int actorUserId,
+    Func<Task<T?>> getTarget,
+    string subject,
+    CancellationToken cancellationToken,
+    ILogger logger) where T : class
+{
+    try
+    {
+        var target = await getTarget();
+        var recipient = target switch
+        {
+            PostSummary post => (post.UserId, post.AuthorName),
+            Comment comment => (comment.UserId, comment.AuthorName),
+            _ => default
+        };
+        if (recipient.UserId <= 0 || recipient.UserId == actorUserId)
+        {
+            return;
+        }
+
+        await achievementEventsClient.RecordPostEngagementAsync(
+            recipient.UserId,
+            recipient.AuthorName,
+            subject,
+            GetAccessToken(context),
+            cancellationToken);
+    }
+    catch (Exception exception) when (exception is not OperationCanceledException)
+    {
+        logger.LogError(exception, "Failed to record post engagement.");
     }
 }
 

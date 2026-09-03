@@ -78,7 +78,8 @@ public sealed class AppDataClientTests
     {
         var handler = new StubHttpMessageHandler(HttpStatusCode.OK, "{}");
         var client = CreateClient(handler);
-        var preferences = new UserPreferences(7, "learner@example.com", true, true, false, true, false, true);
+        var preferences = new UserPreferences(
+            7, "learner@example.com", true, true, false, true, false, true, false, true, false);
 
         await client.UpsertPreferencesAsync(preferences);
 

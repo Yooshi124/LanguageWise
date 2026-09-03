@@ -31,4 +31,28 @@ public sealed class AchievementEventsClientTests
             Assert.That(handler.LastRequestBody, Does.Not.Contain("\"value\""));
         });
     }
+
+    [Test]
+    public async Task RecordPostEngagementAsync_SendsRecipientAndEngagementTrigger()
+    {
+        var handler = new StubHttpMessageHandler(HttpStatusCode.OK, "{}");
+        var client = new AchievementEventsClient(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://achievements/")
+        });
+
+        await client.RecordPostEngagementAsync(
+            9,
+            "Justin",
+            "Received a like on a community post",
+            "jwt-token",
+            CancellationToken.None);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(handler.LastRequestBody, Does.Contain("\"trigger\":\"post-engagement\""));
+            Assert.That(handler.LastRequestBody, Does.Contain("\"recipientUserId\":9"));
+            Assert.That(handler.LastRequestBody, Does.Contain("\"recipientName\":\"Justin\""));
+        });
+    }
 }

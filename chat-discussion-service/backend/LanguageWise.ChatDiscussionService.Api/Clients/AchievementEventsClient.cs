@@ -10,12 +10,41 @@ public sealed class AchievementEventsClient(HttpClient httpClient)
         string subject,
         string token,
         CancellationToken cancellationToken)
+        => await RecordAsync(
+            "community-contribution",
+            userId,
+            userName,
+            subject,
+            token,
+            cancellationToken);
+
+    public async Task RecordPostEngagementAsync(
+        int userId,
+        string userName,
+        string subject,
+        string token,
+        CancellationToken cancellationToken)
+        => await RecordAsync(
+            "post-engagement",
+            userId,
+            userName,
+            subject,
+            token,
+            cancellationToken);
+
+    private async Task RecordAsync(
+        string trigger,
+        int userId,
+        string userName,
+        string subject,
+        string token,
+        CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/events")
         {
             Content = JsonContent.Create(new
             {
-                trigger = "community-contribution",
+                trigger,
                 subject,
                 recipientUserId = userId,
                 recipientName = userName

@@ -154,12 +154,12 @@ public sealed class CatalogClient(HttpClient httpClient)
             $"api/lessons/{lessonId}/milestones/{userId}",
             cancellationToken);
 
-    public Task<DatabaseResponse<object>> SetCourseMilestoneAsync(
+    public Task<DatabaseResponse<MilestoneState>> SetCourseMilestoneAsync(
         string courseCode,
         int userId,
         bool completed,
         CancellationToken cancellationToken = default) =>
-        SendWithoutBodyAsync<object>(
+        SendWithoutBodyAsync<MilestoneState>(
             completed ? HttpMethod.Put : HttpMethod.Delete,
             $"api/courses/{Uri.EscapeDataString(courseCode)}/milestones/{userId}",
             cancellationToken);

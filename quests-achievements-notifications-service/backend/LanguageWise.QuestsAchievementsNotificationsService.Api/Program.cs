@@ -111,10 +111,13 @@ app.MapGet("/api/profile", async (
             {
                 preferences.Email,
                 preferences.NotifyAll,
+                preferences.NotifyCommunityContribution,
                 preferences.NotifyPostEngagement,
+                preferences.NotifyLessonCompletion,
                 preferences.NotifyCourseCompletion,
-                preferences.NotifyQuizResults,
-                preferences.NotifyStreaks,
+                preferences.NotifyQuizResult,
+                preferences.NotifyMinigameWin,
+                preferences.NotifyLoginStreak,
                 preferences.NotifyAchievements
             },
             achievements = view,
@@ -189,10 +192,13 @@ app.MapPut("/api/preferences", async (
             userId.Value,
             emailAddress,
             request.NotifyAll,
+            request.NotifyCommunityContribution,
             request.NotifyPostEngagement,
+            request.NotifyLessonCompletion,
             request.NotifyCourseCompletion,
-            request.NotifyQuizResults,
-            request.NotifyStreaks,
+            request.NotifyQuizResult,
+            request.NotifyMinigameWin,
+            request.NotifyLoginStreak,
             request.NotifyAchievements), cancellationToken);
 
         if (notificationsEnabled)
@@ -200,7 +206,7 @@ app.MapPut("/api/preferences", async (
             var email = await emailGenerator.GenerateAsync(new EmailContext(
                 context.User.Identity?.Name ?? "LanguageWise learner",
                 true,
-                "Welcome the learner to LanguageWise notifications. Explain that they can receive community contribution, lesson completion, mini-game win, learning streak, and achievement notifications.",
+                "Welcome the learner to LanguageWise notifications. Explain that they can receive community contribution, post engagement, lesson completion, course completion, quiz result, mini-game win, login streak, and achievement notifications.",
                 []), cancellationToken);
 
             await client.CreateNotificationAsync(new NotificationInput(
@@ -357,7 +363,7 @@ app.MapPost("/api/events", async (
 app.Run();
 
 static UserPreferences DefaultPreferences(int userId) =>
-    new(userId, null, true, true, true, true, true, true);
+    new(userId, null, true, true, true, true, true, true, true, true, true);
 
 static async Task<PreferenceUpdateRequest?> ReadPreferencesAsync(
     HttpRequest request,

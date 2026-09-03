@@ -33,10 +33,16 @@ public sealed class NotificationRulesTests
         Assert.That(NotificationRules.IsValidEmail(email), Is.EqualTo(expected));
     }
 
-    [Test]
-    public void ValidateEvent_WithValidEvent_ReturnsNoErrors()
+    [TestCase("community-contribution")]
+    [TestCase("post-engagement")]
+    [TestCase("lesson-completion")]
+    [TestCase("course-completion")]
+    [TestCase("quiz-result")]
+    [TestCase("minigame-win")]
+    [TestCase("login-streak")]
+    public void ValidateEvent_WithSupportedTrigger_ReturnsNoErrors(string trigger)
     {
-        var request = ValidEvent();
+        var request = ValidEvent() with { Trigger = trigger };
 
         Assert.That(NotificationRules.ValidateEvent(request), Is.Empty);
     }
@@ -133,12 +139,46 @@ public sealed class NotificationRulesTests
         Assert.That(NotificationRules.ShouldNotify(preferences, "course-completion", true), Is.False);
     }
 
-    [Test]
-    public void ShouldNotify_WhenCategoryIsEnabled_ReturnsTrue()
+    [TestCase("community-contribution")]
+    [TestCase("post-engagement")]
+    [TestCase("lesson-completion")]
+    [TestCase("course-completion")]
+    [TestCase("quiz-result")]
+    [TestCase("minigame-win")]
+    [TestCase("login-streak")]
+    public void ShouldNotify_WhenMatchingTriggerPreferenceIsEnabled_ReturnsTrue(string trigger)
     {
-        var preferences = Preferences(notifyCourseCompletion: true);
+        var preferences = Preferences(
+            notifyCommunityContribution: trigger == "community-contribution",
+            notifyPostEngagement: trigger == "post-engagement",
+            notifyLessonCompletion: trigger == "lesson-completion",
+            notifyCourseCompletion: trigger == "course-completion",
+            notifyQuizResult: trigger == "quiz-result",
+            notifyMinigameWin: trigger == "minigame-win",
+            notifyLoginStreak: trigger == "login-streak");
 
-        Assert.That(NotificationRules.ShouldNotify(preferences, "lesson-completion", false), Is.True);
+        Assert.That(NotificationRules.ShouldNotify(preferences, trigger, false), Is.True);
+    }
+
+    [TestCase("community-contribution")]
+    [TestCase("post-engagement")]
+    [TestCase("lesson-completion")]
+    [TestCase("course-completion")]
+    [TestCase("quiz-result")]
+    [TestCase("minigame-win")]
+    [TestCase("login-streak")]
+    public void ShouldNotify_WhenOnlyOtherTriggerPreferencesAreEnabled_ReturnsFalse(string trigger)
+    {
+        var preferences = Preferences(
+            notifyCommunityContribution: trigger != "community-contribution",
+            notifyPostEngagement: trigger != "post-engagement",
+            notifyLessonCompletion: trigger != "lesson-completion",
+            notifyCourseCompletion: trigger != "course-completion",
+            notifyQuizResult: trigger != "quiz-result",
+            notifyMinigameWin: trigger != "minigame-win",
+            notifyLoginStreak: trigger != "login-streak");
+
+        Assert.That(NotificationRules.ShouldNotify(preferences, trigger, false), Is.False);
     }
 
     [Test]
@@ -154,7 +194,24 @@ public sealed class NotificationRulesTests
 
     private static UserPreferences Preferences(
         bool notifyAll = true,
+        bool notifyCommunityContribution = false,
+        bool notifyPostEngagement = false,
+        bool notifyLessonCompletion = false,
         bool notifyCourseCompletion = false,
+        bool notifyQuizResult = false,
+        bool notifyMinigameWin = false,
+        bool notifyLoginStreak = false,
         bool notifyAchievements = false) =>
-        new(1, "learner@example.com", notifyAll, false, notifyCourseCompletion, false, false, notifyAchievements);
+        new(
+            1,
+            "learner@example.com",
+            notifyAll,
+            notifyCommunityContribution,
+            notifyPostEngagement,
+            notifyLessonCompletion,
+            notifyCourseCompletion,
+            notifyQuizResult,
+            notifyMinigameWin,
+            notifyLoginStreak,
+            notifyAchievements);
 }

@@ -212,7 +212,7 @@ public sealed class EventProcessingIntegrationTests
         using var databaseHttpClient = new HttpClient { BaseAddress = new Uri(databaseUrl) };
         var databaseClient = new AppDataClient(databaseHttpClient);
         await databaseClient.UpsertPreferencesAsync(new UserPreferences(
-            recipientUserId, null, true, true, true, true, true, true));
+            recipientUserId, null, true, true, true, true, true, true, true, true, true));
 
         var sender = new RecordingEmailSender();
         using var fixture = new ApiFixture(databaseUrl, sender);

@@ -1,10 +1,13 @@
 export interface Preferences {
   email: string
   notifyAll: boolean
+  notifyCommunityContribution: boolean
   notifyPostEngagement: boolean
+  notifyLessonCompletion: boolean
   notifyCourseCompletion: boolean
-  notifyQuizResults: boolean
-  notifyStreaks: boolean
+  notifyQuizResult: boolean
+  notifyMinigameWin: boolean
+  notifyLoginStreak: boolean
   notifyAchievements: boolean
 }
 
