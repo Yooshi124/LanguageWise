@@ -1,11 +1,7 @@
 PRAGMA foreign_keys = ON;
 
-CREATE TABLE IF NOT EXISTS SampleItems (
-    Id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    Name        TEXT NOT NULL,
-    Description TEXT NOT NULL,
-    CreatedAt   TEXT NOT NULL
-);
+-- Retire the release-zero sample table from both fresh and existing volumes.
+DROP TABLE IF EXISTS SampleItems;
 
 -- One row per place a post can live. Every forum except Global mirrors a course
 -- in the quizzes and courses service: CourseId is that service's course ID, and

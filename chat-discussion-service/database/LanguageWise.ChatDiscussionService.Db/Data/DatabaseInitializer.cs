@@ -3,8 +3,8 @@ using Microsoft.Data.Sqlite;
 namespace LanguageWise.ChatDiscussionService.Db.Data;
 
 /// <summary>
-/// Applies the schema on every start-up and seeds the table the first time it is empty,
-/// so that a brand new Docker volume always comes up with usable data.
+/// Applies the schema on every start-up and seeds the discussion tables the first time
+/// they are empty, so that a brand new Docker volume always comes up with usable data.
 /// </summary>
 public sealed class DatabaseInitializer(string connectionString, string sqlDirectory, ILogger<DatabaseInitializer> logger)
 {
@@ -18,10 +18,10 @@ public sealed class DatabaseInitializer(string connectionString, string sqlDirec
         Execute(connection, ReadSqlFile("schema.sql"));
         logger.LogInformation("Schema applied to {ConnectionString}.", connectionString);
 
-        if (CountItems(connection) == 0)
+        if (CountForums(connection) == 0)
         {
             Execute(connection, ReadSqlFile("seed.sql"));
-            logger.LogInformation("Seeded {Count} sample items.", CountItems(connection));
+            logger.LogInformation("Seeded {Count} forums.", CountForums(connection));
         }
     }
 
@@ -55,10 +55,10 @@ public sealed class DatabaseInitializer(string connectionString, string sqlDirec
         command.ExecuteNonQuery();
     }
 
-    private static long CountItems(SqliteConnection connection)
+    private static long CountForums(SqliteConnection connection)
     {
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM SampleItems;";
+        command.CommandText = "SELECT COUNT(*) FROM Forums;";
         return Convert.ToInt64(command.ExecuteScalar());
     }
 }
