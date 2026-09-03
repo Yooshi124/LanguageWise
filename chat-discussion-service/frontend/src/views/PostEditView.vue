@@ -120,7 +120,14 @@ onMounted(load);
     </StateBlock>
 
     <template v-else>
-        <h2 class="lw-section-heading">Edit post</h2>
+        <header class="cd-heading cd-heading--compact">
+            <div class="cd-heading__intro">
+                <v-chip color="primary" variant="tonal">Edit post</v-chip>
+            </div>
+            <h1>Refine your post.</h1>
+            <p>Update the title, content or images, then save your changes.</p>
+        </header>
+
         <PostForm
             :initial="post"
             :images="images"

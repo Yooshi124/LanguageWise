@@ -3,7 +3,7 @@
   color: #172033;
   background: #f6f7fb;
   --app-sidebar-collapsed-width: 88px;
-  --app-sidebar-expanded-width: 278px;
+  --app-sidebar-expanded-width: 310px;
   --app-sidebar-width: var(--app-sidebar-collapsed-width);
 }
 

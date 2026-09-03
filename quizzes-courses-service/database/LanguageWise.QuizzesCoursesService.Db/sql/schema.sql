@@ -87,6 +87,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS UX_Milestones_User_Lesson
     ON Milestones(UserId, LessonId) WHERE LessonId IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS UX_Milestones_User_Quiz
     ON Milestones(UserId, QuizId) WHERE QuizId IS NOT NULL;
+CREATE INDEX IF NOT EXISTS IX_Milestones_User_Id
+    ON Milestones(UserId, Id);
 
 CREATE INDEX IF NOT EXISTS IX_Lessons_CourseId ON Lessons(CourseId);
 CREATE INDEX IF NOT EXISTS IX_QuizQuestions_QuizId ON QuizQuestions(QuizId);

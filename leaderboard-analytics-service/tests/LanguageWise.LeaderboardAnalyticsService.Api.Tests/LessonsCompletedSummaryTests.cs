@@ -13,7 +13,8 @@ public sealed class LessonsCompletedSummaryTests
     [Test]
     public async Task Summary_WithoutToken_ReturnsUnauthorized()
     {
-        using var fixture = new ApiFixture();
+        var handler = new QuizzesCoursesFakeHandler();
+        using var fixture = new ApiFixture { QuizzesCoursesHandler = handler };
         using var client = fixture.CreateClient();
 
         var response = await client.PostAsync("/api/lessons-completed-summary", content: null);
@@ -24,7 +25,10 @@ public sealed class LessonsCompletedSummaryTests
     [Test]
     public async Task Summary_WithBearerToken_ReturnsSummaryPayload()
     {
-        using var fixture = new ApiFixture();
+        var handler = new QuizzesCoursesFakeHandler(
+            myPages: [new MilestonePage([], null)],
+            courses: []);
+        using var fixture = new ApiFixture { QuizzesCoursesHandler = handler };
         using var client = fixture.CreateClient();
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", fixture.CreateToken(userId: 42));
@@ -45,11 +49,32 @@ public sealed class LessonsCompletedSummaryTests
     [Test]
     public async Task Summary_ForwardsCurrentUsersChartDataToGenerator()
     {
+        const int callerId = 123;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var completedAt = new DateTimeOffset(today.AddDays(-2).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        var courses = new List<Course> { new(1, "de", "German", "") };
+        var lessonsByCourseCode = new Dictionary<string, IReadOnlyList<LessonSummary>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["de"] = [new(100, "l100", "L100", 1), new(101, "l101", "L101", 2)]
+        };
+        var myMilestones = new List<Milestone>
+        {
+            new(1, callerId, null, 100, null, completedAt),
+            new(2, callerId, null, 101, null, completedAt)
+        };
+        var handler = new QuizzesCoursesFakeHandler(
+            myPages: [new MilestonePage(myMilestones, null)],
+            courses: courses,
+            lessonsByCourseCode: lessonsByCourseCode);
         var fake = new FakeSummaryGenerator();
-        using var fixture = new ApiFixture { SummaryGenerator = fake };
+        using var fixture = new ApiFixture
+        {
+            SummaryGenerator = fake,
+            QuizzesCoursesHandler = handler
+        };
         using var client = fixture.CreateClient();
         client.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", fixture.CreateToken(userId: 123));
+            new AuthenticationHeaderValue("Bearer", fixture.CreateToken(userId: callerId));
 
         var response = await client.PostAsync("/api/lessons-completed-summary", content: null);
 
@@ -57,10 +82,10 @@ public sealed class LessonsCompletedSummaryTests
         {
             Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
             Assert.That(fake.LastChartData, Is.Not.Null);
-            Assert.That(fake.LastChartData!.UserId, Is.EqualTo(123));
-            Assert.That(fake.LastChartData.Series, Has.Count.EqualTo(6));
-            Assert.That(fake.LastChartData.To, Is.EqualTo(DateOnly.FromDateTime(DateTime.UtcNow)));
-            Assert.That(fake.LastChartData.From, Is.EqualTo(fake.LastChartData.To.AddDays(-29)));
+            Assert.That(fake.LastChartData!.UserId, Is.EqualTo(callerId));
+            Assert.That(fake.LastChartData.Series.Select(s => s.CourseCode), Is.EquivalentTo(["de"]));
+            Assert.That(fake.LastChartData.To, Is.EqualTo(today));
+            Assert.That(fake.LastChartData.From, Is.EqualTo(today.AddDays(-29)));
         });
     }
 

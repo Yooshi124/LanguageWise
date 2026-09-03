@@ -5,7 +5,7 @@ export { QuestsAchievementsNotificationsComponent }
 
 export const metadata = {
   key: 'quests-achievements-notifications',
-  displayName: 'Quests & Achievements',
+  displayName: 'Achievements & Notifications',
   icon: 'quests',
   basePath: '/quests-and-achievements',
   requiresAuth: true,

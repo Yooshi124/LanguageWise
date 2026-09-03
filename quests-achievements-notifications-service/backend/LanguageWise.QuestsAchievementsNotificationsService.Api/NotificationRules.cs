@@ -16,7 +16,14 @@ internal static class NotificationRules
     {
         var errors = new Dictionary<string, string[]>();
 
-        if (request.Trigger is not ("post-engagement" or "course-completion" or "quiz-result" or "streak"))
+        if (request.Trigger is not (
+            "community-contribution"
+            or "post-engagement"
+            or "lesson-completion"
+            or "course-completion"
+            or "quiz-result"
+            or "minigame-win"
+            or "login-streak"))
         {
             errors["trigger"] = ["Trigger is not supported."];
         }
@@ -31,15 +38,28 @@ internal static class NotificationRules
             errors["recipientUserId"] = ["Recipient user ID must be positive."];
         }
 
+        if (string.IsNullOrWhiteSpace(request.RecipientName))
+        {
+            errors["recipientName"] = ["Recipient name is required."];
+        }
+
+        if (request.Value < 0)
+        {
+            errors["value"] = ["Value cannot be negative."];
+        }
+
         return errors;
     }
 
-    internal static ProgressUpdate CalculateProgress(int oldProgress, int progressNeeded)
+    internal static ProgressUpdate CalculateProgress(int oldProgress, int progressNeeded, int? value = null)
     {
-        var progress = oldProgress >= progressNeeded ? progressNeeded : oldProgress + 1;
+        var target = value ?? (oldProgress < int.MaxValue ? oldProgress + 1 : int.MaxValue);
+        var progress = progressNeeded < 0
+            ? Math.Max(oldProgress, target)
+            : Math.Max(oldProgress, Math.Min(target, progressNeeded));
         return new ProgressUpdate(
             progress,
-            oldProgress < progressNeeded && progress >= progressNeeded);
+            progressNeeded >= 0 && oldProgress < progressNeeded && progress >= progressNeeded);
     }
 
     internal static bool ShouldNotify(UserPreferences preferences, string trigger, bool newlyAttained)
@@ -51,10 +71,13 @@ internal static class NotificationRules
 
         var eventEnabled = trigger switch
         {
+            "community-contribution" => preferences.NotifyCommunityContribution,
             "post-engagement" => preferences.NotifyPostEngagement,
+            "lesson-completion" => preferences.NotifyLessonCompletion,
             "course-completion" => preferences.NotifyCourseCompletion,
-            "quiz-result" => preferences.NotifyQuizResults,
-            "streak" => preferences.NotifyStreaks,
+            "quiz-result" => preferences.NotifyQuizResult,
+            "minigame-win" => preferences.NotifyMinigameWin,
+            "login-streak" => preferences.NotifyLoginStreak,
             _ => false
         };
 

@@ -16,14 +16,23 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.Extensions.Options;
 
 const string ServiceName = "quizzes-courses-service-backend";
+const int DefaultMilestonePageSize = 100;
+const int MaxMilestonePageSize = 200;
 
 var builder = WebApplication.CreateBuilder(args);
 var databaseServiceUrl = builder.Configuration["Services:Database"] ?? "http://localhost:6003";
+var achievementsServiceUrl = builder.Configuration["Services:Achievements"] ?? "http://localhost:5004";
 
 builder.Services.AddHttpClient<CatalogClient>(client =>
 {
     client.BaseAddress = new Uri(databaseServiceUrl.TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(10);
+});
+
+builder.Services.AddHttpClient<AchievementEventsClient>(client =>
+{
+    client.BaseAddress = new Uri($"{achievementsServiceUrl}/");
+    client.Timeout = TimeSpan.FromSeconds(20);
 });
 
 builder.Services
@@ -368,13 +377,29 @@ app.MapPost("/api/quiz-attempts/{attemptId:int}/submit", async (
     SubmitQuizAttemptRequest request,
     HttpContext context,
     CatalogClient client,
+    AchievementEventsClient achievementEventsClient,
     CancellationToken cancellationToken) =>
     await ExecuteForUserAsync(context, async userId =>
-        ToResult(await client.SubmitQuizAttemptAsync(
+    {
+        var response = await client.SubmitQuizAttemptAsync(
             attemptId,
             userId,
             request,
-            cancellationToken)), app.Logger));
+            cancellationToken);
+        if (response is { IsSuccess: true, Value: not null })
+        {
+            await RecordEventAsync(
+                achievementEventsClient,
+                context,
+                userId,
+                (client, name, token) => client.RecordQuizResultAsync(
+                    userId, name, response.Value, token, cancellationToken),
+                "quiz result",
+                app.Logger);
+        }
+
+        return ToResult(response);
+    }, app.Logger));
 
 app.MapGet("/api/courses/{code}/flashcard-decks", async (
     string code,
@@ -414,6 +439,34 @@ app.MapGet("/api/courses/{code}/progress", async (
         return progress is null ? Results.NotFound() : Results.Ok(progress);
     }, app.Logger));
 
+app.MapGet("/api/milestones", async (
+    int? afterId,
+    int? limit,
+    CatalogClient client,
+    CancellationToken cancellationToken) =>
+    await GetMilestonesAsync(
+        afterId,
+        limit,
+        (cursor, pageSize) => client.GetMilestonesAsync(cursor, pageSize, cancellationToken),
+        app.Logger));
+
+app.MapGet("/api/me/milestones", async (
+    int? afterId,
+    int? limit,
+    HttpContext context,
+    CatalogClient client,
+    CancellationToken cancellationToken) =>
+    await ExecuteForUserAsync(context, userId =>
+        GetMilestonesAsync(
+            afterId,
+            limit,
+            (cursor, pageSize) => client.GetUserMilestonesAsync(
+                userId,
+                cursor,
+                pageSize,
+                cancellationToken),
+            app.Logger), app.Logger));
+
 // Vocabulary the user has unlocked: every course they have started, limited to the
 // lessons whose milestone they have achieved. Other services (e.g. mini-games) call
 // this endpoint with the user's token instead of reaching into the database service.
@@ -451,13 +504,28 @@ app.MapPut("/api/lessons/{lessonId:int}/milestone", async (
     int lessonId,
     HttpContext context,
     CatalogClient client,
+    AchievementEventsClient achievementEventsClient,
     CancellationToken cancellationToken) =>
     await ExecuteForUserAsync(context, async userId =>
-        ToResult(await client.SetLessonMilestoneAsync(
+    {
+        var response = await client.SetLessonMilestoneAsync(
             lessonId,
             userId,
             completed: true,
-            cancellationToken)), app.Logger));
+            cancellationToken);
+        if (response is { IsSuccess: true, Value.Changed: true })
+        {
+            await RecordLessonCompletionAsync(
+                client,
+                achievementEventsClient,
+                context,
+                userId,
+                cancellationToken,
+                app.Logger);
+        }
+
+        return ToResult(response);
+    }, app.Logger));
 
 app.MapDelete("/api/lessons/{lessonId:int}/milestone", async (
     int lessonId,
@@ -475,13 +543,29 @@ app.MapPut("/api/courses/{code}/milestone", async (
     string code,
     HttpContext context,
     CatalogClient client,
+    AchievementEventsClient achievementEventsClient,
     CancellationToken cancellationToken) =>
     await ExecuteForUserAsync(context, async userId =>
-        ToResult(await client.SetCourseMilestoneAsync(
+    {
+        var response = await client.SetCourseMilestoneAsync(
             Normalize(code),
             userId,
             completed: true,
-            cancellationToken)), app.Logger));
+            cancellationToken);
+        if (response is { IsSuccess: true, Value.Changed: true })
+        {
+            await RecordEventAsync(
+                achievementEventsClient,
+                context,
+                userId,
+                (client, name, token) => client.RecordCourseCompletionAsync(
+                    userId, name, token, cancellationToken),
+                "course completion",
+                app.Logger);
+        }
+
+        return ToResult(response);
+    }, app.Logger));
 
 app.MapDelete("/api/courses/{code}/milestone", async (
     string code,
@@ -497,7 +581,83 @@ app.MapDelete("/api/courses/{code}/milestone", async (
 
 app.Run();
 
+static async Task RecordLessonCompletionAsync(
+    CatalogClient catalogClient,
+    AchievementEventsClient achievementEventsClient,
+    HttpContext context,
+    int userId,
+    CancellationToken cancellationToken,
+    ILogger logger)
+{
+    try
+    {
+        var progress = await catalogClient.GetStartedCourseProgressAsync(userId, cancellationToken);
+        var completedLessons = progress.Sum(course => course.Lessons.Count(lesson => lesson.Completed));
+        await achievementEventsClient.RecordLessonCompletionAsync(
+            userId,
+            context.User.Identity!.Name!,
+            completedLessons,
+            GetAccessToken(context),
+            cancellationToken);
+    }
+    catch (Exception exception) when (exception is not OperationCanceledException)
+    {
+        logger.LogError(exception, "Failed to record lesson completion for user {UserId}.", userId);
+    }
+}
+
+static async Task RecordEventAsync(
+    AchievementEventsClient client,
+    HttpContext context,
+    int userId,
+    Func<AchievementEventsClient, string, string, Task> record,
+    string eventName,
+    ILogger logger)
+{
+    try
+    {
+        await record(client, context.User.Identity!.Name!, GetAccessToken(context));
+    }
+    catch (Exception exception) when (exception is not OperationCanceledException)
+    {
+        logger.LogError(exception, "Failed to record {EventName} for user {UserId}.", eventName, userId);
+    }
+}
+
+static string GetAccessToken(HttpContext context)
+{
+    var header = context.Request.Headers.Authorization.ToString();
+    return header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+        ? header["Bearer ".Length..].Trim()
+        : context.Request.Cookies["token"]!;
+}
+
 static string Normalize(string value) => value.Trim().ToLowerInvariant();
+
+static Task<IResult> GetMilestonesAsync(
+    int? afterId,
+    int? limit,
+    Func<int, int, Task<MilestonePage>> getPage,
+    ILogger logger)
+{
+    var cursor = afterId ?? 0;
+    var pageSize = limit ?? DefaultMilestonePageSize;
+    var errors = new Dictionary<string, string[]>();
+
+    if (cursor < 0)
+    {
+        errors["afterId"] = ["Cursor must be zero or greater."];
+    }
+
+    if (pageSize is < 1 or > MaxMilestonePageSize)
+    {
+        errors["limit"] = [$"Limit must be between 1 and {MaxMilestonePageSize}."];
+    }
+
+    return errors.Count > 0
+        ? Task.FromResult(Results.ValidationProblem(errors))
+        : ExecuteAsync(async () => Results.Ok(await getPage(cursor, pageSize)), logger);
+}
 
 static async Task<IResult> ExecuteAsync(Func<Task<IResult>> action, ILogger logger)
 {

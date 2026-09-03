@@ -69,9 +69,10 @@ public sealed class EventProcessingIntegrationTests
             new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
 
         var request = new EventRequest(
-            "course-completion",
+            "lesson-completion",
             "Introduction to Spanish",
-            UserId);
+            UserId,
+            "Amber");
 
         using var firstResponse = await apiClient.PostAsJsonAsync("/api/events", request);
         using var secondResponse = await apiClient.PostAsJsonAsync("/api/events", request);
@@ -82,7 +83,7 @@ public sealed class EventProcessingIntegrationTests
         var progress = await databaseClient.GetFromJsonAsync<List<UserAchievement>>(
             $"user_achievements?user_id=eq.{UserId}&achievement_id=in.(1,2,3)&order=achievement_id.asc");
         var notifications = await databaseClient.GetFromJsonAsync<List<NotificationInput>>(
-            $"notifications?user_id=eq.{UserId}&trigger=eq.course-completion");
+            $"notifications?user_id=eq.{UserId}&trigger=eq.lesson-completion");
         var generatedNotifications = notifications!
             .Where(item => item.EmailSubject == "Course achievement progress")
             .ToList();
@@ -94,21 +95,21 @@ public sealed class EventProcessingIntegrationTests
             Assert.That(
                 responseBody.RootElement.GetProperty("achievements").EnumerateArray()
                     .Select(item => item.GetProperty("progress").GetInt32()),
-                Is.EqualTo(new[] { 1, 4, 4 }));
+                Is.EqualTo(new[] { 1, 1, 1 }));
             Assert.That(
                 responseBody.RootElement.GetProperty("achievements").EnumerateArray()
                     .Select(item => item.GetProperty("newlyAttained").GetBoolean()),
-                Is.EqualTo(new[] { false, false, false }));
+                Is.EqualTo(new[] { true, false, false }));
             Assert.That(
                 secondResponseBody.RootElement.GetProperty("achievements").EnumerateArray()
                     .Select(item => item.GetProperty("newlyAttained").GetBoolean()),
-                Is.EqualTo(new[] { false, true, false }));
+                Is.EqualTo(new[] { false, false, false }));
             Assert.That(progress, Has.Count.EqualTo(3));
-            Assert.That(progress!.Select(item => item.Progress), Is.EqualTo(new[] { 1, 5, 5 }));
+            Assert.That(progress!.Select(item => item.Progress), Is.EqualTo(new[] { 1, 2, 2 }));
             Assert.That(generatedNotifications, Has.Count.EqualTo(2));
-            Assert.That(generatedNotifications[0].EmailBody, Does.Contain("First Course"));
-            Assert.That(generatedNotifications[0].EmailBody, Does.Contain("Course Explorer"));
-            Assert.That(generatedNotifications[0].EmailBody, Does.Contain("Course Champion"));
+            Assert.That(generatedNotifications[0].EmailBody, Does.Contain("Complete your first lesson"));
+            Assert.That(generatedNotifications[0].EmailBody, Does.Contain("Complete five lessons"));
+            Assert.That(generatedNotifications[0].EmailBody, Does.Contain("Complete twenty lessons"));
         });
     }
 
@@ -122,9 +123,10 @@ public sealed class EventProcessingIntegrationTests
         apiClient.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
         var request = new EventRequest(
-            "post-engagement",
+            "community-contribution",
             "Welcome to LanguageWise",
-            recipientUserId);
+            recipientUserId,
+            "Learner");
 
         var beforeRequest = DateTimeOffset.UtcNow;
         using var response = await apiClient.PostAsJsonAsync("/api/events", request);
@@ -133,7 +135,7 @@ public sealed class EventProcessingIntegrationTests
         var progress = await databaseClient.GetFromJsonAsync<List<UserAchievement>>(
             $"user_achievements?user_id=eq.{recipientUserId}&order=achievement_id.asc");
         var notifications = await databaseClient.GetFromJsonAsync<List<NotificationInput>>(
-            $"notifications?user_id=eq.{recipientUserId}&trigger=eq.post-engagement");
+            $"notifications?user_id=eq.{recipientUserId}&trigger=eq.community-contribution");
 
         Assert.Multiple(() =>
         {
@@ -156,14 +158,15 @@ public sealed class EventProcessingIntegrationTests
         apiClient.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
         var request = new EventRequest(
-            "streak",
+            "login-streak",
             "Daily learning streak",
-            UserId);
+            UserId,
+            "Amber");
 
         using var response = await apiClient.PostAsJsonAsync("/api/events", request);
         using var databaseClient = new HttpClient { BaseAddress = new Uri(databaseUrl) };
         var notifications = await databaseClient.GetFromJsonAsync<List<NotificationInput>>(
-            $"notifications?user_id=eq.{UserId}&trigger=eq.streak");
+            $"notifications?user_id=eq.{UserId}&trigger=eq.login-streak");
 
         Assert.Multiple(() =>
         {
@@ -177,13 +180,39 @@ public sealed class EventProcessingIntegrationTests
     }
 
     [Test]
+    public async Task LoginStreak_WithAbsoluteValue_OnlyRaisesStoredProgress()
+    {
+        const int recipientUserId = 95;
+        using var fixture = new ApiFixture(databaseUrl);
+        using var apiClient = fixture.CreateClient();
+        apiClient.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", fixture.CreateToken(recipientUserId));
+
+        using var firstResponse = await apiClient.PostAsJsonAsync("/api/events", new EventRequest(
+            "login-streak", "Continued a daily login streak for five consecutive days", recipientUserId, "Amber", 5));
+        using var secondResponse = await apiClient.PostAsJsonAsync("/api/events", new EventRequest(
+            "login-streak", "Started a new daily login streak", recipientUserId, "Amber", 0));
+
+        using var databaseClient = new HttpClient { BaseAddress = new Uri(databaseUrl) };
+        var progress = await databaseClient.GetFromJsonAsync<List<UserAchievement>>(
+            $"user_achievements?user_id=eq.{recipientUserId}&achievement_id=in.(9,10,11)&order=achievement_id.asc");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(firstResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(secondResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(progress!.Select(item => item.Progress), Is.EqualTo(new[] { 3, 5, 5 }));
+        });
+    }
+
+    [Test]
     public async Task Event_WithoutEmail_StillStoresNotificationAndProgress()
     {
         const int recipientUserId = 96;
         using var databaseHttpClient = new HttpClient { BaseAddress = new Uri(databaseUrl) };
         var databaseClient = new AppDataClient(databaseHttpClient);
         await databaseClient.UpsertPreferencesAsync(new UserPreferences(
-            recipientUserId, null, true, true, true, true, true, true));
+            recipientUserId, null, true, true, true, true, true, true, true, true, true));
 
         var sender = new RecordingEmailSender();
         using var fixture = new ApiFixture(databaseUrl, sender);
@@ -191,20 +220,21 @@ public sealed class EventProcessingIntegrationTests
         apiClient.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
         var request = new EventRequest(
-            "quiz-result",
+            "minigame-win",
             "Spanish vocabulary quiz",
-            recipientUserId);
+            recipientUserId,
+            "Learner");
 
         using var response = await apiClient.PostAsJsonAsync("/api/events", request);
         var progress = await databaseHttpClient.GetFromJsonAsync<List<UserAchievement>>(
             $"user_achievements?user_id=eq.{recipientUserId}&order=achievement_id.asc");
         var notifications = await databaseHttpClient.GetFromJsonAsync<List<NotificationInput>>(
-            $"notifications?user_id=eq.{recipientUserId}&trigger=eq.quiz-result");
+            $"notifications?user_id=eq.{recipientUserId}&trigger=eq.minigame-win");
 
         Assert.Multiple(() =>
         {
             Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
-            Assert.That(progress!.Select(item => item.Progress), Is.EqualTo(new[] { 1, 1 }));
+            Assert.That(progress!.Select(item => item.Progress), Is.EqualTo(new[] { 1, 1, 1 }));
             Assert.That(notifications, Has.Count.EqualTo(1));
             Assert.That(notifications![0].EmailSubject, Is.Not.Empty);
             Assert.That(notifications[0].EmailBody, Is.Not.Empty);
@@ -221,13 +251,13 @@ public sealed class EventProcessingIntegrationTests
         var databaseClient = new AppDataClient(databaseHttpClient);
         var suffix = Guid.NewGuid().ToString("N");
         await databaseClient.CreateNotificationAsync(new NotificationInput(
-            profileUserId, "streak",
+            profileUserId, "login-streak",
             new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero), $"Old {suffix}", "Old body"));
         await databaseClient.CreateNotificationAsync(new NotificationInput(
-            profileUserId, "quiz-result",
+            profileUserId, "minigame-win",
             new DateTimeOffset(2030, 1, 2, 9, 0, 0, TimeSpan.Zero), $"New {suffix}", "New body"));
         await databaseClient.CreateNotificationAsync(new NotificationInput(
-            99, "course-completion",
+            99, "lesson-completion",
             new DateTimeOffset(2030, 1, 3, 9, 0, 0, TimeSpan.Zero), $"Other {suffix}", "Other body"));
 
         using var apiClient = fixture.CreateClient();
@@ -399,7 +429,7 @@ public sealed class EventProcessingIntegrationTests
             CancellationToken cancellationToken = default) =>
             Task.FromResult(new EmailContent(
                 "Course achievement progress",
-                string.Join(", ", context.Achievements.Select(item => item.Name)),
+                string.Join(", ", context.Achievements.Select(item => item.Description)),
                 false));
     }
 }

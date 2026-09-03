@@ -8,14 +8,14 @@ public sealed class AppDataClient(HttpClient httpClient)
 {
     public async Task<IReadOnlyList<Achievement>> GetAchievementsAsync(CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<List<Achievement>>(
-            "achievements?select=achievement_id,name,image,trigger,progress_needed&order=achievement_id.asc",
+            "achievements?select=achievement_id,name,description,image,trigger,progress_needed&order=achievement_id.asc",
             cancellationToken) ?? [];
 
     public async Task<IReadOnlyList<Achievement>> GetAchievementsByTriggerAsync(
         string trigger,
         CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<List<Achievement>>(
-            $"achievements?trigger=eq.{Uri.EscapeDataString(trigger)}&select=achievement_id,name,image,trigger,progress_needed&order=progress_needed.asc",
+            $"achievements?trigger=eq.{Uri.EscapeDataString(trigger)}&select=achievement_id,name,description,image,trigger,progress_needed&order=progress_needed.asc",
             cancellationToken) ?? [];
 
     public async Task<IReadOnlyList<UserAchievement>> GetUserAchievementsAsync(

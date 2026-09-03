@@ -6,6 +6,7 @@ using LanguageWise.LeaderboardAnalyticsService.Api.Models;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -26,7 +27,7 @@ internal sealed class ApiFixture : WebApplicationFactory<Program>
     }
 
     internal ISummaryGenerator SummaryGenerator { get; set; } = new FakeSummaryGenerator();
-    internal HttpMessageHandler? LeaderboardHandler { get; set; }
+    internal HttpMessageHandler? QuizzesCoursesHandler { get; set; }
 
     internal string CreateToken(int userId = 7, string username = "justin")
     {
@@ -61,13 +62,16 @@ internal sealed class ApiFixture : WebApplicationFactory<Program>
         {
             services.RemoveAll<ISummaryGenerator>();
             services.AddSingleton(SummaryGenerator);
-            if (LeaderboardHandler is not null)
+            if (QuizzesCoursesHandler is not null)
             {
-                services.RemoveAll<LeaderboardClient>();
-                services.AddSingleton(new LeaderboardClient(new HttpClient(LeaderboardHandler)
+                services.RemoveAll<QuizzesCoursesClient>();
+                var httpClient = new HttpClient(QuizzesCoursesHandler)
                 {
-                    BaseAddress = new Uri("http://leaderboard-database/")
-                }));
+                    BaseAddress = new Uri("http://quizzes-courses/")
+                };
+                services.AddSingleton(new QuizzesCoursesClient(
+                    httpClient,
+                    new MemoryCache(new MemoryCacheOptions())));
             }
         });
     }

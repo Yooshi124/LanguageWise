@@ -1,7 +1,9 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import AppIcon from '../components/AppIcon.vue';
 import CommentItem from '../components/CommentItem.vue';
+import ConfirmDialog from '../components/ConfirmDialog.vue';
 import ImageGallery from '../components/ImageGallery.vue';
 import ImagePicker from '../components/ImagePicker.vue';
 import LikeButton from '../components/LikeButton.vue';
@@ -31,6 +33,7 @@ const draftImages = ref([]);
 const posting = ref(false);
 const loadingMore = ref(false);
 const deleting = ref(false);
+const confirmingDelete = ref(false);
 
 const postId = computed(() => Number(props.id));
 const isMine = computed(() => isOwnedByFeatureUser(post.value));
@@ -123,11 +126,7 @@ async function storedImages(commentId) {
 }
 
 async function removePost() {
-    const confirmed = window.confirm(
-        'Delete this post? Its comments and likes are deleted with it, and this cannot be undone.'
-    );
-
-    if (!confirmed || deleting.value) {
+    if (deleting.value) {
         return;
     }
 
@@ -139,6 +138,7 @@ async function removePost() {
     } catch (failure) {
         reportAction(failure, 'The post could not be deleted.');
         deleting.value = false;
+        confirmingDelete.value = false;
     }
 }
 
@@ -198,18 +198,16 @@ watch(postId, load, { immediate: true });
     />
 
     <template v-else-if="post">
-        <p class="cd-breadcrumb">
-            <RouterLink :to="{ name: 'forum', params: { code: post.forumCode } }">
-                &larr; {{ post.forumName }}
-            </RouterLink>
-        </p>
+        <v-btn :to="{ name: 'forum', params: { code: post.forumCode } }" variant="text" class="cd-back">
+            <template #prepend><AppIcon name="arrow-left" /></template>
+            {{ post.forumName }}
+        </v-btn>
 
         <article class="lw-card">
             <h2 class="cd-detail__title">{{ post.title }}</h2>
 
+            <p class="cd-detail__author">{{ post.authorName || 'Unknown author' }}</p>
             <p class="cd-detail__meta">
-                <span>{{ post.authorName || 'Unknown author' }}</span>
-                <span aria-hidden="true">·</span>
                 <span>{{ formatDate(post.createdAt) }}</span>
                 <span v-if="post.updatedAt !== post.createdAt" class="cd-detail__edited">(edited)</span>
             </p>
@@ -231,7 +229,7 @@ watch(postId, load, { immediate: true });
                     <RouterLink class="lw-command" :to="{ name: 'post-edit', params: { id: post.id } }">
                         Edit
                     </RouterLink>
-                    <button type="button" class="lw-command" :disabled="deleting" @click="removePost">
+                    <button type="button" class="lw-command" :disabled="deleting" @click="confirmingDelete = true">
                         {{ deleting ? 'Deleting…' : 'Delete' }}
                     </button>
                 </template>
@@ -286,5 +284,13 @@ watch(postId, load, { immediate: true });
                 </button>
             </p>
         </section>
+
+        <ConfirmDialog
+            v-model="confirmingDelete"
+            title="Delete this post?"
+            message="Its comments are deleted with it, and this cannot be undone."
+            :busy="deleting"
+            @confirm="removePost"
+        />
     </template>
 </template>

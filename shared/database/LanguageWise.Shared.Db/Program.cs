@@ -45,6 +45,12 @@ app.MapPost("/api/users/verify", (LoginInput input, UserRepository users) =>
         : Results.Unauthorized();
 });
 
+app.MapPost("/api/users/{userId:int}/login-streak", (int userId, UserRepository users) =>
+{
+    var value = users.RecordLogin(userId, DateOnly.FromDateTime(DateTime.UtcNow));
+    return value is null ? Results.NoContent() : Results.Ok(new { value });
+});
+
 app.Run();
 
 internal sealed record LoginInput(string Username, string Password);

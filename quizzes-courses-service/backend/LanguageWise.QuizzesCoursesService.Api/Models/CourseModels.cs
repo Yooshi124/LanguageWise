@@ -99,6 +99,8 @@ public sealed record CourseProgress(
     IReadOnlyList<LessonProgress> Lessons,
     IReadOnlyList<QuizProgress> Quizzes);
 
+public sealed record MilestoneState(bool Completed, bool Changed);
+
 public sealed record LessonMilestone(
     int LessonId,
     string Slug,
@@ -110,6 +112,18 @@ public sealed record StartedCourseProgress(
     string CourseCode,
     string CourseTitle,
     IReadOnlyList<LessonMilestone> Lessons);
+
+public sealed record Milestone(
+    int Id,
+    int UserId,
+    int? CourseId,
+    int? LessonId,
+    int? QuizId,
+    DateTimeOffset CompletedAt);
+
+public sealed record MilestonePage(
+    IReadOnlyList<Milestone> Items,
+    int? NextCursor);
 
 /// <summary>Vocabulary from one milestone-completed lesson.</summary>
 public sealed record LessonVocabulary(

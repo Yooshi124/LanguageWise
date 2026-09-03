@@ -66,13 +66,20 @@ Returns the authenticated username, preferences, achievement progress, and newes
   "preferences": {
     "email": "amber@example.com",
     "notifyAll": true,
-    "notifyCourseCompletion": true
+    "notifyCommunityContribution": true,
+    "notifyPostEngagement": true,
+    "notifyLessonCompletion": true,
+    "notifyCourseCompletion": true,
+    "notifyQuizResult": true,
+    "notifyMinigameWin": true,
+    "notifyLoginStreak": true,
+    "notifyAchievements": true
   },
   "achievements": [
     {
       "achievementId": 1,
-      "name": "First Course",
-      "image": "/images/achievements/first-course.png",
+      "name": "First Lesson",
+      "image": "/images/achievements/first-lesson.png",
       "progress": 1,
       "progressNeeded": 1
     }
@@ -80,7 +87,7 @@ Returns the authenticated username, preferences, achievement progress, and newes
   "notifications": [
     {
       "notificationId": 2,
-      "trigger": "post-engagement",
+      "trigger": "community-contribution",
       "time": "2026-08-29T14:15:00Z",
       "emailSubject": "Consectetur adipiscing elit",
       "emailBody": "Ut enim ad minim veniam."
@@ -97,15 +104,24 @@ Accepts JSON:
 {
   "email": "learner@example.com",
   "notifyAll": true,
+  "notifyCommunityContribution": true,
   "notifyPostEngagement": true,
+  "notifyLessonCompletion": true,
   "notifyCourseCompletion": true,
-  "notifyQuizResults": true,
-  "notifyStreaks": true,
+  "notifyQuizResult": true,
+  "notifyMinigameWin": true,
+  "notifyLoginStreak": true,
   "notifyAchievements": true
 }
 ```
 
 A valid email is required. The record is upserted by authenticated user ID. Preferences control email delivery only; every accepted event still creates in-app notification history and updates achievement progress.
+
+Changing `notifyAll` from `false` to `true` creates a `notifications-enabled`
+notification with no associated achievement. The service uses Ollama to write a
+welcome email describing every supported event and achievement notifications, then sends it to the saved
+address when SMTP is configured. Saving preferences while `notifyAll` is already
+enabled does not send another welcome.
 
 ### `POST /api/events`
 
@@ -113,13 +129,18 @@ Accepts a noteworthy event from another service:
 
 ```json
 {
-  "trigger": "post-engagement",
-  "subject": "Tips for practising Spanish every day",
-  "recipientUserId": 7
+  "trigger": "community-contribution",
+  "subject": "Contributed a post to the Spanish community",
+  "recipientUserId": 7,
+  "recipientName": "Amber"
 }
 ```
 
-Supported triggers are `post-engagement`, `course-completion`, `quiz-result`, and `streak`. The subject is a human-readable description used to generate the notification. Every accepted request represents a new occurrence, adds one progress unit to every achievement tier mapped to that trigger, and uses the server's current time for notification history.
+Supported triggers are `community-contribution`, `post-engagement`, `lesson-completion`, `course-completion`, `quiz-result`, `minigame-win`, and `login-streak`. Each trigger has a matching email preference. The subject is a human-readable description used to generate the notification. Every accepted request represents a new occurrence, adds one progress unit to every achievement tier mapped to that trigger, and uses the server's current time for notification history.
+
+Callers may provide an optional non-negative `value`. When present, achievement progress is updated only when the supplied value is greater than stored progress. Bounded achievements are capped at their target; the `Longest Login Streak` achievement uses `progressNeeded: -1` to retain an uncapped personal best. Shared authentication supplies this value once per UTC day: yesterday's login continues the streak, a gap resets the current streak to zero, and another check on the same day sends no event.
+
+Generated and fallback notifications address the recipient by name. The generation context contains human-readable event and achievement descriptions, never achievement IDs or internal trigger names.
 
 A successful response includes all updated achievements, stored notification content, preference eligibility, and email status:
 
@@ -135,8 +156,8 @@ A successful response includes all updated achievements, stored notification con
     }
   ],
   "notification": {
-    "subject": "Achievement unlocked: First Applause",
-    "body": "You unlocked First Applause. Congratulations!",
+    "subject": "Achievement unlocked",
+    "body": "Hi Amber, congratulations! You unlocked: Receive engagement on a community post.",
     "usedFallback": false
   },
   "shouldNotify": true,

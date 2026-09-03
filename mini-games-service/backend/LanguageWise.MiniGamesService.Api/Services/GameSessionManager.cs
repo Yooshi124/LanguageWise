@@ -15,6 +15,7 @@ public sealed class GameSessionManager(
     IVocabularyProvider vocabularyProvider,
     IAiVocabularyProvider aiVocabularyProvider,
     GamesDatabaseClient databaseClient,
+    AchievementEventsClient achievementEventsClient,
     ILogger<GameSessionManager> logger)
 {
     private const string Language = "English";
@@ -56,13 +57,13 @@ public sealed class GameSessionManager(
             : null;
 
     /// <summary>Submit a guess to the user's Guess the Word game.</summary>
-    public async Task<GuessTheWordGuessResult> SubmitGuessTheWordGuessAsync(int userId, string guess)
+    public async Task<GuessTheWordGuessResult> SubmitGuessTheWordGuessAsync(int userId, string userName, string token, string guess)
     {
         var tracked = GetTrackedGame(GuessTheWordKey(userId), "Guess the Word");
         var game = (GuessTheWordGame)tracked.Game;
         var result = game.SubmitGuess(guess);
         var state = game.GetState();
-        await PersistCompletionAsync(tracked, state.IsComplete, state.IsWon, score: 0, state.Attempts);
+        await PersistCompletionAsync(tracked, userId, userName, token, state.IsComplete, state.IsWon, score: 0, state.Attempts);
         return state.IsComplete && tracked.Definitions.Count > 0
             ? result with { Definitions = tracked.Definitions }
             : result;
@@ -105,12 +106,12 @@ public sealed class GameSessionManager(
             : null;
 
     /// <summary>Submit a word to the user's Word Search game.</summary>
-    public async Task<WordSearchMoveResult> SubmitWordSearchWordAsync(int userId, string word, IReadOnlyList<int>? indices = null)
+    public async Task<WordSearchMoveResult> SubmitWordSearchWordAsync(int userId, string userName, string token, string word, IReadOnlyList<int>? indices = null)
     {
         var tracked = GetTrackedGame(WordSearchKey(userId), "Word Search");
         var result = ((WordSearchGame)tracked.Game).SubmitWord(word, indices ?? []);
         await PersistCompletionAsync(
-            tracked, result.State.IsComplete, result.State.IsComplete && !result.State.IsGivenUp, result.State.Score, result.State.Words.Count);
+            tracked, userId, userName, token, result.State.IsComplete, result.State.IsComplete && !result.State.IsGivenUp, result.State.Score, result.State.Words.Count);
         return result with { State = WithDefinitions(result.State, tracked) };
     }
 
@@ -123,7 +124,7 @@ public sealed class GameSessionManager(
     {
         var tracked = GetTrackedGame(WordSearchKey(userId), "Word Search");
         var state = ((WordSearchGame)tracked.Game).GiveUp();
-        await PersistCompletionAsync(tracked, state.IsComplete, isWon: false, state.Score, state.Words.Count);
+        await PersistCompletionAsync(tracked, userId, string.Empty, string.Empty, state.IsComplete, isWon: false, state.Score, state.Words.Count);
         return WithDefinitions(state, tracked);
     }
 
@@ -173,12 +174,12 @@ public sealed class GameSessionManager(
             : null;
 
     /// <summary>Submit a guess to the user's Associations game.</summary>
-    public async Task<AssociationResult> SubmitAssociationsGuessAsync(int userId, IReadOnlyList<string> words)
+    public async Task<AssociationResult> SubmitAssociationsGuessAsync(int userId, string userName, string token, IReadOnlyList<string> words)
     {
         var tracked = GetTrackedGame(AssociationsKey(userId), "Associations");
         var result = ((AssociationsGame)tracked.Game).SubmitGuess(words);
         await PersistCompletionAsync(
-            tracked, result.State.IsComplete, result.State.IsWon, result.State.SolvedGroups.Count, result.State.FailedAttempts + result.State.SolvedGroups.Count);
+            tracked, userId, userName, token, result.State.IsComplete, result.State.IsWon, result.State.SolvedGroups.Count, result.State.FailedAttempts + result.State.SolvedGroups.Count);
         return result with { State = WithDefinitions(result.State, tracked) };
     }
 
@@ -302,7 +303,15 @@ public sealed class GameSessionManager(
     }
 
     /// <summary>Patch the tracked attempt once the round reaches a completed state.</summary>
-    private async Task PersistCompletionAsync(TrackedGame tracked, bool isComplete, bool isWon, int score, int attemptCount)
+    private async Task PersistCompletionAsync(
+        TrackedGame tracked,
+        int userId,
+        string userName,
+        string token,
+        bool isComplete,
+        bool isWon,
+        int score,
+        int attemptCount)
     {
         if (!isComplete || tracked.CompletionPersisted || tracked.AttemptId is not int attemptId)
         {
@@ -312,7 +321,7 @@ public sealed class GameSessionManager(
         tracked.CompletionPersisted = true;
         try
         {
-            await databaseClient.UpdateGameAttemptAsync(
+            var updated = await databaseClient.UpdateGameAttemptAsync(
                 attemptId,
                 score: score,
                 isWon: isWon,
@@ -320,12 +329,31 @@ public sealed class GameSessionManager(
                 attemptCount: attemptCount,
                 completedAt: DateTime.UtcNow.ToString("O"),
                 timeSpentSeconds: (int)(DateTime.UtcNow - tracked.StartedAt).TotalSeconds);
+            if (isWon && updated is not null)
+            {
+                var winCount = (await databaseClient.GetGameAttemptsByUserIdAsync(userId))
+                    .Count(attempt => attempt.IsWon);
+                await achievementEventsClient.RecordAsync(
+                    userId,
+                    userName,
+                    winCount,
+                    $"Won a {GameName(tracked.Game)} mini-game",
+                    token);
+            }
         }
         catch (Exception exception)
         {
             logger.LogWarning(exception, "Could not persist completion of attempt {AttemptId}", attemptId);
         }
     }
+
+    private static string GameName(object game) => game switch
+    {
+        GuessTheWordGame => "Guess the Word",
+        WordSearchGame => "Word Search",
+        AssociationsGame => "Associations",
+        _ => "LanguageWise"
+    };
 
     /// <summary>An in-memory game plus the database rows that mirror it.</summary>
     private sealed class TrackedGame(

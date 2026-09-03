@@ -111,10 +111,13 @@ app.MapGet("/api/profile", async (
             {
                 preferences.Email,
                 preferences.NotifyAll,
+                preferences.NotifyCommunityContribution,
                 preferences.NotifyPostEngagement,
+                preferences.NotifyLessonCompletion,
                 preferences.NotifyCourseCompletion,
-                preferences.NotifyQuizResults,
-                preferences.NotifyStreaks,
+                preferences.NotifyQuizResult,
+                preferences.NotifyMinigameWin,
+                preferences.NotifyLoginStreak,
                 preferences.NotifyAchievements
             },
             achievements = view,
@@ -140,6 +143,8 @@ app.MapGet("/api/profile", async (
 app.MapPut("/api/preferences", async (
     HttpContext context,
     AppDataClient client,
+    IEmailContentGenerator emailGenerator,
+    IEmailSender emailSender,
     CancellationToken cancellationToken) =>
 {
     var userId = NotificationRules.GetUserId(context.User);
@@ -179,15 +184,53 @@ app.MapPut("/api/preferences", async (
 
     try
     {
+        var existingPreferences = await client.GetPreferencesAsync(userId.Value, cancellationToken);
+        var notificationsEnabled = existingPreferences is { NotifyAll: false } && request.NotifyAll;
+        var emailAddress = request.Email.Trim();
+
         await client.UpsertPreferencesAsync(new UserPreferences(
             userId.Value,
-            request.Email.Trim(),
+            emailAddress,
             request.NotifyAll,
+            request.NotifyCommunityContribution,
             request.NotifyPostEngagement,
+            request.NotifyLessonCompletion,
             request.NotifyCourseCompletion,
-            request.NotifyQuizResults,
-            request.NotifyStreaks,
+            request.NotifyQuizResult,
+            request.NotifyMinigameWin,
+            request.NotifyLoginStreak,
             request.NotifyAchievements), cancellationToken);
+
+        if (notificationsEnabled)
+        {
+            var email = await emailGenerator.GenerateAsync(new EmailContext(
+                context.User.Identity?.Name ?? "LanguageWise learner",
+                true,
+                "Welcome the learner to LanguageWise notifications. Explain that they can receive community contribution, post engagement, lesson completion, course completion, quiz result, mini-game win, login streak, and achievement notifications.",
+                []), cancellationToken);
+
+            await client.CreateNotificationAsync(new NotificationInput(
+                userId.Value,
+                "notifications-enabled",
+                DateTimeOffset.UtcNow,
+                email.Subject,
+                email.Body), cancellationToken);
+
+            if (emailSender.IsConfigured)
+            {
+                try
+                {
+                    await emailSender.SendAsync(emailAddress, email, cancellationToken);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    app.Logger.LogError(
+                        exception,
+                        "Failed to send notifications welcome email for user {UserId}.",
+                        userId);
+                }
+            }
+        }
 
         return Results.Ok(new { message = "Notification preferences saved." });
     }
@@ -234,17 +277,20 @@ app.MapPost("/api/events", async (
         {
             var progressUpdate = NotificationRules.CalculateProgress(
                 currentProgress.GetValueOrDefault(achievement.AchievementId),
-                achievement.ProgressNeeded);
+                achievement.ProgressNeeded,
+                request.Value);
             return new AchievementUpdate(
                 achievement.AchievementId,
                 achievement.Name,
+                achievement.Description,
                 progressUpdate.Progress,
                 achievement.ProgressNeeded,
                 progressUpdate.NewlyAttained);
         }).ToList();
 
         var email = await emailGenerator.GenerateAsync(new EmailContext(
-            request.Trigger,
+            request.RecipientName.Trim(),
+            false,
             request.Subject,
             achievementUpdates), cancellationToken);
 
@@ -317,7 +363,7 @@ app.MapPost("/api/events", async (
 app.Run();
 
 static UserPreferences DefaultPreferences(int userId) =>
-    new(userId, null, true, true, true, true, true, true);
+    new(userId, null, true, true, true, true, true, true, true, true, true);
 
 static async Task<PreferenceUpdateRequest?> ReadPreferencesAsync(
     HttpRequest request,

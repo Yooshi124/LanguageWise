@@ -15,6 +15,8 @@ public sealed class DatabaseInitializer(string connectionString, string sqlDirec
         connection.Open();
 
         Execute(connection, ReadSqlFile("schema.sql"));
+        EnsureColumn(connection, "LastLogin", "TEXT");
+        EnsureColumn(connection, "CurrentStreak", "INTEGER NOT NULL DEFAULT 0");
         logger.LogInformation("Schema applied to {ConnectionString}.", connectionString);
 
         Execute(connection, ReadSqlFile("seed.sql"));
@@ -49,5 +51,20 @@ public sealed class DatabaseInitializer(string connectionString, string sqlDirec
         using var command = connection.CreateCommand();
         command.CommandText = sql;
         command.ExecuteNonQuery();
+    }
+
+    private static void EnsureColumn(SqliteConnection connection, string columnName, string definition)
+    {
+        using var query = connection.CreateCommand();
+        query.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Users') WHERE name = $name;";
+        query.Parameters.AddWithValue("$name", columnName);
+        if (Convert.ToInt64(query.ExecuteScalar()) > 0)
+        {
+            return;
+        }
+
+        using var alter = connection.CreateCommand();
+        alter.CommandText = $"ALTER TABLE Users ADD COLUMN {columnName} {definition};";
+        alter.ExecuteNonQuery();
     }
 }

@@ -20,11 +20,18 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Inside Docker this resolves to the database service by container name.
 var databaseServiceUrl = builder.Configuration["Services:Database"] ?? "http://localhost:6002";
+var achievementsServiceUrl = builder.Configuration["Services:Achievements"] ?? "http://localhost:5004";
 
 builder.Services.AddHttpClient<DiscussionClient>(client =>
 {
     client.BaseAddress = new Uri(databaseServiceUrl.TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(10);
+});
+
+builder.Services.AddHttpClient<AchievementEventsClient>(client =>
+{
+    client.BaseAddress = new Uri($"{achievementsServiceUrl}/");
+    client.Timeout = TimeSpan.FromSeconds(20);
 });
 
 // AI mode. The model runs in the shared 'ollama' container, so there is nothing
@@ -271,6 +278,7 @@ app.MapPost("/api/posts", (
     HttpContext context,
     CreatePostRequest? request,
     DiscussionClient client,
+    AchievementEventsClient achievementEventsClient,
     CancellationToken cancellationToken) =>
     Guard(async () =>
     {
@@ -295,6 +303,14 @@ app.MapPost("/api/posts", (
             request.Content!.Trim(),
             request.ForumCode!.Trim(),
             cancellationToken);
+
+        await RecordContributionAsync(
+            achievementEventsClient,
+            context,
+            userId.Value,
+            "Created a community post",
+            cancellationToken,
+            app.Logger);
 
         return Results.Created($"/api/posts/{created.Id}", created);
     }, "create post"))
@@ -378,6 +394,7 @@ app.MapPost("/api/posts/{id:int}/comments", (
     HttpContext context,
     CreateCommentRequest? request,
     DiscussionClient client,
+    AchievementEventsClient achievementEventsClient,
     CancellationToken cancellationToken) =>
     Guard(async () =>
     {
@@ -399,6 +416,25 @@ app.MapPost("/api/posts/{id:int}/comments", (
             DiscussionRules.GetUserName(context.User),
             request!.Content!.Trim(),
             cancellationToken);
+
+        if (created is not null)
+        {
+            await RecordContributionAsync(
+                achievementEventsClient,
+                context,
+                userId.Value,
+                "Added a comment to a community discussion",
+                cancellationToken,
+                app.Logger);
+            await RecordPostEngagementAsync(
+                achievementEventsClient,
+                context,
+                userId.Value,
+                () => client.GetPostAsync(id, null, cancellationToken),
+                "Received a comment on a community post",
+                cancellationToken,
+                app.Logger);
+        }
 
         return created is null
             ? Results.NotFound()
@@ -450,6 +486,7 @@ app.MapDelete("/api/comments/{id:int}", (
     int id,
     HttpContext context,
     DiscussionClient client,
+    AchievementEventsClient achievementEventsClient,
     CancellationToken cancellationToken) =>
     Guard(async () =>
     {
@@ -485,13 +522,30 @@ app.MapPost("/api/posts/{id:int}/likes", (
     int id,
     HttpContext context,
     DiscussionClient client,
+    AchievementEventsClient achievementEventsClient,
     CancellationToken cancellationToken) =>
     Guard(async () =>
     {
         var userId = DiscussionRules.GetUserId(context.User);
-        return userId is null
-            ? Results.Unauthorized()
-            : Describe(await client.LikePostAsync(id, userId.Value, cancellationToken));
+        if (userId is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var outcome = await client.LikePostAsync(id, userId.Value, cancellationToken);
+        if (outcome == LikeOutcome.Created)
+        {
+            await RecordPostEngagementAsync(
+                achievementEventsClient,
+                context,
+                userId.Value,
+                () => client.GetPostAsync(id, null, cancellationToken),
+                "Received a like on a community post",
+                cancellationToken,
+                app.Logger);
+        }
+
+        return Describe(outcome);
     }, "like post"))
     .RequireAuthorization();
 
@@ -518,13 +572,30 @@ app.MapPost("/api/comments/{id:int}/likes", (
     int id,
     HttpContext context,
     DiscussionClient client,
+    AchievementEventsClient achievementEventsClient,
     CancellationToken cancellationToken) =>
     Guard(async () =>
     {
         var userId = DiscussionRules.GetUserId(context.User);
-        return userId is null
-            ? Results.Unauthorized()
-            : Describe(await client.LikeCommentAsync(id, userId.Value, cancellationToken));
+        if (userId is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var outcome = await client.LikeCommentAsync(id, userId.Value, cancellationToken);
+        if (outcome == LikeOutcome.Created)
+        {
+            await RecordPostEngagementAsync(
+                achievementEventsClient,
+                context,
+                userId.Value,
+                () => client.GetCommentAsync(id, cancellationToken),
+                "Received a like on a community comment",
+                cancellationToken,
+                app.Logger);
+        }
+
+        return Describe(outcome);
     }, "like comment"))
     .RequireAuthorization();
 
@@ -847,12 +918,74 @@ app.MapPost("/api/assistant/messages", async (
     .RequireAuthorization()
     .RequireRateLimiting(AssistantRateLimitPolicy);
 
-// TODO: when the notification contract with the quests service is agreed, a
-// successful like or comment above should also POST a 'post-engagement' event
-// to quests-achievements-notifications-service-backend on behalf of the post's
-// author. Left out on purpose: that service owns the achievement IDs involved.
-
 app.Run();
+
+static async Task RecordContributionAsync(
+    AchievementEventsClient client,
+    HttpContext context,
+    int userId,
+    string subject,
+    CancellationToken cancellationToken,
+    ILogger logger)
+{
+    try
+    {
+        await client.RecordContributionAsync(
+            userId,
+            DiscussionRules.GetUserName(context.User),
+            subject,
+            GetAccessToken(context),
+            cancellationToken);
+    }
+    catch (Exception exception) when (exception is not OperationCanceledException)
+    {
+        logger.LogError(exception, "Failed to record community contribution for user {UserId}.", userId);
+    }
+}
+
+static async Task RecordPostEngagementAsync<T>(
+    AchievementEventsClient achievementEventsClient,
+    HttpContext context,
+    int actorUserId,
+    Func<Task<T?>> getTarget,
+    string subject,
+    CancellationToken cancellationToken,
+    ILogger logger) where T : class
+{
+    try
+    {
+        var target = await getTarget();
+        var recipient = target switch
+        {
+            PostSummary post => (post.UserId, post.AuthorName),
+            Comment comment => (comment.UserId, comment.AuthorName),
+            _ => default
+        };
+        if (recipient.UserId <= 0 || recipient.UserId == actorUserId)
+        {
+            return;
+        }
+
+        await achievementEventsClient.RecordPostEngagementAsync(
+            recipient.UserId,
+            recipient.AuthorName,
+            subject,
+            GetAccessToken(context),
+            cancellationToken);
+    }
+    catch (Exception exception) when (exception is not OperationCanceledException)
+    {
+        logger.LogError(exception, "Failed to record post engagement.");
+    }
+}
+
+static string GetAccessToken(HttpContext context)
+{
+    var header = context.Request.Headers.Authorization.ToString();
+    return header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+        ? header["Bearer ".Length..].Trim()
+        : context.Request.Cookies["token"]!;
+}
 
 // Every endpoint routes its database call through here so that an unreachable
 // database service becomes a 503 rather than an unhandled exception.

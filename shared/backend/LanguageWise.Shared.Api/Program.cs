@@ -17,6 +17,13 @@ builder.Services.AddHttpClient<UsersClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(10);
 });
 
+var achievementsServiceUrl = builder.Configuration["Services:Achievements"] ?? "http://localhost:5004";
+builder.Services.AddHttpClient<AchievementsClient>(client =>
+{
+    client.BaseAddress = new Uri($"{achievementsServiceUrl}/");
+    client.Timeout = TimeSpan.FromSeconds(20);
+});
+
 // Load Signing Key
 var signingKeyPath = builder.Configuration["Auth:SigningKeyPath"] ?? "/run/secrets/signing_key";
 var rsa = RSA.Create();
@@ -97,7 +104,11 @@ app.MapPost("/api/login", async (HttpContext ctx, UsersClient usersClient) =>
     return Results.Ok();
 });
 
-app.MapPost("/api/check-login", (HttpContext ctx) =>
+app.MapPost("/api/check-login", async (
+    HttpContext ctx,
+    UsersClient usersClient,
+    AchievementsClient achievementsClient,
+    CancellationToken cancellationToken) =>
 {
     var token = ctx.Request.Cookies["token"];
     if (string.IsNullOrEmpty(token))
@@ -106,7 +117,29 @@ app.MapPost("/api/check-login", (HttpContext ctx) =>
     }
 
     var user = ValidateToken(token);
-    return user is not null ? Results.Ok(user) : Results.Unauthorized();
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    try
+    {
+        var streak = await usersClient.RecordLoginAsync(user.Id, cancellationToken);
+        if (streak is not null)
+        {
+            await achievementsClient.RecordLoginStreakAsync(
+                user,
+                streak.Value,
+                token,
+                cancellationToken);
+        }
+    }
+    catch (Exception exception) when (exception is not OperationCanceledException)
+    {
+        app.Logger.LogError(exception, "Failed to record login streak for user {UserId}.", user.Id);
+    }
+
+    return Results.Ok(user);
 });
 
 app.MapPost("/api/logout", (HttpContext ctx) =>

@@ -40,7 +40,7 @@ export const serviceNavigation: readonly ServiceNavigationItem[] = [
     current: true,
   },
   {
-    label: 'Quests & Achievements',
+    label: 'Achievements & Notifications',
     href: `${sharedFrontend}/quests-and-achievements/`,
     icon: 'quests',
   },

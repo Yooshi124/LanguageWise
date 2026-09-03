@@ -56,6 +56,19 @@ jobs:
           --logger "trx;LogFileName=leaderboard-analytics-service.trx"
           --results-directory TestResults
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: leaderboard-analytics-service/frontend/package-lock.json
+
+      - name: Run frontend Vitest tests
+        working-directory: leaderboard-analytics-service/frontend
+        run: |
+          npm ci
+          npm test
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -63,9 +76,6 @@ jobs:
           name: leaderboard-analytics-service-test-results
           path: TestResults/
           if-no-files-found: warn
-
-      - name: Build the database image
-        run: docker build -t languagewise/leaderboard-analytics-service-db:ci ./leaderboard-analytics-service/database
 
       - name: Build the backend image
         run: docker build -t languagewise/leaderboard-analytics-service-backend:ci ./leaderboard-analytics-service/backend

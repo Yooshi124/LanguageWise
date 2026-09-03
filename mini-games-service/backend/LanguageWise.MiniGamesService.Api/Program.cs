@@ -20,6 +20,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Database and external service URLs
 var databaseServiceUrl = builder.Configuration["Services:Database"] ?? "http://localhost:6005";
 var courseServiceUrl = builder.Configuration["Services:Courses"] ?? "http://localhost:6003";
+var achievementsServiceUrl = builder.Configuration["Services:Achievements"] ?? "http://localhost:5004";
 
 // Register HTTP clients for external services
 builder.Services.AddHttpClient<GamesDatabaseClient>(client =>
@@ -32,6 +33,12 @@ builder.Services.AddHttpClient<CourseVocabularyClient>(client =>
 {
     client.BaseAddress = new Uri(courseServiceUrl.TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(10);
+});
+
+builder.Services.AddHttpClient<AchievementEventsClient>(client =>
+{
+    client.BaseAddress = new Uri($"{achievementsServiceUrl}/");
+    client.Timeout = TimeSpan.FromSeconds(20);
 });
 
 // OpenRouter vocabulary generation (AI game mode), modelled on the quizzes-courses assistant setup.
@@ -237,7 +244,11 @@ app.MapPost("/api/guess-the-word/guess", async (HttpContext context, GuessTheWor
 {
     try
     {
-        var result = await gameManager.SubmitGuessTheWordGuessAsync(GetUserId(context), request.Guess);
+        var result = await gameManager.SubmitGuessTheWordGuessAsync(
+            GetUserId(context),
+            context.User.Identity!.Name!,
+            GetAccessToken(context)!,
+            request.Guess);
         return Results.Ok(result);
     }
     catch (ArgumentException exception)
@@ -276,7 +287,12 @@ app.MapPost("/api/word-search/guess", async (HttpContext context, WordSearchGues
 {
     try
     {
-        var result = await gameManager.SubmitWordSearchWordAsync(GetUserId(context), request.Word, request.Indices);
+        var result = await gameManager.SubmitWordSearchWordAsync(
+            GetUserId(context),
+            context.User.Identity!.Name!,
+            GetAccessToken(context)!,
+            request.Word,
+            request.Indices);
         return Results.Ok(result);
     }
     catch (ArgumentException exception)
@@ -338,7 +354,11 @@ app.MapPost("/api/associations/guess", async (HttpContext context, AssociationsG
 {
     try
     {
-        var result = await gameManager.SubmitAssociationsGuessAsync(GetUserId(context), request.Words);
+        var result = await gameManager.SubmitAssociationsGuessAsync(
+            GetUserId(context),
+            context.User.Identity!.Name!,
+            GetAccessToken(context)!,
+            request.Words);
         return Results.Ok(result);
     }
     catch (ArgumentException exception)

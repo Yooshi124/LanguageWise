@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue';
+import ConfirmDialog from './ConfirmDialog.vue';
 import ImageGallery from './ImageGallery.vue';
 import ImagePicker from './ImagePicker.vue';
 import LikeButton from './LikeButton.vue';
@@ -19,6 +20,8 @@ const draft = ref('');
 const saving = ref(false);
 const pendingImages = ref([]);
 const imageError = ref('');
+const confirmingDelete = ref(false);
+const deleting = ref(false);
 
 function startEditing() {
     draft.value = props.comment.content;
@@ -93,15 +96,19 @@ async function currentImages() {
 }
 
 async function remove() {
-    if (!window.confirm('Delete this comment? This cannot be undone.')) {
+    if (deleting.value) {
         return;
     }
+
+    deleting.value = true;
 
     try {
         await api.deleteComment(props.comment.id);
         emit('deleted', props.comment.id);
     } catch (error) {
         emit('error', error);
+        deleting.value = false;
+        confirmingDelete.value = false;
     }
 }
 
@@ -112,9 +119,8 @@ function onLike({ liked, count }) {
 
 <template>
     <li class="cd-comment">
+        <p class="cd-comment__author">{{ comment.authorName || 'Unknown author' }}</p>
         <p class="cd-comment__meta">
-            <strong>{{ comment.authorName || 'Unknown author' }}</strong>
-            <span aria-hidden="true">·</span>
             <span>{{ formatDate(comment.createdAt) }}</span>
             <span v-if="comment.updatedAt !== comment.createdAt" class="cd-comment__edited">(edited)</span>
         </p>
@@ -154,12 +160,20 @@ function onLike({ liked, count }) {
                     @error="$emit('error', $event)"
                 />
                 <template v-if="canEdit">
-                    <button type="button" class="cd-comment__link" @click="startEditing">Edit</button>
-                    <button type="button" class="cd-comment__link cd-comment__link--danger" @click="remove">
-                        Delete
+                    <button type="button" class="lw-command" @click="startEditing">Edit</button>
+                    <button type="button" class="lw-command" :disabled="deleting" @click="confirmingDelete = true">
+                        {{ deleting ? 'Deleting…' : 'Delete' }}
                     </button>
                 </template>
             </div>
         </template>
+
+        <ConfirmDialog
+            v-model="confirmingDelete"
+            title="Delete this comment?"
+            message="This cannot be undone."
+            :busy="deleting"
+            @confirm="remove"
+        />
     </li>
 </template>

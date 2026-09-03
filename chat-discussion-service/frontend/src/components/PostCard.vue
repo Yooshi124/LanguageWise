@@ -1,4 +1,5 @@
 <script setup>
+import AppIcon from './AppIcon.vue';
 import LikeButton from './LikeButton.vue';
 import { excerpt, formatDate } from '../format.js';
 
@@ -20,9 +21,8 @@ function onLike({ liked, count }) {
             <RouterLink :to="{ name: 'post', params: { id: post.id } }">{{ post.title }}</RouterLink>
         </h3>
 
+        <p class="cd-post__author">{{ post.authorName || 'Unknown author' }}</p>
         <p class="cd-post__meta">
-            <span>{{ post.authorName || 'Unknown author' }}</span>
-            <span aria-hidden="true">·</span>
             <span>{{ formatDate(post.createdAt) }}</span>
             <template v-if="showForum">
                 <span aria-hidden="true">·</span>
@@ -49,6 +49,7 @@ function onLike({ liked, count }) {
             />
             <RouterLink class="cd-post__comments" :to="{ name: 'post', params: { id: post.id } }">
                 {{ post.commentCount }} {{ post.commentCount === 1 ? 'comment' : 'comments' }}
+                <AppIcon name="arrow-right" :size="18" />
             </RouterLink>
         </footer>
     </article>

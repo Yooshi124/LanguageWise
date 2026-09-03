@@ -1,7 +1,7 @@
 namespace LanguageWise.ChatDiscussionService.Api.Tests;
 
 /// <summary>
-/// Sample uploads. Only the leading signature is ever inspected — the backend checks
+/// Test uploads. Only the leading signature is ever inspected — the backend checks
 /// that a file is the format it claims to be and then passes the bytes straight on —
 /// so these are headers followed by padding rather than decodable images.
 /// </summary>

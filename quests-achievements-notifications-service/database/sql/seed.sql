@@ -1,16 +1,27 @@
-INSERT INTO api.achievements (achievement_id, name, image, trigger, progress_needed) VALUES
-    (1,  'First Course',        '/images/achievements/first-course.png',        'course-completion', 1),
-    (2,  'Course Explorer',     '/images/achievements/course-explorer.png',     'course-completion', 5),
-    (3,  'Course Champion',     '/images/achievements/course-champion.png',     'course-completion', 10),
-    (4,  'First Applause',      '/images/achievements/first-applause.png',      'post-engagement',   1),
-    (5,  'Crowd Pleaser',       '/images/achievements/crowd-pleaser.png',       'post-engagement',   10),
-    (6,  'Community Favourite', '/images/achievements/community-favourite.png', 'post-engagement',   50),
-    (7,  'Quiz Starter',        '/images/achievements/quiz-starter.png',        'quiz-result',       1),
-    (8,  'Quiz Master',         '/images/achievements/quiz-master.png',         'quiz-result',       10),
-    (9,  'Three Day Streak',    '/images/achievements/three-day-streak.png',    'streak',            3),
-    (10, 'Seven Day Streak',    '/images/achievements/seven-day-streak.png',    'streak',            7);
+INSERT INTO api.achievements (achievement_id, name, description, image, trigger, progress_needed) VALUES
+    (1,  'First Lesson',         'Complete your first lesson',                         '/images/achievements/first-lesson.png',          'lesson-completion',      1),
+    (2,  'Committed Learner',    'Complete five lessons',                              '/images/achievements/committed-learner.png',     'lesson-completion',      5),
+    (3,  'Lesson Scholar',       'Complete twenty lessons',                            '/images/achievements/lesson-scholar.png',        'lesson-completion',     20),
+    (4,  'First Contribution',   'Make your first community contribution',             '/images/achievements/first-contribution.png',    'community-contribution', 1),
+    (5,  'Community Regular',    'Make ten community contributions',                   '/images/achievements/community-regular.png',     'community-contribution',10),
+    (6,  'Community Champion',   'Make fifty community contributions',                 '/images/achievements/community-champion.png',    'community-contribution',50),
+    (7,  'First Game Win',       'Win your first mini-game',                           '/images/achievements/first-game-win.png',        'minigame-win',           1),
+    (8,  'Game Night',           'Win ten mini-games',                                 '/images/achievements/game-night.png',            'minigame-win',          10),
+    (9,  'Three Day Streak',     'Log in on three consecutive days',                   '/images/achievements/three-day-streak.png',     'login-streak',      3),
+    (10, 'Seven Day Streak',     'Log in on seven consecutive days',                   '/images/achievements/seven-day-streak.png',     'login-streak',      7),
+    (11, 'Longest Login Streak', 'Your longest run of consecutive daily LanguageWise logins', '/images/achievements/longest-login-streak.png', 'login-streak',     -1),
+    (12, 'Games Master',         'Win fifty mini-games',                               '/images/achievements/games-master.png',          'minigame-win',          50),
+    (13, 'First Reaction',       'Receive your first community interaction',           '/images/achievements/first-reaction.png',        'post-engagement',        1),
+    (14, 'Conversation Starter', 'Receive ten community interactions',                 '/images/achievements/conversation-starter.png',  'post-engagement',       10),
+    (15, 'Community Favourite',  'Receive fifty community interactions',               '/images/achievements/community-favourite.png',   'post-engagement',       50),
+    (16, 'First Course',         'Complete your first course',                         '/images/achievements/first-course.png',          'course-completion',      1),
+    (17, 'Course Explorer',      'Complete three courses',                             '/images/achievements/course-explorer.png',       'course-completion',      3),
+    (18, 'Course Champion',      'Complete five courses',                              '/images/achievements/course-champion.png',       'course-completion',      5),
+    (19, 'First Quiz',           'Complete your first quiz',                           '/images/achievements/first-quiz.png',            'quiz-result',            1),
+    (20, 'Quiz Regular',         'Complete ten quizzes',                               '/images/achievements/quiz-regular.png',          'quiz-result',           10),
+    (21, 'Quiz Veteran',         'Complete fifty quizzes',                             '/images/achievements/quiz-veteran.png',          'quiz-result',           50);
 
-SELECT setval(pg_get_serial_sequence('api.achievements', 'achievement_id'), 10);
+SELECT setval(pg_get_serial_sequence('api.achievements', 'achievement_id'), 21);
 
 INSERT INTO api.user_preferences (user_id, email) VALUES
     (1, 'amber@example.com'),
@@ -20,24 +31,12 @@ INSERT INTO api.user_preferences (user_id, email) VALUES
     (5, 'kyan@example.com');
 
 INSERT INTO api.user_achievements (user_id, achievement_id, progress) VALUES
-    (1, 1, 1),
-    (1, 2, 3),
-    (1, 3, 3),
-    (1, 4, 1),
-    (1, 5, 6),
-    (1, 6, 6),
-    (2, 4, 1),
-    (2, 5, 4),
-    (2, 6, 4),
-    (3, 7, 1),
-    (3, 8, 7),
     (4, 9, 2),
     (4, 10, 2),
+    (4, 11, 2),
     (5, 9, 3),
-    (5, 10, 5);
+    (5, 10, 5),
+    (5, 11, 5);
 
 INSERT INTO api.notifications (user_id, trigger, time, email_subject, email_body) VALUES
-    (1, 'course-completion', '2026-08-28T09:30:00Z', 'Lorem ipsum dolor sit amet', 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.'),
-    (1, 'post-engagement',   '2026-08-29T14:15:00Z', 'Consectetur adipiscing elit', 'Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.'),
-    (3, 'quiz-result',       '2026-08-27T11:45:00Z', 'Sed do eiusmod tempor', 'Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.'),
-    (5, 'streak',            '2026-08-30T08:00:00Z', 'Ut labore et dolore magna', 'Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.');
+    (4, 'login-streak', '2026-08-30T08:00:00Z', 'Daily learning streak', 'Hi Justin, you continued your daily learning streak.');

@@ -3,7 +3,8 @@ namespace LanguageWise.QuestsAchievementsNotificationsService.Api.Models;
 public sealed record EmailContent(string Subject, string Body, bool UsedFallback);
 
 public sealed record EmailContext(
-    string Trigger,
+    string UserName,
+    bool IsNotificationsWelcome,
     string Subject,
     IReadOnlyList<AchievementUpdate> Achievements);
 

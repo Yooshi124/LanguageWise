@@ -372,6 +372,54 @@ public sealed class LearningRepositoryTests
     }
 
     [Test]
+    public void GetMilestones_FiltersUsersMapsTargetsAndPaginatesInIdOrder()
+    {
+        var firstTimestamp = DateTimeOffset.Parse("2026-09-01T10:00:00+00:00");
+        var secondTimestamp = firstTimestamp.AddMinutes(1);
+        var thirdTimestamp = firstTimestamp.AddMinutes(2);
+        var afterId = (int)Scalar("SELECT COALESCE(MAX(Id), 0) FROM Milestones;");
+        var courseId = (int)Scalar("SELECT Id FROM Courses WHERE Code = 'de';");
+        var lessonId = (int)Scalar("SELECT Id FROM Lessons ORDER BY Id LIMIT 1;");
+        var quizId = (int)Scalar("SELECT Id FROM Quizzes ORDER BY Id LIMIT 1;");
+
+        var courseMilestoneId = InsertMilestone(51, "CourseId", courseId, firstTimestamp);
+        var lessonMilestoneId = InsertMilestone(51, "LessonId", lessonId, secondTimestamp);
+        var quizMilestoneId = InsertMilestone(52, "QuizId", quizId, thirdTimestamp);
+
+        var firstGlobalPage = learning.GetMilestones(null, afterId, 2);
+        var secondGlobalPage = learning.GetMilestones(null, firstGlobalPage.NextCursor!.Value, 2);
+        var userPage = learning.GetMilestones(51, afterId, 10);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                firstGlobalPage.Items.Select(milestone => milestone.Id),
+                Is.EqualTo([courseMilestoneId, lessonMilestoneId]));
+            Assert.That(firstGlobalPage.NextCursor, Is.EqualTo(lessonMilestoneId));
+            Assert.That(secondGlobalPage.Items.Select(milestone => milestone.Id), Is.EqualTo([quizMilestoneId]));
+            Assert.That(secondGlobalPage.NextCursor, Is.Null);
+
+            Assert.That(userPage.Items, Has.Count.EqualTo(2));
+            Assert.That(userPage.NextCursor, Is.Null);
+            Assert.That(userPage.Items, Has.All.Matches<Milestone>(milestone => milestone.UserId == 51));
+
+            Assert.That(userPage.Items[0].CourseId, Is.EqualTo(courseId));
+            Assert.That(userPage.Items[0].LessonId, Is.Null);
+            Assert.That(userPage.Items[0].QuizId, Is.Null);
+            Assert.That(userPage.Items[0].CompletedAt, Is.EqualTo(firstTimestamp));
+
+            Assert.That(userPage.Items[1].CourseId, Is.Null);
+            Assert.That(userPage.Items[1].LessonId, Is.EqualTo(lessonId));
+            Assert.That(userPage.Items[1].QuizId, Is.Null);
+
+            Assert.That(secondGlobalPage.Items[0].CourseId, Is.Null);
+            Assert.That(secondGlobalPage.Items[0].LessonId, Is.Null);
+            Assert.That(secondGlobalPage.Items[0].QuizId, Is.EqualTo(quizId));
+            Assert.That(secondGlobalPage.Items[0].CompletedAt, Is.EqualTo(thirdTimestamp));
+        });
+    }
+
+    [Test]
     public void FlashcardDecks_AreDerivedFromLessonVocabulary()
     {
         var decks = learning.GetFlashcardDecks("de");
@@ -386,6 +434,22 @@ public sealed class LearningRepositoryTests
             Assert.That(greetings.Cards[0], Is.EqualTo(new Flashcard(1, "Hallo", "Hello")));
             Assert.That(learning.GetFlashcardDeck("de", "missing"), Is.Null);
             Assert.That(TableExists("Flashcards"), Is.False);
+        });
+    }
+
+    [Test]
+    public void CompleteLesson_WhenRepeated_ReportsOnlyTheFirstTransition()
+    {
+        const int userId = 18;
+        var lesson = catalog.GetLessons("de")[0];
+
+        var first = learning.CompleteLesson(lesson.Id, userId);
+        var repeated = learning.CompleteLesson(lesson.Id, userId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.Value, Is.EqualTo(new MilestoneState(true, true)));
+            Assert.That(repeated.Value, Is.EqualTo(new MilestoneState(true, false)));
         });
     }
 
@@ -720,6 +784,26 @@ public sealed class LearningRepositoryTests
         var connection = new SqliteConnection(connectionString);
         connection.Open();
         return connection;
+    }
+
+    private int InsertMilestone(
+        int userId,
+        string targetColumn,
+        int targetId,
+        DateTimeOffset completedAt)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            $"""
+             INSERT INTO Milestones (UserId, {targetColumn}, CompletedAt)
+             VALUES ($userId, $targetId, $completedAt);
+             SELECT last_insert_rowid();
+             """;
+        command.Parameters.AddWithValue("$userId", userId);
+        command.Parameters.AddWithValue("$targetId", targetId);
+        command.Parameters.AddWithValue("$completedAt", completedAt.ToString("O"));
+        return Convert.ToInt32(command.ExecuteScalar());
     }
 
     private long Scalar(string sql, int? id = null)

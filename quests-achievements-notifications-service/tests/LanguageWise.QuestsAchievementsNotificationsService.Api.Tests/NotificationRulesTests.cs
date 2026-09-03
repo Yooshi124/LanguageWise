@@ -33,10 +33,16 @@ public sealed class NotificationRulesTests
         Assert.That(NotificationRules.IsValidEmail(email), Is.EqualTo(expected));
     }
 
-    [Test]
-    public void ValidateEvent_WithValidEvent_ReturnsNoErrors()
+    [TestCase("community-contribution")]
+    [TestCase("post-engagement")]
+    [TestCase("lesson-completion")]
+    [TestCase("course-completion")]
+    [TestCase("quiz-result")]
+    [TestCase("minigame-win")]
+    [TestCase("login-streak")]
+    public void ValidateEvent_WithSupportedTrigger_ReturnsNoErrors(string trigger)
     {
-        var request = ValidEvent();
+        var request = ValidEvent() with { Trigger = trigger };
 
         Assert.That(NotificationRules.ValidateEvent(request), Is.Empty);
     }
@@ -44,7 +50,7 @@ public sealed class NotificationRulesTests
     [Test]
     public void ValidateEvent_WithInvalidFields_ReturnsEveryRelevantError()
     {
-        var request = new EventRequest("unknown", "", 0);
+        var request = new EventRequest("unknown", "", 0, "");
 
         var errors = NotificationRules.ValidateEvent(request);
 
@@ -52,7 +58,8 @@ public sealed class NotificationRulesTests
         {
             "trigger",
             "subject",
-            "recipientUserId"
+            "recipientUserId",
+            "recipientName"
         }));
     }
 
@@ -93,6 +100,38 @@ public sealed class NotificationRulesTests
     }
 
     [Test]
+    public void CalculateProgress_WithGreaterAbsoluteValue_UsesValue()
+    {
+        var update = NotificationRules.CalculateProgress(2, 7, 5);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(update.Progress, Is.EqualTo(5));
+            Assert.That(update.NewlyAttained, Is.False);
+        });
+    }
+
+    [Test]
+    public void CalculateProgress_WithLowerAbsoluteValue_PreservesProgress()
+    {
+        var update = NotificationRules.CalculateProgress(5, 7, 0);
+
+        Assert.That(update.Progress, Is.EqualTo(5));
+    }
+
+    [Test]
+    public void CalculateProgress_ForUnboundedAchievement_TracksHighestValue()
+    {
+        var update = NotificationRules.CalculateProgress(7, -1, 12);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(update.Progress, Is.EqualTo(12));
+            Assert.That(update.NewlyAttained, Is.False);
+        });
+    }
+
+    [Test]
     public void ShouldNotify_WhenMasterPreferenceIsDisabled_ReturnsFalse()
     {
         var preferences = Preferences(notifyAll: false, notifyCourseCompletion: true);
@@ -100,12 +139,46 @@ public sealed class NotificationRulesTests
         Assert.That(NotificationRules.ShouldNotify(preferences, "course-completion", true), Is.False);
     }
 
-    [Test]
-    public void ShouldNotify_WhenCategoryIsEnabled_ReturnsTrue()
+    [TestCase("community-contribution")]
+    [TestCase("post-engagement")]
+    [TestCase("lesson-completion")]
+    [TestCase("course-completion")]
+    [TestCase("quiz-result")]
+    [TestCase("minigame-win")]
+    [TestCase("login-streak")]
+    public void ShouldNotify_WhenMatchingTriggerPreferenceIsEnabled_ReturnsTrue(string trigger)
     {
-        var preferences = Preferences(notifyCourseCompletion: true);
+        var preferences = Preferences(
+            notifyCommunityContribution: trigger == "community-contribution",
+            notifyPostEngagement: trigger == "post-engagement",
+            notifyLessonCompletion: trigger == "lesson-completion",
+            notifyCourseCompletion: trigger == "course-completion",
+            notifyQuizResult: trigger == "quiz-result",
+            notifyMinigameWin: trigger == "minigame-win",
+            notifyLoginStreak: trigger == "login-streak");
 
-        Assert.That(NotificationRules.ShouldNotify(preferences, "course-completion", false), Is.True);
+        Assert.That(NotificationRules.ShouldNotify(preferences, trigger, false), Is.True);
+    }
+
+    [TestCase("community-contribution")]
+    [TestCase("post-engagement")]
+    [TestCase("lesson-completion")]
+    [TestCase("course-completion")]
+    [TestCase("quiz-result")]
+    [TestCase("minigame-win")]
+    [TestCase("login-streak")]
+    public void ShouldNotify_WhenOnlyOtherTriggerPreferencesAreEnabled_ReturnsFalse(string trigger)
+    {
+        var preferences = Preferences(
+            notifyCommunityContribution: trigger != "community-contribution",
+            notifyPostEngagement: trigger != "post-engagement",
+            notifyLessonCompletion: trigger != "lesson-completion",
+            notifyCourseCompletion: trigger != "course-completion",
+            notifyQuizResult: trigger != "quiz-result",
+            notifyMinigameWin: trigger != "minigame-win",
+            notifyLoginStreak: trigger != "login-streak");
+
+        Assert.That(NotificationRules.ShouldNotify(preferences, trigger, false), Is.False);
     }
 
     [Test]
@@ -113,15 +186,32 @@ public sealed class NotificationRulesTests
     {
         var preferences = Preferences(notifyAchievements: true);
 
-        Assert.That(NotificationRules.ShouldNotify(preferences, "course-completion", true), Is.True);
+        Assert.That(NotificationRules.ShouldNotify(preferences, "minigame-win", true), Is.True);
     }
 
     private static EventRequest ValidEvent() =>
-        new("course-completion", "Introduction to Spanish", 1);
+        new("lesson-completion", "Completed Introduction to Spanish", 1, "Amber");
 
     private static UserPreferences Preferences(
         bool notifyAll = true,
+        bool notifyCommunityContribution = false,
+        bool notifyPostEngagement = false,
+        bool notifyLessonCompletion = false,
         bool notifyCourseCompletion = false,
+        bool notifyQuizResult = false,
+        bool notifyMinigameWin = false,
+        bool notifyLoginStreak = false,
         bool notifyAchievements = false) =>
-        new(1, "learner@example.com", notifyAll, false, notifyCourseCompletion, false, false, notifyAchievements);
+        new(
+            1,
+            "learner@example.com",
+            notifyAll,
+            notifyCommunityContribution,
+            notifyPostEngagement,
+            notifyLessonCompletion,
+            notifyCourseCompletion,
+            notifyQuizResult,
+            notifyMinigameWin,
+            notifyLoginStreak,
+            notifyAchievements);
 }
