@@ -21,16 +21,20 @@ internal sealed class QuizzesCoursesFakeHandler : HttpMessageHandler
     internal QuizzesCoursesFakeHandler(
         IReadOnlyList<MilestonePage>? myPages = null,
         IReadOnlyList<MilestonePage>? allPages = null,
-        IReadOnlyList<Course>? courses = null)
+        IReadOnlyList<Course>? courses = null,
+        IReadOnlyDictionary<string, IReadOnlyList<LessonSummary>>? lessonsByCourseCode = null)
     {
         MyPages = myPages ?? [new MilestonePage([], null)];
         AllPages = allPages ?? [new MilestonePage([], null)];
         Courses = courses ?? [];
+        LessonsByCourseCode = lessonsByCourseCode
+            ?? new Dictionary<string, IReadOnlyList<LessonSummary>>(StringComparer.OrdinalIgnoreCase);
     }
 
     internal IReadOnlyList<MilestonePage> MyPages { get; }
     internal IReadOnlyList<MilestonePage> AllPages { get; }
     internal IReadOnlyList<Course> Courses { get; }
+    internal IReadOnlyDictionary<string, IReadOnlyList<LessonSummary>> LessonsByCourseCode { get; }
 
     internal IReadOnlyList<(string Path, string? Authorization)> Requests
     {
@@ -54,6 +58,19 @@ internal sealed class QuizzesCoursesFakeHandler : HttpMessageHandler
         }
 
         var path = uri.AbsolutePath.TrimStart('/');
+
+        if (path.StartsWith("api/courses/", StringComparison.OrdinalIgnoreCase)
+            && path.EndsWith("/lessons", StringComparison.OrdinalIgnoreCase))
+        {
+            var code = path.Substring("api/courses/".Length, path.Length - "api/courses/".Length - "/lessons".Length);
+            var decoded = Uri.UnescapeDataString(code);
+            if (LessonsByCourseCode.TryGetValue(decoded, out var lessons))
+            {
+                return Task.FromResult(JsonResponse(lessons));
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        }
 
         return path switch
         {

@@ -53,14 +53,19 @@ public sealed class LessonsCompletedSummaryTests
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var completedAt = new DateTimeOffset(today.AddDays(-2).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
         var courses = new List<Course> { new(1, "de", "German", "") };
+        var lessonsByCourseCode = new Dictionary<string, IReadOnlyList<LessonSummary>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["de"] = [new(100, "l100", "L100", 1), new(101, "l101", "L101", 2)]
+        };
         var myMilestones = new List<Milestone>
         {
-            new(1, callerId, 1, 100, null, completedAt),
-            new(2, callerId, 1, 101, null, completedAt)
+            new(1, callerId, null, 100, null, completedAt),
+            new(2, callerId, null, 101, null, completedAt)
         };
         var handler = new QuizzesCoursesFakeHandler(
             myPages: [new MilestonePage(myMilestones, null)],
-            courses: courses);
+            courses: courses,
+            lessonsByCourseCode: lessonsByCourseCode);
         var fake = new FakeSummaryGenerator();
         using var fixture = new ApiFixture
         {

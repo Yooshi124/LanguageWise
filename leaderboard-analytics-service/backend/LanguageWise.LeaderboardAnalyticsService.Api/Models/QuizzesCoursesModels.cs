@@ -13,3 +13,5 @@ public sealed record MilestonePage(
     int? NextCursor);
 
 public sealed record Course(int Id, string Code, string Title, string Description);
+
+public sealed record LessonSummary(int Id, string Slug, string Title, int SortOrder);

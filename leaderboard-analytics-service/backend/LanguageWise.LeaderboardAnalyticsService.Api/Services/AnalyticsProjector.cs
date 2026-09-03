@@ -10,20 +10,19 @@ internal static class AnalyticsProjector
         int userId,
         IReadOnlyList<Milestone> myMilestones,
         IReadOnlyList<Milestone> allMilestones,
-        IReadOnlyList<Course> courses)
+        IReadOnlyList<Course> courses,
+        IReadOnlyDictionary<int, int> lessonToCourse)
     {
         var coursesById = courses.ToDictionary(c => c.Id);
 
-        var scoresByCourse = allMilestones
-            .Where(m => m.CourseId is not null)
-            .GroupBy(m => m.CourseId!.Value)
+        var scoresByCourse = ResolveLessonCourses(allMilestones, lessonToCourse)
+            .GroupBy(x => x.CourseId)
             .ToDictionary(
                 g => g.Key,
-                g => g.GroupBy(m => m.UserId).Select(u => u.Count()).ToList());
+                g => g.GroupBy(x => x.Milestone.UserId).Select(u => u.Count()).ToList());
 
-        var myByCourse = myMilestones
-            .Where(m => m.CourseId is not null)
-            .GroupBy(m => m.CourseId!.Value);
+        var myByCourse = ResolveLessonCourses(myMilestones, lessonToCourse)
+            .GroupBy(x => x.CourseId);
 
         var rankings = new List<LanguageRanking>();
         var syntheticId = 1;
@@ -36,7 +35,7 @@ internal static class AnalyticsProjector
             }
 
             var score = group.Count();
-            var updatedAt = group.Max(m => m.CompletedAt).UtcDateTime;
+            var updatedAt = group.Max(x => x.Milestone.CompletedAt).UtcDateTime;
             var globalScores = scoresByCourse.GetValueOrDefault(group.Key) ?? new List<int>();
             var rank = 1 + globalScores.Count(s => s > score);
 
@@ -60,26 +59,26 @@ internal static class AnalyticsProjector
         int userId,
         IReadOnlyList<Milestone> myMilestones,
         IReadOnlyList<Course> courses,
+        IReadOnlyDictionary<int, int> lessonToCourse,
         DateOnly today)
     {
         var from = today.AddDays(-(LessonsCompletedWindowDays - 1));
         var to = today;
         var coursesById = courses.ToDictionary(c => c.Id);
 
-        var series = myMilestones
-            .Where(m => m.LessonId is not null && m.CourseId is not null)
-            .Where(m =>
+        var series = ResolveLessonCourses(myMilestones, lessonToCourse)
+            .Where(x =>
             {
-                var day = DateOnly.FromDateTime(m.CompletedAt.UtcDateTime);
+                var day = DateOnly.FromDateTime(x.Milestone.CompletedAt.UtcDateTime);
                 return day >= from && day <= to;
             })
-            .GroupBy(m => m.CourseId!.Value)
+            .GroupBy(x => x.CourseId)
             .Where(g => coursesById.ContainsKey(g.Key))
             .Select(g =>
             {
                 var course = coursesById[g.Key];
                 var byDate = g
-                    .GroupBy(m => DateOnly.FromDateTime(m.CompletedAt.UtcDateTime))
+                    .GroupBy(x => DateOnly.FromDateTime(x.Milestone.CompletedAt.UtcDateTime))
                     .ToDictionary(gg => gg.Key, gg => gg.Count());
 
                 var points = new List<LessonsCompletedPoint>(LessonsCompletedWindowDays);
@@ -97,5 +96,25 @@ internal static class AnalyticsProjector
             .ToList();
 
         return new LessonsCompletedResponse(userId, from, to, series);
+    }
+
+    private static IEnumerable<(Milestone Milestone, int CourseId)> ResolveLessonCourses(
+        IReadOnlyList<Milestone> milestones,
+        IReadOnlyDictionary<int, int> lessonToCourse)
+    {
+        foreach (var milestone in milestones)
+        {
+            if (milestone.LessonId is not int lessonId)
+            {
+                continue;
+            }
+
+            if (!lessonToCourse.TryGetValue(lessonId, out var courseId))
+            {
+                continue;
+            }
+
+            yield return (milestone, courseId);
+        }
     }
 }

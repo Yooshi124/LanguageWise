@@ -96,13 +96,15 @@ app.MapGet("/api/my-language-rankings", async (
     var myMilestonesTask = client.GetAllMyMilestonesAsync(token, cancellationToken);
     var allMilestonesTask = client.GetAllMilestonesAsync(token, cancellationToken);
     var coursesTask = client.GetCoursesAsync(token, cancellationToken);
-    await Task.WhenAll(myMilestonesTask, allMilestonesTask, coursesTask);
+    var lessonMapTask = client.GetLessonToCourseMapAsync(token, cancellationToken);
+    await Task.WhenAll(myMilestonesTask, allMilestonesTask, coursesTask, lessonMapTask);
 
     var rankings = AnalyticsProjector.BuildLanguageRankings(
         userId,
         myMilestonesTask.Result,
         allMilestonesTask.Result,
-        coursesTask.Result);
+        coursesTask.Result,
+        lessonMapTask.Result);
     return Results.Ok(rankings);
 });
 
@@ -128,12 +130,14 @@ app.MapGet("/api/lessons-completed-over-time", async (
 
     var myMilestonesTask = client.GetAllMyMilestonesAsync(token, cancellationToken);
     var coursesTask = client.GetCoursesAsync(token, cancellationToken);
-    await Task.WhenAll(myMilestonesTask, coursesTask);
+    var lessonMapTask = client.GetLessonToCourseMapAsync(token, cancellationToken);
+    await Task.WhenAll(myMilestonesTask, coursesTask, lessonMapTask);
 
     var response = AnalyticsProjector.BuildLessonsCompleted(
         userId,
         myMilestonesTask.Result,
         coursesTask.Result,
+        lessonMapTask.Result,
         DateOnly.FromDateTime(DateTime.UtcNow));
     return Results.Ok(response);
 });
@@ -157,12 +161,14 @@ app.MapPost("/api/lessons-completed-summary", async (
 
     var myMilestonesTask = client.GetAllMyMilestonesAsync(token, cancellationToken);
     var coursesTask = client.GetCoursesAsync(token, cancellationToken);
-    await Task.WhenAll(myMilestonesTask, coursesTask);
+    var lessonMapTask = client.GetLessonToCourseMapAsync(token, cancellationToken);
+    await Task.WhenAll(myMilestonesTask, coursesTask, lessonMapTask);
 
     var chartData = AnalyticsProjector.BuildLessonsCompleted(
         userId,
         myMilestonesTask.Result,
         coursesTask.Result,
+        lessonMapTask.Result,
         DateOnly.FromDateTime(DateTime.UtcNow));
     var summary = await generator.GenerateAsync(chartData, cancellationToken);
     return Results.Ok(summary);

@@ -35,22 +35,30 @@ public sealed class LessonsCompletedTests
             new(3, "it", "Italian", "")
         };
 
+        var lessonsByCourseCode = new Dictionary<string, IReadOnlyList<LessonSummary>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["de"] = [new(100, "l100", "L100", 1), new(101, "l101", "L101", 2), new(102, "l102", "L102", 3)],
+            ["fr"] = [new(200, "l200", "L200", 1)],
+            ["it"] = []
+        };
+
         var myMilestones = new List<Milestone>
         {
             // Two German lesson milestones in-window.
-            new(1, callerId, 1, 100, null, recentAt),
-            new(2, callerId, 1, 101, null, recentAt),
+            new(1, callerId, null, 100, null, recentAt),
+            new(2, callerId, null, 101, null, recentAt),
             // One French lesson milestone in-window.
-            new(3, callerId, 2, 200, null, recentAt),
+            new(3, callerId, null, 200, null, recentAt),
             // Italian: only course-level milestone (no LessonId) — must be excluded.
             new(4, callerId, 3, null, null, recentAt),
             // German lesson before the 30-day window — must be excluded.
-            new(5, callerId, 1, 102, null, outOfWindowAt),
+            new(5, callerId, null, 102, null, outOfWindowAt),
         };
 
         var handler = new QuizzesCoursesFakeHandler(
             myPages: [new MilestonePage(myMilestones, null)],
-            courses: courses);
+            courses: courses,
+            lessonsByCourseCode: lessonsByCourseCode);
 
         using var fixture = new ApiFixture { QuizzesCoursesHandler = handler };
         using var client = fixture.CreateClient();
@@ -88,6 +96,46 @@ public sealed class LessonsCompletedTests
             var french = body.Series.Single(s => s.CourseCode == "fr");
             Assert.That(french.Points[^1].LessonsCompleted, Is.EqualTo(1));
         });
+    }
+
+    [Test]
+    public async Task LessonsCompleted_IgnoresCourseCompletionMilestones()
+    {
+        const int callerId = 42;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var recentAt = new DateTimeOffset(today.AddDays(-3).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+
+        var courses = new List<Course> { new(1, "de", "German", "") };
+        var lessonsByCourseCode = new Dictionary<string, IReadOnlyList<LessonSummary>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["de"] = [new(100, "l100", "L100", 1)]
+        };
+
+        // Only a course-completion milestone (CourseId set, LessonId null) — matches the DB CHECK constraint.
+        var myMilestones = new List<Milestone>
+        {
+            new(1, callerId, 1, null, null, recentAt),
+        };
+
+        var handler = new QuizzesCoursesFakeHandler(
+            myPages: [new MilestonePage(myMilestones, null)],
+            courses: courses,
+            lessonsByCourseCode: lessonsByCourseCode);
+
+        using var fixture = new ApiFixture { QuizzesCoursesHandler = handler };
+        using var client = fixture.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", fixture.CreateToken(callerId));
+
+        var response = await client.GetAsync("/api/lessons-completed-over-time");
+        var body = await response.Content.ReadFromJsonAsync<LessonsCompletedResponseDto>();
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(body, Is.Not.Null);
+        Assert.That(
+            body!.Series,
+            Is.Empty,
+            "course-completion milestones must not count as lesson completions");
     }
 
     private sealed record LessonsCompletedResponseDto(
