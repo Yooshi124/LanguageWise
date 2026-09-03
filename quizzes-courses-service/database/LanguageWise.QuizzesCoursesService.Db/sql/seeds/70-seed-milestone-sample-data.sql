@@ -1,5 +1,5 @@
--- Realistic, idempotent learning progress for the primary development account.
--- Polish is complete; German, French, and Spanish show different stages of progress.
+-- Realistic, idempotent learning progress for development accounts.
+-- User 1 has broad progress; users 2-5 focus on one or two active courses.
 
 -- Remove only rows created by the superseded German-only development seed.
 DELETE FROM Milestones
@@ -27,6 +27,29 @@ SELECT
         '%sT09:00:00.0000000+00:00',
         date(seed.StartDate, printf('+%d days', lesson.SortOrder - 1)))
 FROM LessonMilestoneSeeds seed
+JOIN Courses course ON course.Code = seed.CourseCode
+JOIN Lessons lesson
+    ON lesson.CourseId = course.Id
+   AND lesson.SortOrder <= seed.MaximumSortOrder;
+
+WITH UserLessonMilestoneSeeds (UserId, CourseCode, MaximumSortOrder, StartDaysAgo) AS (
+    VALUES
+        (2, 'de', 5, 6),
+        (2, 'nl', 2, 1),
+        (3, 'fr', 4, 5),
+        (3, 'es', 2, 1),
+        (4, 'it', 3, 4),
+        (5, 'pl', 4, 6),
+        (5, 'nl', 2, 1)
+)
+INSERT OR IGNORE INTO Milestones (UserId, LessonId, CompletedAt)
+SELECT
+    seed.UserId,
+    lesson.Id,
+    printf(
+        '%sT09:00:00.0000000+00:00',
+        date('now', printf('-%d days', seed.StartDaysAgo - lesson.SortOrder + 1)))
+FROM UserLessonMilestoneSeeds seed
 JOIN Courses course ON course.Code = seed.CourseCode
 JOIN Lessons lesson
     ON lesson.CourseId = course.Id
