@@ -11,9 +11,6 @@ const props = defineProps<{
 }>()
 
 const route = useRoute()
-const showTopBar = computed(
-  () => route.name !== 'course' && route.name !== 'lesson' && !route.meta.hideTopBar,
-)
 const showAssistant = computed(
   () => props.hostContext?.user != null && !route.meta.hideAssistant,
 )
@@ -24,7 +21,7 @@ onBeforeUnmount(() => setFeatureHostContext(undefined))
 
 <template>
   <section class="feature-quizzes-courses">
-    <AppTopBar v-if="showTopBar" />
+    <AppTopBar />
     <router-view />
     <GarryAssistant
       v-if="showAssistant && hostContext?.user"
