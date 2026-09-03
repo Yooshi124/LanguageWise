@@ -20,7 +20,10 @@ const preferences = reactive<Preferences>({
 })
 
 const completed = computed(() => profile.value?.achievements.filter(
-  (achievement) => achievement.progress >= achievement.progressNeeded,
+  (achievement) => achievement.progressNeeded > 0 && achievement.progress >= achievement.progressNeeded,
+).length ?? 0)
+const boundedAchievementCount = computed(() => profile.value?.achievements.filter(
+  (achievement) => achievement.progressNeeded > 0,
 ).length ?? 0)
 const notifications = computed(() => [...(profile.value?.notifications ?? [])].sort(
   (left, right) => new Date(right.time).getTime() - new Date(left.time).getTime(),
@@ -90,7 +93,7 @@ onMounted(load)
   <div v-else-if="profile" class="lw-dashboard">
     <section class="lw-profile-band" aria-labelledby="profile-name">
       <div><p class="lw-eyebrow">Learner profile</p><h2 id="profile-name">{{ profile.username }}</h2></div>
-      <p class="lw-profile-band__summary">{{ completed }} of {{ profile.achievements.length }} achievements complete</p>
+      <p class="lw-profile-band__summary">{{ completed }} of {{ boundedAchievementCount }} achievements complete</p>
     </section>
 
     <div class="lw-dashboard-grid">
@@ -121,12 +124,12 @@ onMounted(load)
       <section class="lw-achievements" aria-labelledby="achievements-title">
         <div class="lw-section-heading"><div><p class="lw-eyebrow">Your collection</p><h2 id="achievements-title">Achievements</h2></div><span class="lw-badge">{{ completed }} complete</span></div>
         <div class="lw-achievement-grid">
-          <article v-for="achievement in profile.achievements" :key="achievement.achievementId" class="lw-achievement" :data-complete="achievement.progress >= achievement.progressNeeded">
+          <article v-for="achievement in profile.achievements" :key="achievement.achievementId" class="lw-achievement" :data-complete="achievement.progressNeeded > 0 && achievement.progress >= achievement.progressNeeded">
             <div class="lw-achievement__image-wrap"><img class="lw-achievement__image" :src="achievementImage" :alt="`${achievement.name} badge`"></div>
             <div class="lw-achievement__body">
-              <div class="lw-achievement__heading"><h3>{{ achievement.name }}</h3><span class="lw-achievement__state">{{ achievement.progress >= achievement.progressNeeded ? 'Earned' : 'In progress' }}</span></div>
-              <progress :value="achievement.progress" :max="achievement.progressNeeded" :aria-label="`${achievement.name} progress`"></progress>
-              <p class="lw-achievement__progress">{{ achievement.progress }} / {{ achievement.progressNeeded }}</p>
+              <div class="lw-achievement__heading"><h3>{{ achievement.name }}</h3><span class="lw-achievement__state">{{ achievement.progressNeeded < 0 ? 'Personal best' : achievement.progress >= achievement.progressNeeded ? 'Earned' : 'In progress' }}</span></div>
+              <progress v-if="achievement.progressNeeded > 0" :value="achievement.progress" :max="achievement.progressNeeded" :aria-label="`${achievement.name} progress`"></progress>
+              <p class="lw-achievement__progress">{{ achievement.progressNeeded < 0 ? `${achievement.progress} days` : `${achievement.progress} / ${achievement.progressNeeded}` }}</p>
             </div>
           </article>
         </div>

@@ -1,6 +1,3 @@
-
-using System.Net.Http.Json;
-
 namespace LanguageWise.Shared.Api.Clients;
 
 /// <summary>
@@ -21,4 +18,18 @@ public sealed class UsersClient(HttpClient httpClient)
         var result = await response.Content.ReadFromJsonAsync<VerifyResponse>(cancellationToken: cancellationToken);
         return result ?? new VerifyResponse(false, 0);
     }
+
+    internal async Task<int?> RecordLoginAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsync($"api/users/{userId}/login-streak", null, cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+        {
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<LoginStreakResponse>(cancellationToken: cancellationToken))?.Value;
+    }
 }
+
+internal sealed record LoginStreakResponse(int Value);

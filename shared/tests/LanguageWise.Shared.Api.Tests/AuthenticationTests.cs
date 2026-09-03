@@ -3,9 +3,13 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text.Json;
+using LanguageWise.Shared.Api.Clients;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.Tokens;
 
 namespace LanguageWise.Shared.Api.Tests;
@@ -113,6 +117,42 @@ public sealed class AuthenticationTests
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
     }
 
+    [Test]
+    public async Task CheckLogin_OnNewDay_ForwardsAbsoluteLoginStreak()
+    {
+        using var fixture = new ApiFixture(streakValue: 4);
+        var token = fixture.CreateToken();
+        using var client = fixture.CreateCookieClient(token);
+
+        var response = await client.PostAsync("/api/check-login", null);
+
+        using var body = JsonDocument.Parse(fixture.AchievementsHandler.RequestBody!);
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(fixture.AchievementsHandler.Authorization, Is.EqualTo($"Bearer {token}"));
+            Assert.That(body.RootElement.GetProperty("trigger").GetString(), Is.EqualTo("login-streak"));
+            Assert.That(body.RootElement.GetProperty("recipientUserId").GetInt32(), Is.EqualTo(7));
+            Assert.That(body.RootElement.GetProperty("recipientName").GetString(), Is.EqualTo("justin"));
+            Assert.That(body.RootElement.GetProperty("value").GetInt32(), Is.EqualTo(4));
+        });
+    }
+
+    [Test]
+    public async Task CheckLogin_OnSameDay_DoesNotForwardLoginStreak()
+    {
+        using var fixture = new ApiFixture();
+        using var client = fixture.CreateCookieClient(fixture.CreateToken());
+
+        var response = await client.PostAsync("/api/check-login", null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(fixture.AchievementsHandler.RequestCount, Is.Zero);
+        });
+    }
+
     private sealed record AuthenticatedUserResponse(int Id, string Name);
 
     private sealed class ApiFixture : WebApplicationFactory<SharedApiAssemblyMarker>
@@ -121,11 +161,15 @@ public sealed class AuthenticationTests
         private readonly string signingKeyPath = Path.Combine(
             AppContext.BaseDirectory,
             $"shared-auth-test-key-{Guid.NewGuid():N}.pem");
+        private readonly int? streakValue;
 
-        internal ApiFixture()
+        internal ApiFixture(int? streakValue = null)
         {
+            this.streakValue = streakValue;
             File.WriteAllText(signingKeyPath, signingKey.ExportRSAPrivateKeyPem());
         }
+
+        internal RecordingAchievementsHandler AchievementsHandler { get; } = new();
 
         internal HttpClient CreateCookieClient(string token)
         {
@@ -178,6 +222,19 @@ public sealed class AuthenticationTests
                     ["Auth:SigningKeyPath"] = signingKeyPath
                 });
             });
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<UsersClient>();
+                services.AddSingleton(new UsersClient(new HttpClient(new LoginStateHandler(streakValue))
+                {
+                    BaseAddress = new Uri("http://shared-database/")
+                }));
+                services.RemoveAll<AchievementsClient>();
+                services.AddSingleton(new AchievementsClient(new HttpClient(AchievementsHandler)
+                {
+                    BaseAddress = new Uri("http://achievements/")
+                }));
+            });
         }
 
         protected override void Dispose(bool disposing)
@@ -188,6 +245,39 @@ public sealed class AuthenticationTests
                 signingKey.Dispose();
                 File.Delete(signingKeyPath);
             }
+        }
+    }
+
+    private sealed class LoginStateHandler(int? streakValue) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var response = streakValue is null
+                ? new HttpResponseMessage(HttpStatusCode.NoContent)
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new { value = streakValue.Value })
+                };
+            return Task.FromResult(response);
+        }
+    }
+
+    internal sealed class RecordingAchievementsHandler : HttpMessageHandler
+    {
+        internal int RequestCount { get; private set; }
+        internal string? Authorization { get; private set; }
+        internal string? RequestBody { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            Authorization = request.Headers.Authorization?.ToString();
+            RequestBody = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.OK);
         }
     }
 }

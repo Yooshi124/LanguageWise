@@ -44,7 +44,7 @@ public sealed class NotificationRulesTests
     [Test]
     public void ValidateEvent_WithInvalidFields_ReturnsEveryRelevantError()
     {
-        var request = new EventRequest("unknown", "", 0);
+        var request = new EventRequest("unknown", "", 0, "");
 
         var errors = NotificationRules.ValidateEvent(request);
 
@@ -52,7 +52,8 @@ public sealed class NotificationRulesTests
         {
             "trigger",
             "subject",
-            "recipientUserId"
+            "recipientUserId",
+            "recipientName"
         }));
     }
 
@@ -93,6 +94,38 @@ public sealed class NotificationRulesTests
     }
 
     [Test]
+    public void CalculateProgress_WithGreaterAbsoluteValue_UsesValue()
+    {
+        var update = NotificationRules.CalculateProgress(2, 7, 5);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(update.Progress, Is.EqualTo(5));
+            Assert.That(update.NewlyAttained, Is.False);
+        });
+    }
+
+    [Test]
+    public void CalculateProgress_WithLowerAbsoluteValue_PreservesProgress()
+    {
+        var update = NotificationRules.CalculateProgress(5, 7, 0);
+
+        Assert.That(update.Progress, Is.EqualTo(5));
+    }
+
+    [Test]
+    public void CalculateProgress_ForUnboundedAchievement_TracksHighestValue()
+    {
+        var update = NotificationRules.CalculateProgress(7, -1, 12);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(update.Progress, Is.EqualTo(12));
+            Assert.That(update.NewlyAttained, Is.False);
+        });
+    }
+
+    [Test]
     public void ShouldNotify_WhenMasterPreferenceIsDisabled_ReturnsFalse()
     {
         var preferences = Preferences(notifyAll: false, notifyCourseCompletion: true);
@@ -117,7 +150,7 @@ public sealed class NotificationRulesTests
     }
 
     private static EventRequest ValidEvent() =>
-        new("course-completion", "Introduction to Spanish", 1);
+        new("course-completion", "Completed Introduction to Spanish", 1, "Amber");
 
     private static UserPreferences Preferences(
         bool notifyAll = true,

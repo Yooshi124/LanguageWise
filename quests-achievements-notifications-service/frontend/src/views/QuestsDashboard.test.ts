@@ -24,6 +24,24 @@ describe('QuestsDashboard', () => {
     expect(wrapper.get('img').attributes('src')).toBe('/remotes/quests-achievements/achievement.svg')
   })
 
+  it('renders an unbounded login streak as a personal best', async () => {
+    const streakProfile = {
+      ...profile,
+      achievements: [
+        ...profile.achievements,
+        { achievementId: 11, name: 'Longest Login Streak', image: '', progress: 12, progressNeeded: -1 },
+      ],
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(streakProfile), { status: 200 })))
+    const wrapper = mount(QuestsDashboard)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Longest Login Streak')
+    expect(wrapper.text()).toContain('Personal best')
+    expect(wrapper.text()).toContain('12 days')
+    expect(wrapper.text()).toContain('1 of 1 achievements complete')
+  })
+
   it('saves every preference as JSON and displays success feedback', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify(profile), { status: 200 }))
