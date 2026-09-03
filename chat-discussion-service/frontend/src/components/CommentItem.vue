@@ -153,10 +153,8 @@ function onLike({ liked, count }) {
                     @error="$emit('error', $event)"
                 />
                 <template v-if="canEdit">
-                    <button type="button" class="cd-comment__link" @click="startEditing">Edit</button>
-                    <button type="button" class="cd-comment__link cd-comment__link--danger" @click="remove">
-                        Delete
-                    </button>
+                    <button type="button" class="lw-command" @click="startEditing">Edit</button>
+                    <button type="button" class="lw-command" @click="remove">Delete</button>
                 </template>
             </div>
         </template>

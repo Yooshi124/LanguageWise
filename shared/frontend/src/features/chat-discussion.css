@@ -162,20 +162,6 @@
     color: var(--lw-colour-ink);
   }
 
-  .cd-comment__link {
-    padding: 0;
-    border: none;
-    background: none;
-    color: var(--lw-colour-ink-muted);
-    font-family: var(--lw-font);
-    font-size: 0.9rem;
-    text-decoration: underline;
-    cursor: pointer;
-  }
-
-  .cd-comment__link:hover { color: var(--lw-colour-primary); }
-  .cd-comment__link--danger:hover { color: var(--lw-colour-danger); }
-
   .cd-like {
     display: inline-flex;
     align-items: center;
@@ -414,7 +400,23 @@
   .cd-images__item { display: flex; flex-direction: column; align-items: center; gap: .35rem; }
   .cd-images__thumb { display: block; width: 7rem; height: 7rem; object-fit: cover; border: 1px solid var(--lw-colour-border); border-radius: var(--lw-radius-sm); background: var(--lw-colour-bg); }
   .cd-images__remove { font-size: .8rem; }
-  .cd-images__input { font: .9rem var(--lw-font); }
+  .cd-images__input { font: .9rem var(--lw-font); color: var(--lw-colour-ink-muted); }
+  .cd-images__input::file-selector-button {
+    display: inline-flex;
+    min-height: 2.5rem;
+    margin-right: 0.75rem;
+    padding: 0.55rem 0.9rem;
+    align-items: center;
+    border: 0;
+    border-radius: var(--lw-radius-sm);
+    color: #fff;
+    background: var(--lw-colour-primary);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .cd-images__input::file-selector-button:hover { background: var(--lw-colour-primary-dark); }
+  .cd-images__input:disabled::file-selector-button { cursor: not-allowed; opacity: 0.6; }
   .cd-create__published { margin-top: 1rem; }
 
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
