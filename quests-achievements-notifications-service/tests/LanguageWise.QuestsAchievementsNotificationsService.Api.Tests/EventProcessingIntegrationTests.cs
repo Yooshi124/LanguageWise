@@ -69,7 +69,7 @@ public sealed class EventProcessingIntegrationTests
             new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
 
         var request = new EventRequest(
-            "course-completion",
+            "lesson-completion",
             "Introduction to Spanish",
             UserId,
             "Amber");
@@ -83,7 +83,7 @@ public sealed class EventProcessingIntegrationTests
         var progress = await databaseClient.GetFromJsonAsync<List<UserAchievement>>(
             $"user_achievements?user_id=eq.{UserId}&achievement_id=in.(1,2,3)&order=achievement_id.asc");
         var notifications = await databaseClient.GetFromJsonAsync<List<NotificationInput>>(
-            $"notifications?user_id=eq.{UserId}&trigger=eq.course-completion");
+            $"notifications?user_id=eq.{UserId}&trigger=eq.lesson-completion");
         var generatedNotifications = notifications!
             .Where(item => item.EmailSubject == "Course achievement progress")
             .ToList();
@@ -95,21 +95,21 @@ public sealed class EventProcessingIntegrationTests
             Assert.That(
                 responseBody.RootElement.GetProperty("achievements").EnumerateArray()
                     .Select(item => item.GetProperty("progress").GetInt32()),
-                Is.EqualTo(new[] { 1, 4, 4 }));
+                Is.EqualTo(new[] { 1, 1, 1 }));
             Assert.That(
                 responseBody.RootElement.GetProperty("achievements").EnumerateArray()
                     .Select(item => item.GetProperty("newlyAttained").GetBoolean()),
-                Is.EqualTo(new[] { false, false, false }));
+                Is.EqualTo(new[] { true, false, false }));
             Assert.That(
                 secondResponseBody.RootElement.GetProperty("achievements").EnumerateArray()
                     .Select(item => item.GetProperty("newlyAttained").GetBoolean()),
-                Is.EqualTo(new[] { false, true, false }));
+                Is.EqualTo(new[] { false, false, false }));
             Assert.That(progress, Has.Count.EqualTo(3));
-            Assert.That(progress!.Select(item => item.Progress), Is.EqualTo(new[] { 1, 5, 5 }));
+            Assert.That(progress!.Select(item => item.Progress), Is.EqualTo(new[] { 1, 2, 2 }));
             Assert.That(generatedNotifications, Has.Count.EqualTo(2));
-            Assert.That(generatedNotifications[0].EmailBody, Does.Contain("Complete your first course"));
-            Assert.That(generatedNotifications[0].EmailBody, Does.Contain("Complete five courses"));
-            Assert.That(generatedNotifications[0].EmailBody, Does.Contain("Complete ten courses"));
+            Assert.That(generatedNotifications[0].EmailBody, Does.Contain("Complete your first lesson"));
+            Assert.That(generatedNotifications[0].EmailBody, Does.Contain("Complete five lessons"));
+            Assert.That(generatedNotifications[0].EmailBody, Does.Contain("Complete twenty lessons"));
         });
     }
 
@@ -123,7 +123,7 @@ public sealed class EventProcessingIntegrationTests
         apiClient.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
         var request = new EventRequest(
-            "post-engagement",
+            "community-contribution",
             "Welcome to LanguageWise",
             recipientUserId,
             "Learner");
@@ -135,7 +135,7 @@ public sealed class EventProcessingIntegrationTests
         var progress = await databaseClient.GetFromJsonAsync<List<UserAchievement>>(
             $"user_achievements?user_id=eq.{recipientUserId}&order=achievement_id.asc");
         var notifications = await databaseClient.GetFromJsonAsync<List<NotificationInput>>(
-            $"notifications?user_id=eq.{recipientUserId}&trigger=eq.post-engagement");
+            $"notifications?user_id=eq.{recipientUserId}&trigger=eq.community-contribution");
 
         Assert.Multiple(() =>
         {
@@ -220,7 +220,7 @@ public sealed class EventProcessingIntegrationTests
         apiClient.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
         var request = new EventRequest(
-            "quiz-result",
+            "minigame-win",
             "Spanish vocabulary quiz",
             recipientUserId,
             "Learner");
@@ -229,12 +229,12 @@ public sealed class EventProcessingIntegrationTests
         var progress = await databaseHttpClient.GetFromJsonAsync<List<UserAchievement>>(
             $"user_achievements?user_id=eq.{recipientUserId}&order=achievement_id.asc");
         var notifications = await databaseHttpClient.GetFromJsonAsync<List<NotificationInput>>(
-            $"notifications?user_id=eq.{recipientUserId}&trigger=eq.quiz-result");
+            $"notifications?user_id=eq.{recipientUserId}&trigger=eq.minigame-win");
 
         Assert.Multiple(() =>
         {
             Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
-            Assert.That(progress!.Select(item => item.Progress), Is.EqualTo(new[] { 1, 1 }));
+            Assert.That(progress!.Select(item => item.Progress), Is.EqualTo(new[] { 1, 1, 1 }));
             Assert.That(notifications, Has.Count.EqualTo(1));
             Assert.That(notifications![0].EmailSubject, Is.Not.Empty);
             Assert.That(notifications[0].EmailBody, Is.Not.Empty);
@@ -254,10 +254,10 @@ public sealed class EventProcessingIntegrationTests
             profileUserId, "login-streak",
             new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero), $"Old {suffix}", "Old body"));
         await databaseClient.CreateNotificationAsync(new NotificationInput(
-            profileUserId, "quiz-result",
+            profileUserId, "minigame-win",
             new DateTimeOffset(2030, 1, 2, 9, 0, 0, TimeSpan.Zero), $"New {suffix}", "New body"));
         await databaseClient.CreateNotificationAsync(new NotificationInput(
-            99, "course-completion",
+            99, "lesson-completion",
             new DateTimeOffset(2030, 1, 3, 9, 0, 0, TimeSpan.Zero), $"Other {suffix}", "Other body"));
 
         using var apiClient = fixture.CreateClient();

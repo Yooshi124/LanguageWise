@@ -21,11 +21,18 @@ const int MaxMilestonePageSize = 200;
 
 var builder = WebApplication.CreateBuilder(args);
 var databaseServiceUrl = builder.Configuration["Services:Database"] ?? "http://localhost:6003";
+var achievementsServiceUrl = builder.Configuration["Services:Achievements"] ?? "http://localhost:5004";
 
 builder.Services.AddHttpClient<CatalogClient>(client =>
 {
     client.BaseAddress = new Uri(databaseServiceUrl.TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(10);
+});
+
+builder.Services.AddHttpClient<AchievementEventsClient>(client =>
+{
+    client.BaseAddress = new Uri($"{achievementsServiceUrl}/");
+    client.Timeout = TimeSpan.FromSeconds(20);
 });
 
 builder.Services
@@ -481,13 +488,28 @@ app.MapPut("/api/lessons/{lessonId:int}/milestone", async (
     int lessonId,
     HttpContext context,
     CatalogClient client,
+    AchievementEventsClient achievementEventsClient,
     CancellationToken cancellationToken) =>
     await ExecuteForUserAsync(context, async userId =>
-        ToResult(await client.SetLessonMilestoneAsync(
+    {
+        var response = await client.SetLessonMilestoneAsync(
             lessonId,
             userId,
             completed: true,
-            cancellationToken)), app.Logger));
+            cancellationToken);
+        if (response is { IsSuccess: true, Value.Changed: true })
+        {
+            await RecordLessonCompletionAsync(
+                client,
+                achievementEventsClient,
+                context,
+                userId,
+                cancellationToken,
+                app.Logger);
+        }
+
+        return ToResult(response);
+    }, app.Logger));
 
 app.MapDelete("/api/lessons/{lessonId:int}/milestone", async (
     int lessonId,
@@ -526,6 +548,39 @@ app.MapDelete("/api/courses/{code}/milestone", async (
             cancellationToken)), app.Logger));
 
 app.Run();
+
+static async Task RecordLessonCompletionAsync(
+    CatalogClient catalogClient,
+    AchievementEventsClient achievementEventsClient,
+    HttpContext context,
+    int userId,
+    CancellationToken cancellationToken,
+    ILogger logger)
+{
+    try
+    {
+        var progress = await catalogClient.GetStartedCourseProgressAsync(userId, cancellationToken);
+        var completedLessons = progress.Sum(course => course.Lessons.Count(lesson => lesson.Completed));
+        await achievementEventsClient.RecordLessonCompletionAsync(
+            userId,
+            context.User.Identity!.Name!,
+            completedLessons,
+            GetAccessToken(context),
+            cancellationToken);
+    }
+    catch (Exception exception) when (exception is not OperationCanceledException)
+    {
+        logger.LogError(exception, "Failed to record lesson completion for user {UserId}.", userId);
+    }
+}
+
+static string GetAccessToken(HttpContext context)
+{
+    var header = context.Request.Headers.Authorization.ToString();
+    return header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+        ? header["Bearer ".Length..].Trim()
+        : context.Request.Cookies["token"]!;
+}
 
 static string Normalize(string value) => value.Trim().ToLowerInvariant();
 

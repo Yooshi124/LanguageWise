@@ -104,7 +104,7 @@ public sealed record StartedCourseProgress(
     string CourseTitle,
     IReadOnlyList<LessonMilestone> Lessons);
 
-public sealed record MilestoneState(bool Completed);
+public sealed record MilestoneState(bool Completed, bool Changed);
 
 public sealed record Milestone(
     int Id,

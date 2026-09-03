@@ -138,7 +138,7 @@ public sealed class NotificationRulesTests
     {
         var preferences = Preferences(notifyCourseCompletion: true);
 
-        Assert.That(NotificationRules.ShouldNotify(preferences, "course-completion", false), Is.True);
+        Assert.That(NotificationRules.ShouldNotify(preferences, "lesson-completion", false), Is.True);
     }
 
     [Test]
@@ -146,11 +146,11 @@ public sealed class NotificationRulesTests
     {
         var preferences = Preferences(notifyAchievements: true);
 
-        Assert.That(NotificationRules.ShouldNotify(preferences, "course-completion", true), Is.True);
+        Assert.That(NotificationRules.ShouldNotify(preferences, "minigame-win", true), Is.True);
     }
 
     private static EventRequest ValidEvent() =>
-        new("course-completion", "Completed Introduction to Spanish", 1, "Amber");
+        new("lesson-completion", "Completed Introduction to Spanish", 1, "Amber");
 
     private static UserPreferences Preferences(
         bool notifyAll = true,

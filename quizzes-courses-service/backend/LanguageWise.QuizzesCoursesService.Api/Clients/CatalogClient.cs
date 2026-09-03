@@ -144,12 +144,12 @@ public sealed class CatalogClient(HttpClient httpClient)
             new InternalSubmitQuizAttemptRequest(userId, request.Answers),
             cancellationToken);
 
-    public Task<DatabaseResponse<object>> SetLessonMilestoneAsync(
+    public Task<DatabaseResponse<MilestoneState>> SetLessonMilestoneAsync(
         int lessonId,
         int userId,
         bool completed,
         CancellationToken cancellationToken = default) =>
-        SendWithoutBodyAsync(
+        SendWithoutBodyAsync<MilestoneState>(
             completed ? HttpMethod.Put : HttpMethod.Delete,
             $"api/lessons/{lessonId}/milestones/{userId}",
             cancellationToken);
@@ -159,7 +159,7 @@ public sealed class CatalogClient(HttpClient httpClient)
         int userId,
         bool completed,
         CancellationToken cancellationToken = default) =>
-        SendWithoutBodyAsync(
+        SendWithoutBodyAsync<object>(
             completed ? HttpMethod.Put : HttpMethod.Delete,
             $"api/courses/{Uri.EscapeDataString(courseCode)}/milestones/{userId}",
             cancellationToken);
@@ -204,14 +204,14 @@ public sealed class CatalogClient(HttpClient httpClient)
         return await ReadResponseAsync<TResponse>(response, cancellationToken);
     }
 
-    private async Task<DatabaseResponse<object>> SendWithoutBodyAsync(
+    private async Task<DatabaseResponse<T>> SendWithoutBodyAsync<T>(
         HttpMethod method,
         string path,
         CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(method, path);
         using var response = await httpClient.SendAsync(request, cancellationToken);
-        return await ReadResponseAsync<object>(response, cancellationToken);
+        return await ReadResponseAsync<T>(response, cancellationToken);
     }
 
     private static async Task<DatabaseResponse<T>> ReadResponseAsync<T>(

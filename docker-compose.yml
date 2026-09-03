@@ -118,6 +118,7 @@ services:
     environment:
       Services__Database: http://mini-games-service-db:8080
       Services__Courses: http://quizzes-courses-service-backend:8080
+      Services__Achievements: http://quests-achievements-notifications-service-backend:8080
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
     secrets:
       - signing_public_key
@@ -162,6 +163,7 @@ services:
         required: false
     environment:
       Services__Database: http://quizzes-courses-service-db:8080
+      Services__Achievements: http://quests-achievements-notifications-service-backend:8080
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
     secrets:
       - signing_public_key
@@ -207,6 +209,7 @@ services:
     environment:
       Services__Database: http://chat-discussion-service-db:8080
       Services__Ollama: http://ollama:11434
+      Services__Achievements: http://quests-achievements-notifications-service-backend:8080
       Ollama__Model: gemma4:e4b
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
     secrets:

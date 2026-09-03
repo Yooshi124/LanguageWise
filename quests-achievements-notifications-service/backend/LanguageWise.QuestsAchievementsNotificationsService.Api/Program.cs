@@ -200,7 +200,7 @@ app.MapPut("/api/preferences", async (
             var email = await emailGenerator.GenerateAsync(new EmailContext(
                 context.User.Identity?.Name ?? "LanguageWise learner",
                 true,
-                "Welcome the learner to LanguageWise notifications. Explain that they can receive post engagement, course completion, quiz result, learning streak, and achievement notifications.",
+                "Welcome the learner to LanguageWise notifications. Explain that they can receive community contribution, lesson completion, mini-game win, learning streak, and achievement notifications.",
                 []), cancellationToken);
 
             await client.CreateNotificationAsync(new NotificationInput(

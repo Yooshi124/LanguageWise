@@ -6,7 +6,7 @@ const profile = {
   username: 'amber',
   preferences: { email: 'amber@example.com', notifyAll: false, notifyPostEngagement: true, notifyCourseCompletion: false, notifyQuizResults: true, notifyStreaks: false, notifyAchievements: true },
   achievements: [{ achievementId: 1, name: 'First Steps', image: '/images/missing.png', progress: 1, progressNeeded: 1 }],
-  notifications: [{ notificationId: 1, trigger: 'quiz-result', time: '2026-01-01T00:00:00Z', emailSubject: 'Quiz result', emailBody: 'Well done.' }],
+  notifications: [{ notificationId: 1, trigger: 'minigame-win', time: '2026-01-01T00:00:00Z', emailSubject: 'Mini-game win', emailBody: 'Well done.' }],
 }
 
 afterEach(() => vi.unstubAllGlobals())

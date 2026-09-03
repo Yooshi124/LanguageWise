@@ -12,6 +12,7 @@ internal sealed class StubHttpMessageHandler(HttpStatusCode statusCode, string r
     public Uri? LastRequestUri { get; private set; }
     public HttpMethod? LastRequestMethod { get; private set; }
     public string? LastRequestBody { get; private set; }
+    public string? LastAuthorization { get; private set; }
 
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
@@ -19,6 +20,7 @@ internal sealed class StubHttpMessageHandler(HttpStatusCode statusCode, string r
     {
         LastRequestUri = request.RequestUri;
         LastRequestMethod = request.Method;
+        LastAuthorization = request.Headers.Authorization?.ToString();
         LastRequestBody = request.Content is null
             ? null
             : await request.Content.ReadAsStringAsync(cancellationToken);
