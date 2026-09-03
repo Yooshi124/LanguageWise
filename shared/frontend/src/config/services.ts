@@ -71,7 +71,7 @@ export const serviceMappings: readonly ServiceMapping[] = [
     gateway: '/analytics/',
     frontend: 'Gateway -> leaderboard-analytics-service-frontend:80',
     backend: 'localhost:5005 -> leaderboard-analytics-service-backend:8080',
-    database: 'localhost:5006 -> leaderboard-analytics-service-db:8080',
-    technology: 'SQLite',
+    database: 'None (fetches data on demand from quizzes-courses-service)',
+    technology: 'HTTP client (no local storage)',
   },
 ]

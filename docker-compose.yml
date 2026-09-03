@@ -10,7 +10,6 @@ volumes:
   chat-discussion-service-db-data:
   quests-achievements-notifications-service-db-data:
   mini-games-service-db-data:
-  leaderboard-analytics-service-db-data:
   ollama-data:
 
 # Generate using tools/gen-signing-key/gen-signing-key.ps1
@@ -288,25 +287,12 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  leaderboard-analytics-service-db:
-    container_name: leaderboard-analytics-service-db
-    build:
-      context: ./leaderboard-analytics-service/database
-    environment:
-      Database__Path: /data/leaderboard-analytics-service.db
-    volumes:
-      - leaderboard-analytics-service-db-data:/data
-    ports:
-      - "127.0.0.1:5006:8080"
-    networks: [languagewise]
-    restart: unless-stopped
-
   leaderboard-analytics-service-backend:
     container_name: leaderboard-analytics-service-backend
     build:
       context: ./leaderboard-analytics-service/backend
     environment:
-      Services__Database: http://leaderboard-analytics-service-db:8080
+      Services__QuizzesCourses: http://quizzes-courses-service-backend:8080
       Services__Ollama: http://ollama:11434
       Ollama__Model: gemma4:e4b
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
@@ -316,7 +302,7 @@ services:
       - "127.0.0.1:5005:8080"
     networks: [languagewise]
     depends_on:
-      leaderboard-analytics-service-db:
+      quizzes-courses-service-backend:
         condition: service_healthy
       ollama-model-init:
         condition: service_completed_successfully

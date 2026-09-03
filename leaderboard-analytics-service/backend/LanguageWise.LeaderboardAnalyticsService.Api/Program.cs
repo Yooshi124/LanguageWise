@@ -9,11 +9,12 @@ using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var databaseServiceUrl = builder.Configuration["Services:Database"] ?? "http://localhost:5006";
+var quizzesCoursesServiceUrl = builder.Configuration["Services:QuizzesCourses"] ?? "http://localhost:5003";
 
-builder.Services.AddHttpClient<LeaderboardClient>(client =>
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<QuizzesCoursesClient>(client =>
 {
-    client.BaseAddress = new Uri(databaseServiceUrl.TrimEnd('/') + "/");
+    client.BaseAddress = new Uri(quizzesCoursesServiceUrl.TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(10);
 });
 
@@ -76,25 +77,9 @@ app.MapGet("/health", () => Results.Ok())
 // Language Rankings
 // ---------------------------------------------------------------------------
 
-app.MapGet("/api/language-rankings", (
-    LeaderboardClient client,
-    CancellationToken cancellationToken,
-    string? language = null,
-    int limit = 50,
-    int offset = 0) =>
-    client.GetLanguageRankingsAsync(language, limit, offset, cancellationToken));
-
-app.MapGet("/api/language-rankings/{id:int}", async (int id, LeaderboardClient client, CancellationToken cancellationToken) =>
-    await client.GetLanguageRankingAsync(id, cancellationToken) is { } ranking
-        ? Results.Ok(ranking)
-        : Results.NotFound());
-
-app.MapGet("/api/language-rankings/user/{userId:int}", (int userId, LeaderboardClient client, CancellationToken cancellationToken) =>
-    client.GetLanguageRankingsByUserAsync(userId, cancellationToken));
-
 app.MapGet("/api/my-language-rankings", async (
     HttpContext context,
-    LeaderboardClient client,
+    QuizzesCoursesClient client,
     CancellationToken cancellationToken) =>
 {
     var subject = context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
@@ -103,32 +88,32 @@ app.MapGet("/api/my-language-rankings", async (
         return Results.Unauthorized();
     }
 
-    var rankings = await client.GetLanguageRankingsByUserAsync(userId, cancellationToken);
+    if (!TryGetIncomingBearerToken(context, out var token))
+    {
+        return Results.Unauthorized();
+    }
+
+    var myMilestonesTask = client.GetAllMyMilestonesAsync(token, cancellationToken);
+    var allMilestonesTask = client.GetAllMilestonesAsync(token, cancellationToken);
+    var coursesTask = client.GetCoursesAsync(token, cancellationToken);
+    await Task.WhenAll(myMilestonesTask, allMilestonesTask, coursesTask);
+
+    var rankings = AnalyticsProjector.BuildLanguageRankings(
+        userId,
+        myMilestonesTask.Result,
+        allMilestonesTask.Result,
+        coursesTask.Result);
     return Results.Ok(rankings);
 });
 
 // ---------------------------------------------------------------------------
-// Discussion Rankings
+// Lessons Completed Analytics
 // ---------------------------------------------------------------------------
 
-app.MapGet("/api/discussion-rankings", (
-    LeaderboardClient client,
-    CancellationToken cancellationToken,
-    int limit = 50,
-    int offset = 0) =>
-    client.GetDiscussionRankingsAsync(limit, offset, cancellationToken));
-
-app.MapGet("/api/discussion-rankings/{id:int}", async (int id, LeaderboardClient client, CancellationToken cancellationToken) =>
-    await client.GetDiscussionRankingAsync(id, cancellationToken) is { } ranking
-        ? Results.Ok(ranking)
-        : Results.NotFound());
-
-app.MapGet("/api/discussion-rankings/user/{userId:int}", async (int userId, LeaderboardClient client, CancellationToken cancellationToken) =>
-    await client.GetDiscussionRankingByUserAsync(userId, cancellationToken) is { } ranking
-        ? Results.Ok(ranking)
-        : Results.NotFound());
-
-app.MapGet("/api/lessons-completed-over-time", (HttpContext context) =>
+app.MapGet("/api/lessons-completed-over-time", async (
+    HttpContext context,
+    QuizzesCoursesClient client,
+    CancellationToken cancellationToken) =>
 {
     var subject = context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
     if (!int.TryParse(subject, out var userId))
@@ -136,11 +121,26 @@ app.MapGet("/api/lessons-completed-over-time", (HttpContext context) =>
         return Results.Unauthorized();
     }
 
-    return Results.Ok(MockLessonsCompletedGenerator.GenerateForLast30Days(userId));
+    if (!TryGetIncomingBearerToken(context, out var token))
+    {
+        return Results.Unauthorized();
+    }
+
+    var myMilestonesTask = client.GetAllMyMilestonesAsync(token, cancellationToken);
+    var coursesTask = client.GetCoursesAsync(token, cancellationToken);
+    await Task.WhenAll(myMilestonesTask, coursesTask);
+
+    var response = AnalyticsProjector.BuildLessonsCompleted(
+        userId,
+        myMilestonesTask.Result,
+        coursesTask.Result,
+        DateOnly.FromDateTime(DateTime.UtcNow));
+    return Results.Ok(response);
 });
 
 app.MapPost("/api/lessons-completed-summary", async (
     HttpContext context,
+    QuizzesCoursesClient client,
     ISummaryGenerator generator,
     CancellationToken cancellationToken) =>
 {
@@ -150,9 +150,46 @@ app.MapPost("/api/lessons-completed-summary", async (
         return Results.Unauthorized();
     }
 
-    var chartData = MockLessonsCompletedGenerator.GenerateForLast30Days(userId);
+    if (!TryGetIncomingBearerToken(context, out var token))
+    {
+        return Results.Unauthorized();
+    }
+
+    var myMilestonesTask = client.GetAllMyMilestonesAsync(token, cancellationToken);
+    var coursesTask = client.GetCoursesAsync(token, cancellationToken);
+    await Task.WhenAll(myMilestonesTask, coursesTask);
+
+    var chartData = AnalyticsProjector.BuildLessonsCompleted(
+        userId,
+        myMilestonesTask.Result,
+        coursesTask.Result,
+        DateOnly.FromDateTime(DateTime.UtcNow));
     var summary = await generator.GenerateAsync(chartData, cancellationToken);
     return Results.Ok(summary);
 });
 
 app.Run();
+
+static bool TryGetIncomingBearerToken(HttpContext context, out string token)
+{
+    var header = context.Request.Headers.Authorization.ToString();
+    if (!string.IsNullOrWhiteSpace(header) && header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+    {
+        token = header["Bearer ".Length..].Trim();
+        if (token.Length > 0)
+        {
+            return true;
+        }
+    }
+
+    var cookie = context.Request.Cookies["token"];
+    if (!string.IsNullOrWhiteSpace(cookie))
+    {
+        token = cookie;
+        return true;
+    }
+
+    token = string.Empty;
+    return false;
+}
+

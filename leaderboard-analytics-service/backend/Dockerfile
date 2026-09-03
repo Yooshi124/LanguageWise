@@ -1,7 +1,7 @@
 # Backend/API container for leaderboard-analytics-service.
 #
-# ASP.NET Core minimal API. It never opens SQLite directly; it calls this
-# service's database container over HTTP.
+# ASP.NET Core minimal API. It sources its data on-demand from the
+# quizzes-courses-service backend over HTTP.
 #
 # Build context is this folder, so the image cannot reach other microservices.
 
@@ -25,7 +25,7 @@ RUN apt-get update \
 COPY --from=build /app/publish ./
 
 ENV ASPNETCORE_HTTP_PORTS=8080 \
-    Services__Database=http://leaderboard-analytics-service-db:8080
+    Services__QuizzesCourses=http://quizzes-courses-service-backend:8080
 
 USER app
 EXPOSE 8080
