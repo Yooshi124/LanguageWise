@@ -5,9 +5,9 @@ import {
     ASSISTANT_MAX_CONVERSATION,
     ASSISTANT_MAX_HISTORY
 } from '../api.js';
-import { useAuth } from './useAuth.js';
+import { useFeatureUser } from '../federation/featureHost.js';
 
-// Module level, like useAuth, so the panel keeps its transcript when you follow
+// Module level so the panel keeps its transcript when you follow
 // Garry's advice and navigate to another page mid-conversation.
 
 const SUGGESTIONS = [
@@ -17,7 +17,7 @@ const SUGGESTIONS = [
     'How do I find the posts I wrote?'
 ];
 
-const { me } = useAuth();
+const me = useFeatureUser();
 
 const open = ref(false);
 const messages = ref([]);

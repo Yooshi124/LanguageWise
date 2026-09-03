@@ -21,7 +21,7 @@ const route = useRoute();
 const draft = ref('');
 const transcript = ref(null);
 const input = ref(null);
-const garryImage = `${import.meta.env.BASE_URL}images/garry.png`;
+const garryImage = '/remotes/chat-discussion/images/garry.png';
 
 // The model writes markdown. Rendered with HTML disabled and then sanitised
 // anyway, because an answer is untrusted text however it was produced.
