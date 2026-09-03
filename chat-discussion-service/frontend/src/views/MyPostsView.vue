@@ -44,7 +44,13 @@ onBeforeUnmount(() => window.clearTimeout(debounce));
 </script>
 
 <template>
-    <h2 class="lw-section-heading">My Posts</h2>
+    <header class="cd-heading">
+        <div class="cd-heading__intro">
+            <v-chip color="primary" variant="tonal">Your activity</v-chip>
+        </div>
+        <h1>My posts.<br /><span>Everything you have shared.</span></h1>
+        <p>Revisit your discussions, track the replies they gathered and pick up where you left off.</p>
+    </header>
 
     <label class="cd-search">
         <span class="cd-search__label">Search your posts</span>

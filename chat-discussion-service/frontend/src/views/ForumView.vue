@@ -6,6 +6,7 @@ import PostCard from '../components/PostCard.vue';
 import StateBlock from '../components/StateBlock.vue';
 import { usePostList } from '../composables/usePostList.js';
 import { useForums } from '../composables/useForums.js';
+import { forumColour, forumFlag } from '../config/languages.js';
 
 const props = defineProps({ code: { type: String, required: true } });
 
@@ -75,10 +76,20 @@ onBeforeUnmount(() => window.clearTimeout(debounce));
             All forums
         </v-btn>
 
-        <div class="cd-forum-head">
-            <h2 class="lw-section-heading">{{ forumName(code) }}</h2>
-            <p class="lw-card__hint">Search covers post titles, post content and comments in this forum.</p>
-        </div>
+        <header class="cd-heading cd-heading--compact">
+            <div class="cd-heading__intro">
+                <img
+                    v-if="forumFlag(code)"
+                    class="cd-heading__flag"
+                    :src="forumFlag(code)"
+                    alt=""
+                    aria-hidden="true"
+                />
+                <v-chip :color="forumColour(code)" variant="tonal">Forum</v-chip>
+            </div>
+            <h1>{{ forumName(code) }}</h1>
+            <p>Search covers post titles, post content and comments in this forum.</p>
+        </header>
 
         <label class="cd-search">
             <span class="cd-search__label">Search this forum</span>

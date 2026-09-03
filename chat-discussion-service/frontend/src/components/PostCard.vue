@@ -1,4 +1,5 @@
 <script setup>
+import AppIcon from './AppIcon.vue';
 import LikeButton from './LikeButton.vue';
 import { excerpt, formatDate } from '../format.js';
 
@@ -49,6 +50,7 @@ function onLike({ liked, count }) {
             />
             <RouterLink class="cd-post__comments" :to="{ name: 'post', params: { id: post.id } }">
                 {{ post.commentCount }} {{ post.commentCount === 1 ? 'comment' : 'comments' }}
+                <AppIcon name="arrow-right" :size="18" />
             </RouterLink>
         </footer>
     </article>

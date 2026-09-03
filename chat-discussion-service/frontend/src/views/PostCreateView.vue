@@ -45,7 +45,14 @@ async function submit({ images = [], ...fields }) {
 </script>
 
 <template>
-    <h2 class="lw-section-heading">New post</h2>
+    <header class="cd-heading cd-heading--compact">
+        <div class="cd-heading__intro">
+            <v-chip color="primary" variant="tonal">New post</v-chip>
+        </div>
+        <h1>Start a conversation.</h1>
+        <p>Ask a question, share your progress or swap tips with other learners.</p>
+    </header>
+
     <PostForm
         submit-label="Publish"
         :busy="busy"

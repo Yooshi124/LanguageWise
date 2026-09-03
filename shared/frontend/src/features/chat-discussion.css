@@ -232,15 +232,22 @@
     font-size: 0.9rem;
   }
 
-  .cd-post__footer { gap: 1rem; }
+  .cd-post__footer { gap: 1rem; justify-content: space-between; }
 
+  /* A CardAction-style call to action, matching the quizzes feature cards. */
   .cd-post__comments {
-    color: var(--lw-colour-ink-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--lw-colour-primary);
     font-size: 0.9rem;
+    font-weight: 700;
     text-decoration: none;
   }
 
-  .cd-post__comments:hover { color: var(--lw-colour-primary); }
+  .cd-post__comments .app-icon { transition: transform 0.2s ease; }
+  .cd-post:hover .cd-post__comments .app-icon { transform: translateX(3px); }
+  .cd-post__comments:hover { color: var(--lw-colour-primary-dark); }
   .cd-form__field { margin-bottom: 1rem; }
 
   .cd-form__label,
@@ -315,8 +322,10 @@
   }
 
   .cd-detail__title {
-    margin: 0 0 0.4rem;
-    font-size: 1.5rem;
+    margin: 0 0 0.5rem;
+    font-size: clamp(1.8rem, 3.5vw, 2.3rem);
+    line-height: 1.15;
+    letter-spacing: 0;
   }
 
   .cd-detail__meta { margin: 0 0 1rem; }
@@ -339,9 +348,39 @@
   .cd-comments__empty { color: var(--lw-colour-ink-muted); }
 
   .hero-copy { max-width: 780px; }
-  .hero-copy h1 { margin: 0; font-size: clamp(2.8rem, 6vw, 5.25rem); line-height: 1.03; }
-  .hero-copy h1 span { color: var(--lw-colour-primary); }
-  .hero-copy p { max-width: 630px; margin: 24px 0 0; color: var(--lw-colour-ink-muted); font-size: 1.2rem; line-height: 1.7; }
+  .hero-copy h1 { font-size: 5.25rem; line-height: 1.03; letter-spacing: 0; }
+  .hero-copy h1 span { color: #4f46e5; }
+  .hero-copy p { max-width: 630px; margin-top: 24px; font-size: 1.2rem; line-height: 1.7; color: #667085; }
+
+  /* The large "feature heading" the quizzes pages use for a sub-page: an eyebrow
+     chip, a big title and a muted line under it. Kept in step with feature-heading
+     in quizzes-courses.css so the two services read the same. */
+  .cd-heading { max-width: 780px; margin: 0 0 2.25rem; }
+  .cd-heading__intro { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.1rem; }
+  .cd-heading__flag {
+    display: block;
+    width: 58px;
+    height: 40px;
+    border-radius: 6px;
+    object-fit: cover;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.16);
+  }
+  .cd-heading h1 {
+    margin: 0;
+    font-size: clamp(2.5rem, 5vw, 3.5rem);
+    line-height: 1.06;
+    letter-spacing: 0;
+    color: var(--lw-colour-ink);
+  }
+  .cd-heading h1 span { color: var(--lw-colour-primary); }
+  .cd-heading p {
+    max-width: 630px;
+    margin: 16px 0 0;
+    color: var(--lw-colour-ink-muted);
+    font-size: 1.15rem;
+    line-height: 1.7;
+  }
+  .cd-heading--compact h1 { font-size: clamp(2rem, 4vw, 2.6rem); }
 
   .cd-forums { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; margin-top: 40px; }
   .cd-forum { position: relative; overflow: hidden; padding: 26px; transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }

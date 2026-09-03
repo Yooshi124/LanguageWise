@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import AppIcon from '../components/AppIcon.vue';
 import CommentItem from '../components/CommentItem.vue';
 import ImageGallery from '../components/ImageGallery.vue';
 import ImagePicker from '../components/ImagePicker.vue';
@@ -198,11 +199,10 @@ watch(postId, load, { immediate: true });
     />
 
     <template v-else-if="post">
-        <p class="cd-breadcrumb">
-            <RouterLink :to="{ name: 'forum', params: { code: post.forumCode } }">
-                &larr; {{ post.forumName }}
-            </RouterLink>
-        </p>
+        <v-btn :to="{ name: 'forum', params: { code: post.forumCode } }" variant="text" class="cd-back">
+            <template #prepend><AppIcon name="arrow-left" /></template>
+            {{ post.forumName }}
+        </v-btn>
 
         <article class="lw-card">
             <h2 class="cd-detail__title">{{ post.title }}</h2>
