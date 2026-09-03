@@ -69,6 +69,8 @@ onBeforeUnmount(() => window.clearTimeout(debounce));
     </StateBlock>
 
     <template v-else>
+        <p><RouterLink :to="{ name: 'forums' }">← Back to all forums</RouterLink></p>
+
         <div class="cd-forum-head">
             <h2 class="lw-section-heading">{{ forumName(code) }}</h2>
             <p class="lw-card__hint">Search covers post titles, post content and comments in this forum.</p>

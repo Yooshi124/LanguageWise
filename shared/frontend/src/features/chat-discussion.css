@@ -92,25 +92,7 @@
     margin-bottom: 1.5rem;
   }
 
-  .cd-nav__link {
-    padding: 0.45rem 0.9rem;
-    border: 1px solid var(--lw-colour-border);
-    border-radius: var(--lw-radius-sm);
-    color: var(--lw-colour-ink);
-    text-decoration: none;
-    font-weight: 600;
-    font-size: 0.95rem;
-  }
-
-  .cd-nav__link:hover { border-color: var(--lw-colour-primary); }
-
-  .cd-nav__link--current {
-    background: var(--lw-colour-primary);
-    border-color: var(--lw-colour-primary);
-    color: #fff;
-  }
-
-  .cd-nav__link--cta { margin-left: auto; }
+  .cd-nav__cta { margin-left: auto; }
 
   .cd-comment {
     padding: 1rem 0;
@@ -422,7 +404,7 @@
 
   @media (max-width: 600px) {
     .cd-nav { flex-wrap: wrap; }
-    .cd-nav__link--cta { margin-left: 0; }
+    .cd-nav__cta { margin-left: 0; }
     .hero-copy h1 { font-size: 2.7rem; }
     .garry-assistant { right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); }
     .garry-panel { width: calc(100vw - 32px); height: min(680px, calc(100dvh - 32px)); border-radius: 22px; }
