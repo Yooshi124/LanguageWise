@@ -64,9 +64,6 @@ jobs:
           path: TestResults/
           if-no-files-found: warn
 
-      - name: Build the database image
-        run: docker build -t languagewise/leaderboard-analytics-service-db:ci ./leaderboard-analytics-service/database
-
       - name: Build the backend image
         run: docker build -t languagewise/leaderboard-analytics-service-backend:ci ./leaderboard-analytics-service/backend
 
