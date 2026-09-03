@@ -25,6 +25,9 @@ public sealed class OllamaEmailGenerator(
     {
         try
         {
+            var systemPrompt = context.Trigger == "notifications-enabled"
+                ? "Write a warm, concise welcome email for a learner who just enabled all LanguageWise notifications. Explain that they can receive updates about post engagement, course completion, quiz results, learning streaks, and achievements. Return only JSON matching the supplied schema. Do not include markdown, links, or claims not present in the event."
+                : "Write one warm, concise LanguageWise notification for the event. Mention every affected achievement and highlight any marked as newly attained; otherwise summarize progress toward the listed tiers. Return only JSON matching the supplied schema. Do not include markdown, links, or claims not present in the event.";
             var request = new
             {
                 model = options.Value.Model,
@@ -35,7 +38,7 @@ public sealed class OllamaEmailGenerator(
                     new
                     {
                         role = "system",
-                        content = "Write one warm, concise LanguageWise notification for the event. Mention every affected achievement and highlight any marked as newly attained; otherwise summarize progress toward the listed tiers. Return only JSON matching the supplied schema. Do not include markdown, links, or claims not present in the event."
+                        content = systemPrompt
                     },
                     new
                     {
@@ -88,6 +91,14 @@ public sealed class OllamaEmailGenerator(
 
     private static EmailContent Fallback(EmailContext context)
     {
+        if (context.Trigger == "notifications-enabled")
+        {
+            return new EmailContent(
+                "Welcome to LanguageWise notifications",
+                "You have enabled LanguageWise notifications. We will keep you updated about post engagement, course completions, quiz results, learning streaks, and achievements.",
+                true);
+        }
+
         var attained = context.Achievements.Where(item => item.NewlyAttained).ToList();
         var subject = attained.Count > 0
             ? $"Achievement unlocked: {string.Join(", ", attained.Select(item => item.Name))}"

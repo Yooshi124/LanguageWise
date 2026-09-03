@@ -75,6 +75,26 @@ public sealed class OllamaEmailGeneratorTests
     }
 
     [Test]
+    public async Task GenerateAsync_ForNotificationsEnabled_ReturnsAchievementFreeWelcomeFallback()
+    {
+        var context = new EmailContext("notifications-enabled", "Welcome the learner", []);
+        var generator = CreateGenerator(HttpStatusCode.ServiceUnavailable, "{}");
+
+        var result = await generator.GenerateAsync(context);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Subject, Is.EqualTo("Welcome to LanguageWise notifications"));
+            Assert.That(result.Body, Does.Contain("post engagement"));
+            Assert.That(result.Body, Does.Contain("course completions"));
+            Assert.That(result.Body, Does.Contain("quiz results"));
+            Assert.That(result.Body, Does.Contain("learning streaks"));
+            Assert.That(result.Body, Does.Contain("achievements"));
+            Assert.That(result.UsedFallback, Is.True);
+        });
+    }
+
+    [Test]
     public async Task GenerateAsync_DisablesThinkingAndBoundsGeneratedTokens()
     {
         const string response = """

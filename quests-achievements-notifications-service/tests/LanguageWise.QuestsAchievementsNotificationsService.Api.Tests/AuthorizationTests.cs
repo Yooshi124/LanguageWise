@@ -1,17 +1,20 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using LanguageWise.QuestsAchievementsNotificationsService.Api.Clients;
+using LanguageWise.QuestsAchievementsNotificationsService.Api.Models;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.Tokens;
+using NSubstitute;
 
 namespace LanguageWise.QuestsAchievementsNotificationsService.Api.Tests;
 
@@ -91,15 +94,64 @@ public sealed class AuthorizationTests
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
     }
 
+    [Test]
+    public async Task Preferences_WhenAllNotificationsAreEnabled_StoresAndSendsWelcome()
+    {
+        using var fixture = new ApiFixture(notifyAll: false);
+        using var client = fixture.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
+
+        var response = await client.PutAsJsonAsync("/api/preferences", EnabledPreferences());
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(fixture.DataHandler.NotificationBodies, Has.Count.EqualTo(1));
+        Assert.That(fixture.DataHandler.NotificationBodies[0], Does.Contain("\"trigger\":\"notifications-enabled\""));
+        await fixture.EmailGenerator.Received(1).GenerateAsync(
+            Arg.Is<EmailContext>(context =>
+                context.Trigger == "notifications-enabled" && context.Achievements.Count == 0),
+            Arg.Any<CancellationToken>());
+        await fixture.EmailSender.Received(1).SendAsync(
+            "learner@example.com",
+            Arg.Any<EmailContent>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Preferences_WhenAllNotificationsAreAlreadyEnabled_DoesNotSendWelcomeAgain()
+    {
+        using var fixture = new ApiFixture(notifyAll: true);
+        using var client = fixture.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
+
+        var response = await client.PutAsJsonAsync("/api/preferences", EnabledPreferences());
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(fixture.DataHandler.NotificationBodies, Is.Empty);
+        await fixture.EmailGenerator.DidNotReceiveWithAnyArgs().GenerateAsync(default!, default);
+        await fixture.EmailSender.DidNotReceiveWithAnyArgs().SendAsync(default!, default!, default);
+    }
+
+    private static PreferenceUpdateRequest EnabledPreferences() => new(
+        "learner@example.com", true, true, true, true, true, true);
+
     private sealed class ApiFixture : WebApplicationFactory<Program>
     {
         private readonly RSA rsa = RSA.Create(2048);
         private readonly string publicKeyPath = Path.GetTempFileName();
+        private readonly bool notifyAll;
 
-        internal ApiFixture()
+        internal ApiFixture(bool notifyAll = true)
         {
+            this.notifyAll = notifyAll;
             File.WriteAllText(publicKeyPath, rsa.ExportSubjectPublicKeyInfoPem());
+            EmailGenerator.GenerateAsync(Arg.Any<EmailContext>(), Arg.Any<CancellationToken>())
+                .Returns(new EmailContent("Welcome", "Welcome body", false));
+            EmailSender.IsConfigured.Returns(true);
         }
+
+        internal ProfileDataHandler DataHandler { get; private set; } = null!;
+        internal IEmailContentGenerator EmailGenerator { get; } = Substitute.For<IEmailContentGenerator>();
+        internal IEmailSender EmailSender { get; } = Substitute.For<IEmailSender>();
 
         internal string CreateToken()
         {
@@ -128,11 +180,16 @@ public sealed class AuthorizationTests
             });
             builder.ConfigureServices(services =>
             {
+                DataHandler = new ProfileDataHandler(notifyAll);
                 services.RemoveAll<AppDataClient>();
-                services.AddSingleton(new AppDataClient(new HttpClient(new ProfileDataHandler())
+                services.AddSingleton(new AppDataClient(new HttpClient(DataHandler)
                 {
                     BaseAddress = new Uri("http://database/")
                 }));
+                services.RemoveAll<IEmailContentGenerator>();
+                services.AddSingleton(EmailGenerator);
+                services.RemoveAll<IEmailSender>();
+                services.AddSingleton(EmailSender);
             });
         }
 
@@ -147,24 +204,32 @@ public sealed class AuthorizationTests
         }
     }
 
-    private sealed class ProfileDataHandler : HttpMessageHandler
+    private sealed class ProfileDataHandler(bool notifyAll) : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(
+        internal List<string> NotificationBodies { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
+            if (request.Method == HttpMethod.Post
+                && request.RequestUri?.AbsolutePath == "/notifications")
+            {
+                NotificationBodies.Add(await request.Content!.ReadAsStringAsync(cancellationToken));
+            }
+
             var body = request.RequestUri?.AbsolutePath switch
             {
-                "/user_preferences" => "[{\"user_id\":1,\"email\":\"learner@example.com\",\"notify_all\":true,\"notify_post_engagement\":true,\"notify_course_completion\":true,\"notify_quiz_results\":true,\"notify_streaks\":true,\"notify_achievements\":true}]",
+                "/user_preferences" when request.Method == HttpMethod.Get => $"[{{\"user_id\":1,\"email\":\"learner@example.com\",\"notify_all\":{notifyAll.ToString().ToLowerInvariant()},\"notify_post_engagement\":true,\"notify_course_completion\":true,\"notify_quiz_results\":true,\"notify_streaks\":true,\"notify_achievements\":true}}]",
                 "/notifications" when request.RequestUri.Query.Contains("user_id=eq.1") => "[{\"notification_id\":12,\"user_id\":1,\"trigger\":\"course-completion\",\"time\":\"2026-08-29T10:00:00Z\",\"email_subject\":\"Course complete\",\"email_body\":\"You completed a course.\"}]",
                 _ => "[]"
             };
 
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
                 RequestMessage = request
-            });
+            };
         }
     }
 }

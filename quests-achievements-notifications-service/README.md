@@ -107,6 +107,13 @@ Accepts JSON:
 
 A valid email is required. The record is upserted by authenticated user ID. Preferences control email delivery only; every accepted event still creates in-app notification history and updates achievement progress.
 
+Changing `notifyAll` from `false` to `true` creates a `notifications-enabled`
+notification with no associated achievement. The service uses Ollama to write a
+welcome email describing post engagement, course completion, quiz result,
+learning streak, and achievement notifications, then sends it to the saved
+address when SMTP is configured. Saving preferences while `notifyAll` is already
+enabled does not send another welcome.
+
 ### `POST /api/events`
 
 Accepts a noteworthy event from another service:

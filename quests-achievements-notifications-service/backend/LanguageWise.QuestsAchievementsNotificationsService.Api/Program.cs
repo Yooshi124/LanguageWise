@@ -140,6 +140,8 @@ app.MapGet("/api/profile", async (
 app.MapPut("/api/preferences", async (
     HttpContext context,
     AppDataClient client,
+    IEmailContentGenerator emailGenerator,
+    IEmailSender emailSender,
     CancellationToken cancellationToken) =>
 {
     var userId = NotificationRules.GetUserId(context.User);
@@ -179,15 +181,49 @@ app.MapPut("/api/preferences", async (
 
     try
     {
+        var existingPreferences = await client.GetPreferencesAsync(userId.Value, cancellationToken);
+        var notificationsEnabled = existingPreferences is { NotifyAll: false } && request.NotifyAll;
+        var emailAddress = request.Email.Trim();
+
         await client.UpsertPreferencesAsync(new UserPreferences(
             userId.Value,
-            request.Email.Trim(),
+            emailAddress,
             request.NotifyAll,
             request.NotifyPostEngagement,
             request.NotifyCourseCompletion,
             request.NotifyQuizResults,
             request.NotifyStreaks,
             request.NotifyAchievements), cancellationToken);
+
+        if (notificationsEnabled)
+        {
+            var email = await emailGenerator.GenerateAsync(new EmailContext(
+                "notifications-enabled",
+                "Welcome the learner to LanguageWise notifications. Explain that they can receive post engagement, course completion, quiz result, learning streak, and achievement notifications.",
+                []), cancellationToken);
+
+            await client.CreateNotificationAsync(new NotificationInput(
+                userId.Value,
+                "notifications-enabled",
+                DateTimeOffset.UtcNow,
+                email.Subject,
+                email.Body), cancellationToken);
+
+            if (emailSender.IsConfigured)
+            {
+                try
+                {
+                    await emailSender.SendAsync(emailAddress, email, cancellationToken);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    app.Logger.LogError(
+                        exception,
+                        "Failed to send notifications welcome email for user {UserId}.",
+                        userId);
+                }
+            }
+        }
 
         return Results.Ok(new { message = "Notification preferences saved." });
     }
