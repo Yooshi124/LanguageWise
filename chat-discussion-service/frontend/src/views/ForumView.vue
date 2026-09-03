@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import AppIcon from '../components/AppIcon.vue';
 import PostCard from '../components/PostCard.vue';
 import StateBlock from '../components/StateBlock.vue';
 import { usePostList } from '../composables/usePostList.js';
@@ -69,7 +70,10 @@ onBeforeUnmount(() => window.clearTimeout(debounce));
     </StateBlock>
 
     <template v-else>
-        <p><RouterLink :to="{ name: 'forums' }">← Back to all forums</RouterLink></p>
+        <v-btn :to="{ name: 'forums' }" variant="text" class="cd-back">
+            <template #prepend><AppIcon name="arrow-left" /></template>
+            All forums
+        </v-btn>
 
         <div class="cd-forum-head">
             <h2 class="lw-section-heading">{{ forumName(code) }}</h2>
