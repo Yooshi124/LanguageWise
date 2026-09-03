@@ -79,8 +79,6 @@ services:
     depends_on:
       shared-db:
         condition: service_healthy
-      quests-achievements-notifications-service-backend:
-        condition: service_started
     restart: unless-stopped
 
   shared-frontend:
