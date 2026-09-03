@@ -20,10 +20,10 @@ const draft = ref('')
 const messageList = ref<HTMLElement | null>(null)
 const composer = ref<HTMLTextAreaElement | null>(null)
 const markdown = new MarkdownIt({ html: false, linkify: true, typographer: true })
-const garryImage = `${import.meta.env.BASE_URL}images/garry.png`
+const garryImage = '/remotes/quizzes-courses/images/garry.png'
 
 const context = computed<AssistantRouteContext>(() => ({
-  routeName: String(route.name ?? 'home'),
+  routeName: route.name === 'quizzes-courses-home' ? 'home' : String(route.name ?? 'home'),
   ...(typeof route.params.courseCode === 'string'
     ? { courseCode: route.params.courseCode }
     : {}),

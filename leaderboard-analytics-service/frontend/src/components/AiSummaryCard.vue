@@ -8,7 +8,7 @@ interface LessonsCompletedSummary {
     bestCourse: string
 }
 
-const apiBase = `${import.meta.env.BASE_URL}api`
+const apiBase = '/analytics/api'
 
 const { data, isLoading, isError } = useQuery<LessonsCompletedSummary>({
     queryKey: ['lessons-completed-summary'],
@@ -46,7 +46,7 @@ const trendGlyph = computed(() => {
 </script>
 
 <template>
-    <div class="lw-card" style="margin-top: calc(var(--lw-space) * 1.5)">
+    <div class="lw-card analytics-card">
         <h2 class="lw-card__title">AI Summary</h2>
         <p class="lw-card__hint">Personalised insights on your last 30 days</p>
 
@@ -66,35 +66,3 @@ const trendGlyph = computed(() => {
         </template>
     </div>
 </template>
-
-<style scoped>
-.ai-summary__text {
-    margin: 0.5rem 0 1rem;
-    line-height: 1.55;
-    font-size: 0.98rem;
-}
-
-.ai-summary__meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem 1.5rem;
-    align-items: center;
-    font-size: 0.9rem;
-    color: var(--lw-colour-ink-muted);
-}
-
-.ai-summary__trend {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-weight: 600;
-}
-
-.ai-summary__trend--up { color: var(--lw-colour-success, #2e7d32); }
-.ai-summary__trend--down { color: var(--lw-colour-danger, #c62828); }
-.ai-summary__trend--flat { color: var(--lw-colour-ink-muted); }
-
-.ai-summary__glyph {
-    font-size: 0.85rem;
-}
-</style>

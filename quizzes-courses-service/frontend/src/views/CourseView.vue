@@ -112,7 +112,7 @@ watch(lessonSlug, async (next, previous) => {
     />
 
     <main class="lesson-main">
-      <v-btn to="/" variant="text" class="course-back-button">
+      <v-btn :to="{ name: 'quizzes-courses-home' }" variant="text" class="course-back-button">
         <template #prepend><AppIcon name="arrow-left" /></template>
         Back to courses
       </v-btn>

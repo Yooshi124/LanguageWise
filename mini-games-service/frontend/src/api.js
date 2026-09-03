@@ -1,17 +1,15 @@
 /**
  * API client for mini-games service.
- * Handles userId management and provides helper methods for API calls.
+ * Provides helper methods for authenticated Mini Games API calls.
  */
 
-const DEFAULT_USER_ID = 1;
-const USER_ID_STORAGE_KEY = 'mini_games_user_id';
+import { handleUnauthorized } from './federation/featureHost.js';
+
 const COURSE_CODE_STORAGE_KEY = 'mini_games_course_code';
 const MODE_STORAGE_KEY = 'mini_games_mode';
 const AI_LANGUAGE_STORAGE_KEY = 'mini_games_ai_language';
 
-// Through the shared-frontend gateway this app lives under /mini-games/, so its
-// API is /mini-games/api/. Vite inlines the configured base into BASE_URL.
-const API_BASE = `${import.meta.env.BASE_URL}api`;
+const API_BASE = '/mini-games/api';
 
 /** Error code the backend returns when the user has no playable vocabulary yet. */
 export const NO_VOCABULARY_CODE = 'NO_VOCABULARY';
@@ -35,24 +33,6 @@ export function isNoVocabularyError(error) {
 /** True when an API error means the AI provider could not generate words. */
 export function isAiUnavailableError(error) {
   return error?.code === AI_UNAVAILABLE_CODE;
-}
-
-/**
- * Get the current user ID from storage or default.
- */
-export function getUserId() {
-  const stored = localStorage.getItem(USER_ID_STORAGE_KEY);
-  if (stored) {
-    return parseInt(stored, 10);
-  }
-  return DEFAULT_USER_ID;
-}
-
-/**
- * Set the user ID in storage.
- */
-export function setUserId(userId) {
-  localStorage.setItem(USER_ID_STORAGE_KEY, String(userId));
 }
 
 /**
@@ -135,10 +115,9 @@ export async function fetchGameLanguages() {
  * @returns {Promise<{courseCode: string|null, guessTheWord: number, wordSearch: number, associations: number}>}
  */
 export async function fetchCompletionStats(courseCode, userId) {
-  const id = userId ?? getUserId();
   const query = courseCode
-    ? `?userId=${id}&courseCode=${encodeURIComponent(courseCode)}`
-    : `?userId=${id}`;
+    ? `?courseCode=${encodeURIComponent(courseCode)}`
+    : '';
 
   const response = await fetch(`${API_BASE}/stats/completions${query}`, {
     method: 'GET',
@@ -178,6 +157,9 @@ export async function ensureCourseCode() {
  * Build an Error from a failed API response, preserving the backend's error code (if any).
  */
 async function toApiError(response, fallbackMessage) {
+  if (response.status === 401) {
+    handleUnauthorized();
+  }
   const body = await response.json().catch(() => null);
   const detail =
     body?.error ??
@@ -213,9 +195,8 @@ async function post(path, body) {
  *   from a single course.
  */
 export async function initializeGame(gameType, userId, courseCode) {
-  const id = userId ?? getUserId();
   const mode = getMode();
-  const params = new URLSearchParams({ userId: String(id), mode });
+  const params = new URLSearchParams({ mode });
   if (mode === 'ai') {
     // AI mode: language comes from the AI language picker (any supported language).
     const language = getAiLanguage();
@@ -238,9 +219,7 @@ export async function initializeGame(gameType, userId, courseCode) {
  * @param {number} userId - Optional user ID (uses stored or default if not provided)
  */
 export async function getGameState(gameType, userId) {
-  const id = userId ?? getUserId();
-
-  const response = await fetch(`${API_BASE}/${gameType}?userId=${id}`, {
+  const response = await fetch(`${API_BASE}/${gameType}`, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' }
   });
@@ -258,8 +237,7 @@ export async function getGameState(gameType, userId) {
  * @param {number} userId - Optional user ID
  */
 export function submitGuessTheWordGuess(guess, userId) {
-  const id = userId ?? getUserId();
-  return post(`${API_BASE}/guess-the-word/guess?userId=${id}`, { guess });
+  return post(`${API_BASE}/guess-the-word/guess`, { guess });
 }
 
 /**
@@ -269,8 +247,7 @@ export function submitGuessTheWordGuess(guess, userId) {
  * @param {number} userId - Optional user ID
  */
 export function submitWordSearchWord(word, indices, userId) {
-  const id = userId ?? getUserId();
-  return post(`${API_BASE}/word-search/guess?userId=${id}`, { word, indices: indices || [] });
+  return post(`${API_BASE}/word-search/guess`, { word, indices: indices || [] });
 }
 
 /**
@@ -278,8 +255,7 @@ export function submitWordSearchWord(word, indices, userId) {
  * @param {number} userId - Optional user ID
  */
 export function useWordSearchHint(userId) {
-  const id = userId ?? getUserId();
-  return post(`${API_BASE}/word-search/hint?userId=${id}`);
+  return post(`${API_BASE}/word-search/hint`);
 }
 
 /**
@@ -287,8 +263,7 @@ export function useWordSearchHint(userId) {
  * @param {number} userId - Optional user ID
  */
 export function giveUpWordSearch(userId) {
-  const id = userId ?? getUserId();
-  return post(`${API_BASE}/word-search/give-up?userId=${id}`);
+  return post(`${API_BASE}/word-search/give-up`);
 }
 
 /**
@@ -297,8 +272,7 @@ export function giveUpWordSearch(userId) {
  * @param {number} userId - Optional user ID
  */
 export function submitAssociationsGuess(words, userId) {
-  const id = userId ?? getUserId();
-  return post(`${API_BASE}/associations/guess?userId=${id}`, { words });
+  return post(`${API_BASE}/associations/guess`, { words });
 }
 
 /**
@@ -307,6 +281,5 @@ export function submitAssociationsGuess(words, userId) {
  * @param {number} userId - Optional user ID
  */
 export function resetGame(gameType, userId) {
-  const id = userId ?? getUserId();
-  return post(`${API_BASE}/${gameType}/reset?userId=${id}`);
+  return post(`${API_BASE}/${gameType}/reset`);
 }

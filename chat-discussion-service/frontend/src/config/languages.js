@@ -16,7 +16,7 @@ const languages = {
     pl: { flag: 'pl.svg', colour: '#d4213d' }
 };
 
-const flagsPath = `${import.meta.env.BASE_URL}flags`;
+const flagsPath = '/remotes/chat-discussion/flags';
 
 /** The accent colour for a forum, falling back to the shared indigo. */
 export function forumColour(code) {

@@ -4,8 +4,13 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <InvariantGlobalization>true</InvariantGlobalization>    <RootNamespace>LanguageWise.MiniGamesService.Api</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <RootNamespace>LanguageWise.MiniGamesService.Api</RootNamespace>
     <AssemblyName>LanguageWise.MiniGamesService.Api</AssemblyName>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
+  </ItemGroup>
 
 </Project>

@@ -5,7 +5,7 @@ import LanguageCourseCard from '../components/LanguageCourseCard.vue'
 import { useCourses } from '../composables/useCourses'
 import { languageOptions } from '../config/languages'
 
-const flagsPath = `${import.meta.env.BASE_URL}flags`
+const flagsPath = '/remotes/quizzes-courses/flags'
 
 const store = useCourses()
 const cards = computed(() =>

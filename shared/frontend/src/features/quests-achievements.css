@@ -1,0 +1,224 @@
+@scope (.feature-quests-achievements) {
+  :scope {
+    --qan-surface: #fff;
+    --qan-border: #d9e0ee;
+    --qan-ink: #1c2b45;
+    --qan-muted: #5b6b85;
+    --qan-primary: #1f6feb;
+    --qan-primary-dark: #1a5ccc;
+    --qan-accent: #10897a;
+    --qan-danger: #b3261e;
+    width: min(100%, 1100px);
+    min-height: 100vh;
+    margin: 0 auto;
+    padding: clamp(1.5rem, 4vw, 3rem) 1rem;
+    color: var(--qan-ink);
+  }
+
+  .lw-loading,
+  .lw-state { padding: 4rem 1rem; text-align: center; color: var(--qan-muted); }
+
+  .lw-card {
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid var(--qan-border);
+    border-radius: 8px;
+    background: var(--qan-surface);
+    box-shadow: 0 1px 3px rgba(28, 43, 69, 0.08), 0 8px 24px rgba(28, 43, 69, 0.06);
+  }
+
+  .lw-state--error { border-color: var(--qan-danger); }
+  .lw-card__title { margin: 0 0 0.35rem; font-size: 1.1rem; }
+  .lw-card__hint { margin: 0 0 1rem; color: var(--qan-muted); font-size: 0.9rem; }
+
+  .lw-profile-band {
+    display: flex;
+    padding: 1.5rem 0;
+    margin-bottom: 1.5rem;
+    align-items: end;
+    justify-content: space-between;
+    gap: 1rem;
+    border-block: 1px solid var(--qan-border);
+  }
+
+  .lw-profile-band h2,
+  .lw-section-heading h2 { margin: 0; font-size: 1.6rem; }
+  .lw-profile-band__summary,
+  .lw-eyebrow { margin: 0; color: var(--qan-muted); }
+
+  .lw-eyebrow {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .lw-dashboard-grid {
+    display: grid;
+    grid-template-columns: minmax(250px, 0.8fr) minmax(0, 2fr);
+    gap: 1.5rem;
+    align-items: start;
+  }
+
+  .lw-preferences { position: sticky; top: 1rem; }
+
+  .lw-field {
+    display: grid;
+    gap: 0.35rem;
+    margin-bottom: 1.25rem;
+    font-weight: 600;
+  }
+
+  .lw-field input {
+    width: 100%;
+    min-height: 2.75rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--qan-border);
+    border-radius: 6px;
+    color: var(--qan-ink);
+    background: var(--qan-surface);
+    font: inherit;
+  }
+
+  .lw-field input:focus-visible,
+  .lw-notification__open:focus-visible { outline: 3px solid rgba(31, 111, 235, 0.2); outline-offset: 2px; }
+
+  .lw-master-toggle {
+    display: flex;
+    padding: 0.9rem 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border-block: 1px solid var(--qan-border);
+  }
+
+  .lw-master-toggle > span:first-child { display: grid; }
+  .lw-master-toggle small { color: var(--qan-muted); }
+
+  .lw-switch { position: relative; width: 2.75rem; height: 1.5rem; flex: none; }
+  .lw-switch input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+
+  .lw-switch__track {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--qan-muted);
+    cursor: pointer;
+  }
+
+  .lw-switch__track::after {
+    position: absolute;
+    top: 0.2rem;
+    left: 0.2rem;
+    width: 1.1rem;
+    height: 1.1rem;
+    border-radius: 50%;
+    background: #fff;
+    content: "";
+    transition: transform 120ms ease;
+  }
+
+  .lw-switch input:checked + .lw-switch__track { background: var(--qan-primary); }
+  .lw-switch input:checked + .lw-switch__track::after { transform: translateX(1.25rem); }
+
+  .notification-types {
+    display: grid;
+    gap: 0.65rem;
+    padding: 1rem 0;
+    margin: 0;
+    border: 0;
+  }
+
+  .notification-types legend { padding: 1rem 0 0.5rem; color: var(--qan-muted); font-size: 0.85rem; font-weight: 700; }
+  .notification-types label { display: flex; align-items: center; gap: 0.55rem; }
+  .notification-types input { width: 1.1rem; height: 1.1rem; accent-color: var(--qan-primary); }
+  .notification-types:disabled { opacity: 0.45; }
+
+  .lw-form-actions { display: flex; min-height: 2.75rem; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+  .lw-command {
+    display: inline-flex;
+    min-height: 2.5rem;
+    padding: 0.55rem 0.9rem;
+    align-items: center;
+    border: 0;
+    border-radius: 6px;
+    color: #fff;
+    background: var(--qan-primary);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .lw-command:hover { background: var(--qan-primary-dark); }
+  .lw-command:disabled { opacity: 0.6; cursor: not-allowed; }
+  .save-status { color: var(--qan-accent); font-size: 0.85rem; }
+  .save-status[data-error="true"] { color: var(--qan-danger); }
+
+  .lw-section-heading { display: flex; margin-bottom: 1rem; align-items: end; justify-content: space-between; gap: 1rem; }
+  .lw-badge { padding: 0.15rem 0.55rem; border-radius: 999px; color: var(--qan-accent); background: rgba(16, 137, 122, 0.12); font-size: 0.75rem; font-weight: 600; }
+  .lw-achievement-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+
+  .lw-achievement {
+    display: grid;
+    grid-template-columns: 4rem minmax(0, 1fr);
+    gap: 1rem;
+    min-height: 8rem;
+    padding: 1rem;
+    border: 1px solid var(--qan-border);
+    border-radius: 6px;
+    background: var(--qan-surface);
+  }
+
+  .lw-achievement[data-complete="true"] { border-color: var(--qan-accent); }
+  .lw-achievement__image-wrap { width: 4rem; height: 4rem; border-radius: 50%; background: rgba(16, 137, 122, 0.12); overflow: hidden; }
+  .lw-achievement__image { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .lw-achievement__body { min-width: 0; }
+  .lw-achievement__heading { display: flex; align-items: start; justify-content: space-between; gap: 0.5rem; }
+  .lw-achievement h3 { margin: 0; font-size: 1rem; overflow-wrap: anywhere; }
+  .lw-achievement__state { flex: none; color: var(--qan-muted); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; }
+  .lw-achievement[data-complete="true"] .lw-achievement__state { color: var(--qan-accent); }
+  .lw-achievement progress { width: 100%; height: 0.55rem; margin-top: 1.1rem; accent-color: var(--qan-accent); }
+  .lw-achievement__progress { margin: 0.3rem 0 0; color: var(--qan-muted); font-size: 0.82rem; }
+
+  .lw-notifications { margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--qan-border); }
+  .lw-notification-list { padding: 0; margin: 0; border-top: 1px solid var(--qan-border); list-style: none; }
+  .lw-notification { border-bottom: 1px solid var(--qan-border); }
+  .lw-notification__open { display: grid; gap: 0.2rem; width: 100%; padding: 1rem 0.25rem; border: 0; color: var(--qan-ink); background: transparent; font: inherit; text-align: left; cursor: pointer; }
+  .lw-notification__open:hover .lw-notification__subject { color: var(--qan-primary); }
+  .lw-notification__subject { font-weight: 700; }
+  .lw-notification__meta,
+  .lw-notification-dialog__meta,
+  .lw-notifications__empty { color: var(--qan-muted); font-size: 0.85rem; }
+
+  .lw-notification-dialog {
+    position: fixed;
+    inset: 0;
+    width: min(36rem, calc(100% - 2rem));
+    max-height: calc(100vh - 2rem);
+    margin: auto;
+    padding: 1.5rem;
+    border: 1px solid var(--qan-border);
+    border-radius: 6px;
+    color: var(--qan-ink);
+    background: #fff;
+    box-shadow: 0 18px 50px rgba(28, 43, 69, 0.2);
+  }
+
+  .lw-notification-dialog::backdrop { background: rgba(28, 43, 69, 0.48); }
+  .lw-notification-dialog__heading { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
+  .lw-notification-dialog h2 { margin: 0; font-size: 1.25rem; overflow-wrap: anywhere; }
+  .lw-notification-dialog__meta { margin: 0 0 0.25rem; }
+  .lw-notification-dialog__body { margin: 1.25rem 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .lw-dialog-close { min-height: 2.25rem; padding: 0.4rem 0.7rem; border: 1px solid var(--qan-border); border-radius: 6px; color: var(--qan-ink); background: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+
+  @media (max-width: 780px) {
+    .lw-dashboard-grid,
+    .lw-achievement-grid { grid-template-columns: 1fr; }
+    .lw-preferences { position: static; }
+  }
+
+  @media (max-width: 520px) {
+    .lw-profile-band { align-items: start; flex-direction: column; }
+    .lw-achievement { grid-template-columns: 3.25rem minmax(0, 1fr); }
+    .lw-achievement__image-wrap { width: 3.25rem; height: 3.25rem; }
+  }
+}

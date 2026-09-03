@@ -1,7 +1,12 @@
 import { createApp } from 'vue';
-import App from './App.vue';
-import './styles.css';
+import MiniGamesComponent from './federation/MiniGamesComponent.vue';
+import router from './router.js';
 
-// App.vue owns routing: it resolves the current path (relative to the app
-// base) to a game page and renders it inside the shared sidebar shell.
-createApp(App).mount('#app');
+createApp(MiniGamesComponent, {
+	hostContext: {
+		user: null,
+		navigate: async (path) => router.push(path),
+		signIn: () => {},
+		signOut: async () => {}
+	}
+}).use(router).mount('#app');

@@ -1,9 +1,28 @@
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
+import { federation } from '@module-federation/vite';
 
 export default defineConfig({
     base: '/chat-discussion/',
-    plugins: [vue()],
+    plugins: [
+        vue(),
+        federation({
+            name: 'chat_discussion',
+            filename: 'remoteEntry.js',
+            publicPath: '/remotes/chat-discussion/',
+            exposes: {
+                './feature': './src/federation/feature.js'
+            },
+            shared: {
+                vue: { singleton: true, strictVersion: true, requiredVersion: '3.5.42' },
+                'vue-router': { singleton: true, strictVersion: true, requiredVersion: '4.6.4' },
+                '@mdi/js': { singleton: true, strictVersion: true, requiredVersion: '7.4.47' }
+            },
+            runtimePlugins: [],
+            bundleAllCSS: false,
+            dts: false
+        })
+    ],
     server: {
         port: 3002,
         proxy: {
@@ -21,6 +40,7 @@ export default defineConfig({
     },
     build: {
         outDir: 'dist',
-        emptyOutDir: true
+        emptyOutDir: true,
+        target: 'esnext'
     }
 });

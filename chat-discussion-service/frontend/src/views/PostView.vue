@@ -8,13 +8,14 @@ import LikeButton from '../components/LikeButton.vue';
 import StateBlock from '../components/StateBlock.vue';
 import { api, PAGE_SIZE } from '../api.js';
 import { formatDate } from '../format.js';
-import { useAuth } from '../composables/useAuth.js';
 import { uploadCommentImages } from '../composables/useImageUploads.js';
+import { isOwnedByFeatureUser } from '../federation/featureHost.js';
+import { useForums } from '../composables/useForums.js';
 
 const props = defineProps({ id: { type: [String, Number], required: true } });
 
 const router = useRouter();
-const { isOwnedByViewer } = useAuth();
+const { displayName } = useForums();
 
 const post = ref(null);
 const comments = ref([]);
@@ -32,7 +33,7 @@ const loadingMore = ref(false);
 const deleting = ref(false);
 
 const postId = computed(() => Number(props.id));
-const isMine = computed(() => isOwnedByViewer(post.value));
+const isMine = computed(() => isOwnedByFeatureUser(post.value));
 
 async function load() {
     loading.value = true;
@@ -272,7 +273,7 @@ watch(postId, load, { immediate: true });
                     v-for="comment in comments"
                     :key="comment.id"
                     :comment="comment"
-                    :can-edit="isOwnedByViewer(comment)"
+                    :can-edit="isOwnedByFeatureUser(comment)"
                     @update="onCommentUpdated"
                     @deleted="onCommentDeleted"
                     @error="reportAction($event, 'That change could not be saved.')"
@@ -287,90 +288,3 @@ watch(postId, load, { immediate: true });
         </section>
     </template>
 </template>
-
-<style scoped>
-.cd-breadcrumb {
-    margin: 0 0 1rem;
-    font-size: 0.9rem;
-}
-
-.cd-detail__title {
-    margin: 0 0 0.4rem;
-    font-size: 1.5rem;
-}
-
-.cd-detail__meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-    margin: 0 0 1rem;
-    color: var(--lw-colour-ink-muted);
-    font-size: 0.85rem;
-}
-
-.cd-detail__edited {
-    font-style: italic;
-}
-
-.cd-detail__body {
-    margin: 0 0 1.25rem;
-    white-space: pre-wrap;
-    line-height: 1.6;
-}
-
-.cd-detail__actions {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-}
-
-.cd-detail__error {
-    margin: 1rem 0 0;
-    padding: 0.6rem 0.75rem;
-    border: 1px solid var(--lw-colour-danger);
-    border-radius: var(--lw-radius-sm);
-    background: rgba(180, 35, 24, 0.08);
-    color: var(--lw-colour-danger);
-    font-size: 0.9rem;
-}
-
-.cd-comments {
-    margin-top: 2rem;
-}
-
-.cd-comment-form {
-    margin-bottom: 1rem;
-}
-
-.cd-comment-form__label {
-    display: block;
-    margin-bottom: 0.3rem;
-    font-weight: 600;
-    font-size: 0.9rem;
-}
-
-.cd-comment-form__input {
-    width: 100%;
-    padding: 0.6rem 0.75rem;
-    border: 1px solid var(--lw-colour-border);
-    border-radius: var(--lw-radius-sm);
-    font-family: var(--lw-font);
-    font-size: 1rem;
-    background: var(--lw-colour-surface);
-    color: var(--lw-colour-ink);
-}
-
-.cd-comments__list {
-    margin: 0;
-    padding: 0;
-}
-
-.cd-comments__empty {
-    color: var(--lw-colour-ink-muted);
-}
-
-.cd-more {
-    text-align: center;
-    margin-top: 1rem;
-}
-</style>

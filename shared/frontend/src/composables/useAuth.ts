@@ -2,7 +2,12 @@ import { computed, readonly, ref } from 'vue'
 
 type AuthStatus = 'loading' | 'authenticated' | 'signed-out' | 'error'
 
-const username = ref<string | null>(null)
+export interface AuthenticatedUser {
+  id: number
+  name: string
+}
+
+const user = ref<AuthenticatedUser | null>(null)
 const status = ref<AuthStatus>('loading')
 let authRequest: Promise<boolean> | undefined
 
@@ -11,19 +16,37 @@ function currentReturnUrl() {
 }
 
 export function loginUrl() {
-  const url = new URL('/login.html', window.location.origin)
+  const url = new URL('/login', window.location.origin)
   url.searchParams.set('returnUrl', currentReturnUrl())
   return url.toString()
 }
 
 function markSignedOut() {
-  username.value = null
+  user.value = null
   status.value = 'signed-out'
+}
+
+function isAuthenticatedUser(value: unknown): value is AuthenticatedUser {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const candidate = value as Partial<AuthenticatedUser>
+  return (
+    typeof candidate.id === 'number' &&
+    candidate.id > 0 &&
+    typeof candidate.name === 'string' &&
+    candidate.name.trim() !== ''
+  )
 }
 
 export async function ensureAuthenticated(): Promise<boolean> {
   if (status.value === 'authenticated') {
     return true
+  }
+
+  if (status.value === 'signed-out') {
+    return false
   }
 
   if (authRequest) {
@@ -55,7 +78,13 @@ export async function ensureAuthenticated(): Promise<boolean> {
       throw new Error(`Unable to verify login (${response.status} ${response.statusText})`)
     }
 
-    username.value = (await response.json()) as string
+    const authenticatedUser: unknown = await response.json()
+    if (!isAuthenticatedUser(authenticatedUser)) {
+      status.value = 'error'
+      throw new Error('The session response was invalid.')
+    }
+
+    user.value = authenticatedUser
     status.value = 'authenticated'
     return true
   })().finally(() => {
@@ -81,8 +110,11 @@ export async function login(usernameValue: string, password: string) {
     throw new Error(`Unable to sign in (${response.status} ${response.statusText})`)
   }
 
-  username.value = usernameValue
-  status.value = 'authenticated'
+  user.value = null
+  status.value = 'loading'
+  if (!(await ensureAuthenticated())) {
+    throw new Error('Unable to verify the new session.')
+  }
 }
 
 export async function logout() {
@@ -100,7 +132,8 @@ export async function logout() {
 
 export function useAuth() {
   return {
-    username: readonly(username),
+    user: readonly(user),
+    username: computed(() => user.value?.name ?? null),
     status: readonly(status),
     isAuthenticated: computed(() => status.value === 'authenticated'),
     ensureAuthenticated,

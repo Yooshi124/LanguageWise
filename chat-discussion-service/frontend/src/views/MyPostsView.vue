@@ -4,11 +4,11 @@ import { useRoute, useRouter } from 'vue-router';
 import PostCard from '../components/PostCard.vue';
 import StateBlock from '../components/StateBlock.vue';
 import { usePostList } from '../composables/usePostList.js';
-import { useAuth } from '../composables/useAuth.js';
+import { useFeatureUser } from '../federation/featureHost.js';
 
 const route = useRoute();
 const router = useRouter();
-const { me } = useAuth();
+const me = useFeatureUser();
 const { posts, loading, loadingMore, error, hasMore, load, loadMore, replace } = usePostList();
 
 const term = ref(typeof route.query.q === 'string' ? route.query.q : '');
@@ -95,33 +95,3 @@ onBeforeUnmount(() => window.clearTimeout(debounce));
         </p>
     </template>
 </template>
-
-<style scoped>
-.cd-search {
-    display: block;
-    margin-bottom: 1.5rem;
-}
-
-.cd-search__label {
-    display: block;
-    margin-bottom: 0.3rem;
-    font-weight: 600;
-    font-size: 0.9rem;
-}
-
-.cd-search__input {
-    width: 100%;
-    padding: 0.6rem 0.75rem;
-    border: 1px solid var(--lw-colour-border);
-    border-radius: var(--lw-radius-sm);
-    font-family: var(--lw-font);
-    font-size: 1rem;
-    background: var(--lw-colour-surface);
-    color: var(--lw-colour-ink);
-}
-
-.cd-more {
-    text-align: center;
-    margin-top: 1.5rem;
-}
-</style>

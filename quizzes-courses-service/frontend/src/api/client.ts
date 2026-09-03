@@ -10,9 +10,9 @@ import type {
   QuizSubmission,
   QuizSummary,
 } from '../models/api'
-import { markSignedOut } from '../composables/useAuth'
+import { handleUnauthorized } from '../federation/featureHost'
 
-const apiBase = `${import.meta.env.BASE_URL}api`
+const apiBase = '/quizzes-and-courses/api'
 
 export class ApiError extends Error {
   constructor(
@@ -46,7 +46,7 @@ async function request<T>(
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   })
   if (response.status === 401) {
-    markSignedOut()
+    handleUnauthorized()
   }
   if (!response.ok) {
     const responseText = await response.text().catch(() => '')

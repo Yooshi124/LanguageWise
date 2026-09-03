@@ -72,7 +72,17 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .sidebar-services { margin-top: 56px; }
 .sidebar-utilities { margin-top: auto; }
 .sidebar-account-error { margin: 4px 8px 0; color: #fda4af; font-size: .75rem; line-height: 1.35; }
-.app-sidebar:not(.expanded) .sidebar-account-error { display: none; }
+.app-sidebar:not(.expanded):not(.mobile-open) .sidebar-account-error {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .sidebar-nav-item {
   display: flex;
   width: 100%;
@@ -155,6 +165,29 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .service-table td, .service-table th { padding: 16px !important; vertical-align: top; }
 .service-table tbody th { white-space: nowrap; }
 .service-table code { padding: 3px 7px; border-radius: 6px; color: #4338ca; background: #eef2ff; }
+.remote-unavailable {
+  min-height: 100vh;
+  padding: clamp(84px, 9vw, 128px) clamp(24px, 6vw, 96px);
+  background: radial-gradient(circle at 88% 4%, #e0e7ff 0, transparent 28rem), #f6f7fb;
+}
+.remote-unavailable { max-width: none; }
+.remote-unavailable__icon { display: grid; width: 64px; height: 64px; place-items: center; border-radius: 18px; color: #4338ca; background: #e0e7ff; }
+.remote-unavailable__eyebrow { margin: 24px 0 8px; color: #4f46e5; font-size: .78rem; font-weight: 800; text-transform: uppercase; }
+.remote-unavailable h1 { max-width: 720px; margin: 0; font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.08; }
+.remote-unavailable > p:not(.remote-unavailable__eyebrow) { max-width: 640px; margin: 16px 0 28px; color: #667085; font-size: 1.05rem; }
+.host-state {
+  display: flex;
+  min-height: 100vh;
+  padding: clamp(84px, 9vw, 128px) clamp(24px, 6vw, 96px);
+  align-items: flex-start;
+  gap: 24px;
+  background: radial-gradient(circle at 88% 4%, #e0e7ff 0, transparent 28rem), #f6f7fb;
+}
+.host-state > div { max-width: 720px; }
+.host-state__eyebrow { margin: 0 0 8px; color: #4f46e5; font-size: .78rem; font-weight: 800; text-transform: uppercase; }
+.host-state h1 { margin: 0; font-size: 3.5rem; line-height: 1.08; }
+.host-state p:not(.host-state__eyebrow) { margin: 16px 0 28px; color: #667085; font-size: 1.05rem; line-height: 1.6; }
+.host-state--error .host-state__eyebrow { color: #b42318; }
 .login-page {
   position: relative;
   display: grid;
@@ -207,6 +240,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .app-sidebar:not(.expanded) .sidebar-nav-item { justify-content: flex-start; padding-inline: 18px; }
   .mobile-sidebar-close, .mobile-nav-trigger { display: grid; }
   .shared-home-container { padding-top: 84px !important; }
+  .host-state h1 { font-size: 2.25rem; }
   .login-shell { max-width: 500px; grid-template-columns: 1fr; }
   .login-brand-panel { min-height: 190px; padding: 1.5rem; }
   .login-brand-copy { margin: 2rem 0 0; }

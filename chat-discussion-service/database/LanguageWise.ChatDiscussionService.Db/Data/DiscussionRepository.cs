@@ -168,9 +168,9 @@ public sealed class DiscussionRepository(string connectionString)
     }
 
     /// <summary>
-    /// Matching is by CourseId first, so renaming a course keeps the posts in its
-    /// forum; a forum holding the code but no CourseId is adopted instead. A course is
-    /// never deleted for being absent from the catalogue — that would orphan its posts.
+    /// Matching is by CourseId, so renaming a course keeps the posts in its forum. A
+    /// course is never deleted for being absent from the catalogue because that would
+    /// orphan its posts.
     /// </summary>
     public ForumSyncResult SyncCourseForums(IReadOnlyList<CatalogCourse> courses)
     {
@@ -178,7 +178,6 @@ public sealed class DiscussionRepository(string connectionString)
         using var transaction = connection.BeginTransaction();
         var added = 0;
         var renamed = 0;
-        var merged = 0;
 
         foreach (var course in courses)
         {
@@ -196,21 +195,6 @@ public sealed class DiscussionRepository(string connectionString)
                 continue;
             }
 
-            using var claim = connection.CreateCommand();
-            claim.Transaction = transaction;
-            claim.CommandText = """
-                UPDATE Forums SET CourseId = $courseId, Name = $name
-                 WHERE Code = $code AND CourseId IS NULL;
-                """;
-            Add(claim, "$courseId", course.Id);
-            Add(claim, "$code", course.Code);
-            Add(claim, "$name", course.Title);
-
-            if (claim.ExecuteNonQuery() > 0)
-            {
-                continue;
-            }
-
             using var insert = connection.CreateCommand();
             insert.Transaction = transaction;
             insert.CommandText = """
@@ -224,55 +208,8 @@ public sealed class DiscussionRepository(string connectionString)
             added += insert.ExecuteNonQuery();
         }
 
-        // Second pass, so every course forum above exists before anything is folded
-        // into it: on a migrated volume the duplicate and its replacement are both
-        // minted during this same sync.
-        foreach (var course in courses)
-        {
-            merged += MergeLegacyLanguageForum(connection, transaction, course);
-        }
-
         transaction.Commit();
-        return new ForumSyncResult(added, renamed, merged);
-    }
-
-    /// <summary>
-    /// Folds a forum the category migration minted from a legacy language name into
-    /// the forum its course owns. Those rows carry no CourseId and a code spelled out
-    /// in full — "italian" where the course says "it" — so neither the CourseId nor the
-    /// code match above adopts them, and the language would otherwise be listed twice.
-    ///
-    /// Matching is by display name, the only thing the two rows share. The posts move
-    /// across first and only the emptied row is dropped, so a legacy forum whose
-    /// language the catalogue no longer carries is left where it is.
-    /// </summary>
-    private static int MergeLegacyLanguageForum(
-        SqliteConnection connection,
-        SqliteTransaction transaction,
-        CatalogCourse course)
-    {
-        using var move = connection.CreateCommand();
-        move.Transaction = transaction;
-        move.CommandText = """
-            UPDATE Posts SET ForumId = (SELECT Id FROM Forums WHERE CourseId = $courseId)
-             WHERE EXISTS (SELECT 1 FROM Forums WHERE CourseId = $courseId)
-               AND ForumId IN (SELECT Id FROM Forums
-                                WHERE CourseId IS NULL AND Name = $name COLLATE NOCASE);
-            """;
-        Add(move, "$courseId", course.Id);
-        Add(move, "$name", course.Title);
-        move.ExecuteNonQuery();
-
-        using var drop = connection.CreateCommand();
-        drop.Transaction = transaction;
-        drop.CommandText = """
-            DELETE FROM Forums
-             WHERE CourseId IS NULL AND Name = $name COLLATE NOCASE
-               AND EXISTS (SELECT 1 FROM Forums WHERE CourseId = $courseId);
-            """;
-        Add(drop, "$courseId", course.Id);
-        Add(drop, "$name", course.Title);
-        return drop.ExecuteNonQuery();
+        return new ForumSyncResult(added, renamed);
     }
 
     private static Post? GetPostRow(SqliteConnection connection, int id)

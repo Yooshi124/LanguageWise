@@ -184,16 +184,6 @@ app.MapGet("/health", async (
 })
     .AllowAnonymous();
 
-app.MapGet("/api/me", (HttpContext context) =>
-{
-    var subject = context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
-    var username = context.User.Identity?.Name;
-
-    return int.TryParse(subject, out var userId) && !string.IsNullOrWhiteSpace(username)
-        ? Results.Ok(new { id = userId, username })
-        : Results.Unauthorized();
-});
-
 app.MapPost("/api/assistant/messages", async (
     AssistantMessageRequest request,
     AssistantRequestValidator validator,

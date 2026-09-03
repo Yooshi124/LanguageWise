@@ -1,13 +1,43 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onErrorCaptured, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AppIcon from './components/AppIcon.vue'
 import AppSidebar from './components/AppSidebar.vue'
+import { useAuth } from './composables/useAuth'
+import HostErrorView from './views/HostErrorView.vue'
+import HostLoadingView from './views/HostLoadingView.vue'
 
 const route = useRoute()
+const auth = useAuth()
 const sidebarExpanded = ref(false)
 const mobileSidebarOpen = ref(false)
+const hostError = ref('')
+const renderKey = ref(0)
 const showShell = computed(() => route.name !== 'login')
+
+async function bootstrapAuthentication() {
+  hostError.value = ''
+
+  try {
+    await auth.ensureAuthenticated()
+  } catch {
+    hostError.value = 'LanguageWise could not verify your session.'
+  }
+}
+
+async function retryHost() {
+  renderKey.value += 1
+  await bootstrapAuthentication()
+}
+
+onMounted(bootstrapAuthentication)
+onErrorCaptured((error) => {
+  hostError.value = error instanceof Error ? error.message : 'An unexpected error occurred.'
+  return false
+})
+watch(() => route.fullPath, () => {
+  hostError.value = ''
+})
 </script>
 
 <template>
@@ -33,7 +63,9 @@ const showShell = computed(() => route.name !== 'login')
     />
     <div class="app-shell-content">
       <v-main>
-        <router-view />
+        <HostErrorView v-if="hostError" :message="hostError" :retry="retryHost" />
+        <HostLoadingView v-else-if="auth.status.value === 'loading'" />
+        <router-view v-else :key="`${route.fullPath}:${renderKey}`" />
       </v-main>
     </div>
   </v-app>

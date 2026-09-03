@@ -10,15 +10,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@mdi/js": "^7.4.47",
+    "@mdi/js": "7.4.47",
+    "@module-federation/vite": "1.21.2",
     "dompurify": "^3.2.6",
     "markdown-it": "^14.1.0",
-    "vue": "^3.5.13",
-    "vue-router": "^4.5.0",
-    "vuetify": "^3.13.3"
+    "vue": "3.5.42",
+    "vue-router": "4.6.4"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^5.2.1",
-    "vite": "^6.0.7"
+    "@vitejs/plugin-vue": "6.0.8",
+    "vite": "7.3.6"
   }
 }

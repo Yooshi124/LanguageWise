@@ -19,9 +19,3 @@ defineEmits(['retry']);
         </p>
     </div>
 </template>
-
-<style scoped>
-.cd-state__actions {
-    margin-top: 1rem;
-}
-</style>

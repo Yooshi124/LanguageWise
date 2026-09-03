@@ -1,10 +1,33 @@
 # LanguageWise
 
-A language learning platform built as a set of independent microservices, woven
-together with Docker Compose.
+A language learning platform built as independently deployed microservices and
+one federated Vue 3 browser application, orchestrated with Docker Compose.
 
 The repository also hosts a shared development tool: an **agentic loop** that acts
 as a rubber duck reviewer over the whole codebase.
+
+## Frontend architecture
+
+Open the application at [http://localhost:3000](http://localhost:3000). The
+`shared-frontend` Vue SPA owns navigation, authentication, routing, Vuetify,
+TanStack Query, and all authored CSS. It lazy-loads five independently built
+feature remotes through the same-origin gateway:
+
+- `/remotes/quizzes-courses/remoteEntry.js`
+- `/remotes/mini-games/remoteEntry.js`
+- `/remotes/chat-discussion/remoteEntry.js`
+- `/remotes/quests-achievements/remoteEntry.js`
+- `/remotes/leaderboard-analytics/remoteEntry.js`
+
+Feature API calls remain under their owning path, such as
+`/mini-games/api/*` and `/analytics/api/*`. A failed remote displays an
+isolated Retry view without preventing the host or other features from loading.
+
+Start the complete system from the repository root:
+
+```powershell
+docker compose up -d --build
+```
 
 ---
 
@@ -83,7 +106,7 @@ as the house style. Please read it before your first commit.
 
 ### Examples
 
-```
+```text
 feat(forum): add image uploads to posts
 feat(quizzes): generate flashcards from course content
 fix(analytics): correct rank calculation for tied scores

@@ -13,7 +13,7 @@ defineProps<{
 
 <template>
   <v-card
-    :to="`/courses/${code}`"
+    :to="{ name: 'course', params: { courseCode: code } }"
     class="language-card h-100"
     rounded="xl"
     elevation="0"

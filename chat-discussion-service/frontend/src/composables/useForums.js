@@ -21,8 +21,12 @@ async function ensureLoaded() {
     return inFlight;
 }
 
+function displayName(forum) {
+    return forum?.displayName ?? forum?.code ?? '';
+}
+
 function forumName(code) {
-    return forums.value.find((forum) => forum.code === code)?.name ?? code;
+    return displayName(forums.value.find((forum) => forum.code === code)) || code;
 }
 
 function exists(code) {
@@ -30,5 +34,5 @@ function exists(code) {
 }
 
 export function useForums() {
-    return { forums, ensureLoaded, forumName, exists };
+    return { forums, ensureLoaded, displayName, forumName, exists };
 }

@@ -1,6 +1,6 @@
 # Quests, Achievements, and Notifications Service
 
-This service tracks achievement progress, stores notification preferences and event history, and sends AI-written notification emails. The browser-facing dashboard uses HTMX for requests and renders backend JSON with frontend JavaScript.
+This service tracks achievement progress, stores notification preferences and event history, and sends AI-written notification emails. Its Vue 3 feature remote is rendered inside the Shared LanguageWise SPA.
 
 ## Components
 
@@ -9,7 +9,7 @@ This service tracks achievement progress, stores notification preferences and ev
 - ASP.NET Core validates shared-service JWTs and owns event processing.
 - Ollama runs the official `gemma4:e4b` model and persists it in the `ollama-data` Docker volume.
 - MailKit sends plain-text email through Gmail SMTP with STARTTLS.
-- nginx serves the frontend and proxies `/api/*` to the backend.
+- nginx serves the federation entry and chunks; the Shared gateway proxies `/quests-and-achievements/api/*` to the backend.
 
 ## Configuration
 
@@ -91,7 +91,7 @@ Returns the authenticated username, preferences, achievement progress, and newes
 
 ### `PUT /api/preferences`
 
-Accepts JSON or an HTMX form. JSON example:
+Accepts JSON:
 
 ```json
 {

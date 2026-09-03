@@ -58,9 +58,3 @@ async function submit({ images = [], ...fields }) {
         <RouterLink :to="{ name: 'post', params: { id: publishedId } }">Open the published post</RouterLink>
     </p>
 </template>
-
-<style scoped>
-.cd-create__published {
-    margin-top: 1rem;
-}
-</style>

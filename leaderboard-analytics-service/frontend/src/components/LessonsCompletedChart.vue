@@ -2,6 +2,9 @@
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 import Highcharts from 'highcharts'
+import Accessibility from 'highcharts/modules/accessibility'
+
+Accessibility(Highcharts)
 
 interface LessonsCompletedPoint {
     date: string
@@ -21,7 +24,7 @@ interface LessonsCompletedResponse {
     series: LessonsCompletedSeries[]
 }
 
-const apiBase = `${import.meta.env.BASE_URL}api`
+const apiBase = '/analytics/api'
 
 const { data, isLoading, isError } = useQuery<LessonsCompletedResponse>({
     queryKey: ['lessons-completed-over-time'],
@@ -55,6 +58,9 @@ function buildOptions(response: LessonsCompletedResponse): Highcharts.Options {
     return {
         chart: { type: 'line', backgroundColor: 'transparent' },
         title: { text: undefined },
+        accessibility: {
+            description: 'Cumulative lessons completed during the last 30 days, shown as one line per course.',
+        },
         credits: { enabled: false },
         legend: { align: 'center', verticalAlign: 'bottom' },
         xAxis: {
@@ -104,7 +110,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <div class="lw-card" style="margin-top: calc(var(--lw-space) * 1.5)">
+    <div class="lw-card analytics-card">
         <h2 class="lw-card__title">Lessons Completed Over Time</h2>
         <p class="lw-card__hint">Your last 30 days of lesson progress, per course</p>
 
@@ -115,10 +121,3 @@ onBeforeUnmount(() => {
         <div v-show="!isLoading && !isError && hasSeries" ref="chartContainer" class="lessons-completed-chart" />
     </div>
 </template>
-
-<style scoped>
-.lessons-completed-chart {
-    width: 100%;
-    height: 360px;
-}
-</style>

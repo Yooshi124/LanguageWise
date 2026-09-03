@@ -14,7 +14,7 @@ const props = defineProps({
 
 const emit = defineEmits(['submit', 'cancel', 'remove-image']);
 
-const { forums } = useForums();
+const { forums, displayName } = useForums();
 
 const title = ref('');
 const content = ref('');
@@ -63,7 +63,7 @@ function submit() {
             <label class="cd-form__label" for="post-forum">Forum</label>
             <select id="post-forum" v-model="forumCode" class="cd-form__input" required>
                 <option v-for="forum in forums" :key="forum.code" :value="forum.code">
-                    {{ forum.name }}
+                    {{ displayName(forum) }}
                 </option>
             </select>
         </div>
@@ -88,43 +88,3 @@ function submit() {
         </div>
     </form>
 </template>
-
-<style scoped>
-.cd-form__field {
-    margin-bottom: 1rem;
-}
-
-.cd-form__label {
-    display: block;
-    margin-bottom: 0.3rem;
-    font-weight: 600;
-    font-size: 0.9rem;
-}
-
-.cd-form__input {
-    width: 100%;
-    padding: 0.6rem 0.75rem;
-    border: 1px solid var(--lw-colour-border);
-    border-radius: var(--lw-radius-sm);
-    font-family: var(--lw-font);
-    font-size: 1rem;
-    background: var(--lw-colour-surface);
-    color: var(--lw-colour-ink);
-}
-
-.cd-form__input:focus {
-    border-color: #818cf8;
-    outline: 0;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, .12);
-}
-
-.cd-form__error {
-    margin: 0 0 1rem;
-    padding: 0.6rem 0.75rem;
-    border: 1px solid var(--lw-colour-danger);
-    border-radius: var(--lw-radius-sm);
-    background: rgba(180, 35, 24, 0.08);
-    color: var(--lw-colour-danger);
-    font-size: 0.9rem;
-}
-</style>

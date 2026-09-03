@@ -10,7 +10,7 @@ import { useAsyncResource } from '../composables/useAsyncResource'
 const route = useRoute()
 const courseCode = computed(() => String(route.params.courseCode))
 const language = computed(() => languageOptions.find((item) => item.code === courseCode.value))
-const flagsPath = `${import.meta.env.BASE_URL}flags`
+const flagsPath = '/remotes/quizzes-courses/flags'
 const resource = useAsyncResource(async (signal) => {
   const [course, decks] = await Promise.all([
     coursesApi.get(courseCode.value, signal),
