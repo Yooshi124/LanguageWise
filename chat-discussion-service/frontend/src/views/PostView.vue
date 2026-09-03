@@ -207,9 +207,8 @@ watch(postId, load, { immediate: true });
         <article class="lw-card">
             <h2 class="cd-detail__title">{{ post.title }}</h2>
 
+            <p class="cd-detail__author">{{ post.authorName || 'Unknown author' }}</p>
             <p class="cd-detail__meta">
-                <span>{{ post.authorName || 'Unknown author' }}</span>
-                <span aria-hidden="true">·</span>
                 <span>{{ formatDate(post.createdAt) }}</span>
                 <span v-if="post.updatedAt !== post.createdAt" class="cd-detail__edited">(edited)</span>
             </p>

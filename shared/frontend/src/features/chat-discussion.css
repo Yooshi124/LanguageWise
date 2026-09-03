@@ -13,7 +13,7 @@
     --lw-radius-sm: 6px;
     --lw-shadow: 0 1px 3px rgba(28, 43, 69, 0.08), 0 8px 24px rgba(28, 43, 69, 0.06);
     --lw-font: system-ui, -apple-system, "Segoe UI", sans-serif;
-    width: min(100%, 1100px);
+    width: min(100%, 1240px);
     min-height: 100vh;
     margin: 0 auto;
     padding: clamp(1.5rem, 4vw, 3rem) 1rem;
@@ -121,7 +121,17 @@
   }
 
   .cd-comment__meta { margin: 0 0 0.4rem; }
-  .cd-comment__meta strong { color: var(--lw-colour-ink); }
+
+  /* Author sits on its own line above the date, in the bold 800 weight the
+     quizzes feature-card titles use, so it reads as the noticeable name. */
+  .cd-post__author,
+  .cd-detail__author,
+  .cd-comment__author {
+    margin: 0 0 0.15rem;
+    color: var(--lw-colour-ink);
+    font-weight: 800;
+    font-size: 1.05rem;
+  }
   .cd-comment__edited,
   .cd-detail__edited { font-style: italic; }
 
@@ -210,7 +220,7 @@
 
   .cd-post__title {
     margin: 0 0 0.35rem;
-    font-size: 1.15rem;
+    font-size: 1.5rem;
   }
 
   .cd-post__title a {
@@ -348,7 +358,7 @@
   .cd-comments__empty { color: var(--lw-colour-ink-muted); }
 
   .hero-copy { max-width: 780px; }
-  .hero-copy h1 { font-size: 5.25rem; line-height: 1.03; letter-spacing: 0; }
+  .hero-copy h1 { font-size: 4.4rem; line-height: 1.06; letter-spacing: 0; }
   .hero-copy h1 span { color: #4f46e5; }
   .hero-copy p { max-width: 630px; margin-top: 24px; font-size: 1.2rem; line-height: 1.7; color: #667085; }
 

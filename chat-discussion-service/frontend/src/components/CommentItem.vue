@@ -112,9 +112,8 @@ function onLike({ liked, count }) {
 
 <template>
     <li class="cd-comment">
+        <p class="cd-comment__author">{{ comment.authorName || 'Unknown author' }}</p>
         <p class="cd-comment__meta">
-            <strong>{{ comment.authorName || 'Unknown author' }}</strong>
-            <span aria-hidden="true">·</span>
             <span>{{ formatDate(comment.createdAt) }}</span>
             <span v-if="comment.updatedAt !== comment.createdAt" class="cd-comment__edited">(edited)</span>
         </p>
