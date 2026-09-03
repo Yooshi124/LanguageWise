@@ -15,7 +15,6 @@ var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
     DataSource = databasePath
 }.ToString();
 
-builder.Services.AddSingleton(new SampleItemRepository(connectionString));
 builder.Services.AddSingleton(serviceProvider => new DatabaseInitializer(
     connectionString,
     Path.Combine(AppContext.BaseDirectory, "sql"),
@@ -56,11 +55,17 @@ catch (Exception exception) when (exception is HttpRequestException or TaskCance
         "The course catalogue was unreachable; forums are left as they are.");
 }
 
-app.MapGet("/health", (SampleItemRepository repository) =>
+app.MapGet("/health", (DiscussionRepository repository) =>
 {
     try
     {
-        return Results.Ok(new { status = "healthy", service = serviceName, items = repository.Count() });
+        return Results.Ok(new
+        {
+            status = "healthy",
+            service = serviceName,
+            forums = repository.CountForums(),
+            posts = repository.CountPosts()
+        });
     }
     catch (Exception exception)
     {

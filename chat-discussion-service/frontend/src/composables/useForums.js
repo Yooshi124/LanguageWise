@@ -22,7 +22,7 @@ async function ensureLoaded() {
 }
 
 function displayName(forum) {
-    return forum?.displayName ?? forum?.code ?? '';
+    return forum?.name ?? forum?.code ?? '';
 }
 
 function forumName(code) {

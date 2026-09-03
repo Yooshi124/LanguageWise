@@ -47,6 +47,19 @@ public sealed class DiscussionRepository(string connectionString)
         FROM Comments c
         """;
 
+    /// <summary>Cheap queries used by the health endpoint to prove the database is reachable.</summary>
+    public long CountPosts() => Count("Posts");
+
+    public long CountForums() => Count("Forums");
+
+    private long Count(string table)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT COUNT(*) FROM {table};";
+        return Convert.ToInt64(command.ExecuteScalar());
+    }
+
     // Counts come from correlated subqueries rather than joins: joining Comments and
     // Likes in one statement multiplies the rows and inflates both totals.
     public IReadOnlyList<PostSummary> GetPosts(

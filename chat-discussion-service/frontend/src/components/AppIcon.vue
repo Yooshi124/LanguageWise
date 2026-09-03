@@ -2,6 +2,7 @@
 import {
     mdiAccountCircleOutline,
     mdiArrowLeft,
+    mdiArrowRight,
     mdiChartBoxOutline,
     mdiClose,
     mdiBookOpenPageVariantOutline,
@@ -24,6 +25,7 @@ defineProps({
 const icons = {
     analytics: mdiChartBoxOutline,
     'arrow-left': mdiArrowLeft,
+    'arrow-right': mdiArrowRight,
     assistant: mdiRobotHappyOutline,
     close: mdiClose,
     compose: mdiPencilOutline,
