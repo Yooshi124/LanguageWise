@@ -104,6 +104,25 @@ public sealed class CatalogClient(HttpClient httpClient)
             $"api/users/{userId}/course-progress",
             cancellationToken) ?? [];
 
+    public async Task<MilestonePage> GetMilestonesAsync(
+        int afterId,
+        int limit,
+        CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<MilestonePage>(
+            $"api/milestones?afterId={afterId}&limit={limit}",
+            cancellationToken)
+        ?? throw new JsonException("The milestone page response was empty.");
+
+    public async Task<MilestonePage> GetUserMilestonesAsync(
+        int userId,
+        int afterId,
+        int limit,
+        CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<MilestonePage>(
+            $"api/users/{userId}/milestones?afterId={afterId}&limit={limit}",
+            cancellationToken)
+        ?? throw new JsonException("The user milestone page response was empty.");
+
     public Task<DatabaseResponse<QuizAttempt>> StartQuizAttemptAsync(
         int quizId,
         int userId,

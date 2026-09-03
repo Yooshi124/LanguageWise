@@ -98,6 +98,59 @@ public class CatalogClientTests
     }
 
     [Test]
+    public async Task GetMilestonesAsync_DeserialisesTheGlobalPageAndForwardsPagination()
+    {
+        const string json =
+            """
+            {
+              "items": [{
+                "id": 13,
+                "userId": 42,
+                "courseId": null,
+                "lessonId": 3,
+                "quizId": null,
+                "completedAt": "2026-09-01T10:00:00Z"
+              }],
+              "nextCursor": 13
+            }
+            """;
+        using var handler = new StubHttpMessageHandler(HttpStatusCode.OK, json);
+        using var httpClient = CreateHttpClient(handler);
+        var client = new CatalogClient(httpClient);
+
+        var page = await client.GetMilestonesAsync(8, 5);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(page.Items.Single().LessonId, Is.EqualTo(3));
+            Assert.That(page.NextCursor, Is.EqualTo(13));
+            Assert.That(
+                handler.LastRequestUri?.PathAndQuery,
+                Is.EqualTo("/api/milestones?afterId=8&limit=5"));
+        });
+    }
+
+    [Test]
+    public async Task GetUserMilestonesAsync_RequestsOnlyTheAuthenticatedUsersRecords()
+    {
+        const string json = """{"items":[],"nextCursor":null}""";
+        using var handler = new StubHttpMessageHandler(HttpStatusCode.OK, json);
+        using var httpClient = CreateHttpClient(handler);
+        var client = new CatalogClient(httpClient);
+
+        var page = await client.GetUserMilestonesAsync(42, 13, 25);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(page.Items, Is.Empty);
+            Assert.That(page.NextCursor, Is.Null);
+            Assert.That(
+                handler.LastRequestUri?.PathAndQuery,
+                Is.EqualTo("/api/users/42/milestones?afterId=13&limit=25"));
+        });
+    }
+
+    [Test]
     public void GetCoursesAsync_ThrowsWhenTheDatabaseServiceFails()
     {
         using var handler = new StubHttpMessageHandler(HttpStatusCode.ServiceUnavailable, "{}");

@@ -6,6 +6,8 @@
 }
 
 @scope (.feature-quizzes-courses) {
+  .local-topbar { position: relative; z-index: 4; display: flex; min-height: 64px; padding: 0 var(--space-page); align-items: center; justify-content: flex-end; background: rgba(255, 255, 255, .9); border-bottom: 1px solid rgba(15, 23, 42, .07); backdrop-filter: blur(12px); }
+  .local-topbar-nav { display: flex; align-items: center; gap: 8px; }
   .hero { min-height: 100vh; background: radial-gradient(circle at 85% 8%, #e0e7ff 0, transparent 30%), #f6f7fb; }
   .course-home-container { max-width: none !important; padding: 38px clamp(24px, 3.5vw, 50px) 42px !important; }
   .hero-copy { max-width: 780px; }

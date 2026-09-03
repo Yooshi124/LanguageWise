@@ -16,7 +16,7 @@ public sealed class DatabaseInitializerTests
         "40-nl.sql",
         "50-es.sql",
         "60-pl.sql",
-        "70-development-progress.sql"
+        "70-seed-milestone-sample-data.sql"
     ];
 
     [Test]
@@ -162,6 +162,153 @@ public sealed class DatabaseInitializerTests
         });
     }
 
+    [Test]
+    public void Initialise_SeedsBusinessRuleConsistentSampleProgressIdempotently()
+    {
+        using var sandbox = SqlSandbox.Create();
+
+        sandbox.Initialise();
+        sandbox.Initialise();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(sandbox.Scalar("SELECT COUNT(*) FROM QuizAttempts;"), Is.EqualTo(29));
+            Assert.That(
+                sandbox.Scalar("SELECT COUNT(*) FROM QuizAttempts WHERE CompletedAt IS NULL;"),
+                Is.EqualTo(1));
+            Assert.That(sandbox.Scalar("SELECT COUNT(*) FROM QuizAnswers;"), Is.EqualTo(280));
+            Assert.That(
+                sandbox.Scalar(
+                    """
+                    SELECT COUNT(*)
+                    FROM QuizAttempts attempt
+                    WHERE attempt.CompletedAt IS NOT NULL
+                      AND (
+                          SELECT COUNT(*)
+                          FROM QuizAnswers answer
+                          WHERE answer.AttemptId = attempt.Id
+                      ) <> attempt.TotalQuestions;
+                    """),
+                Is.Zero);
+            Assert.That(
+                sandbox.Scalar(
+                    """
+                    SELECT COUNT(*)
+                    FROM Milestones milestone
+                    WHERE milestone.QuizId IS NOT NULL
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM QuizAttempts attempt
+                          WHERE attempt.UserId = milestone.UserId
+                            AND attempt.QuizId = milestone.QuizId
+                            AND attempt.Score >= 8
+                            AND attempt.CompletedAt IS NOT NULL
+                      );
+                    """),
+                Is.Zero);
+            Assert.That(
+                sandbox.Strings(
+                    """
+                    SELECT course.Code
+                    FROM Milestones milestone
+                    JOIN Courses course ON course.Id = milestone.CourseId
+                    WHERE milestone.UserId = 1
+                    ORDER BY course.Code;
+                    """),
+                Is.EqualTo(new[] { "pl" }));
+            Assert.That(
+                sandbox.Scalar(
+                    """
+                    SELECT COUNT(*)
+                    FROM Milestones courseMilestone
+                    WHERE courseMilestone.CourseId IS NOT NULL
+                      AND (
+                          EXISTS (
+                              SELECT 1
+                              FROM Lessons lesson
+                              WHERE lesson.CourseId = courseMilestone.CourseId
+                                AND NOT EXISTS (
+                                    SELECT 1
+                                    FROM Milestones lessonMilestone
+                                    WHERE lessonMilestone.UserId = courseMilestone.UserId
+                                      AND lessonMilestone.LessonId = lesson.Id
+                                )
+                          )
+                          OR EXISTS (
+                              SELECT 1
+                              FROM Quizzes quiz
+                              JOIN Lessons lesson ON lesson.Id = quiz.LessonId
+                              WHERE lesson.CourseId = courseMilestone.CourseId
+                                AND NOT EXISTS (
+                                    SELECT 1
+                                    FROM Milestones quizMilestone
+                                    WHERE quizMilestone.UserId = courseMilestone.UserId
+                                      AND quizMilestone.QuizId = quiz.Id
+                                )
+                          )
+                      );
+                    """),
+                Is.Zero);
+        });
+    }
+
+    [Test]
+    public void Initialise_ReplacesLegacyGermanOnlySampleProgress()
+    {
+        const string sampleSeed = "70-seed-milestone-sample-data.sql";
+        using var sandbox = SqlSandbox.Create();
+
+        sandbox.ReplaceSeed(
+            sampleSeed,
+            """
+            INSERT OR IGNORE INTO Milestones (UserId, LessonId, CompletedAt)
+            SELECT 1, Lessons.Id, '2026-01-01T00:00:00.0000000+00:00'
+            FROM Lessons
+            JOIN Courses ON Courses.Id = Lessons.CourseId
+            WHERE Courses.Code = 'de';
+            """);
+        sandbox.Initialise();
+
+        Assert.That(
+            sandbox.Scalar(
+                """
+                SELECT COUNT(*)
+                FROM Milestones milestone
+                JOIN Lessons lesson ON lesson.Id = milestone.LessonId
+                JOIN Courses course ON course.Id = lesson.CourseId
+                WHERE milestone.UserId = 1
+                  AND course.Code = 'de';
+                """),
+            Is.EqualTo(20));
+
+        sandbox.RestoreSeed(sampleSeed);
+        sandbox.Initialise();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                sandbox.Scalar(
+                    """
+                    SELECT COUNT(*)
+                    FROM Milestones milestone
+                    JOIN Lessons lesson ON lesson.Id = milestone.LessonId
+                    JOIN Courses course ON course.Id = lesson.CourseId
+                    WHERE milestone.UserId = 1
+                      AND course.Code = 'de';
+                    """),
+                Is.EqualTo(6));
+            Assert.That(
+                sandbox.Scalar(
+                    """
+                    SELECT COUNT(*)
+                    FROM Milestones
+                    WHERE UserId = 1
+                      AND CompletedAt = '2026-01-01T00:00:00.0000000+00:00';
+                    """),
+                Is.Zero);
+        });
+    }
+
     private sealed class SqlSandbox : IDisposable
     {
         private readonly string rootDirectory;
@@ -226,6 +373,12 @@ public sealed class DatabaseInitializerTests
 
         public void ReplaceSeed(string fileName, string sql) =>
             File.WriteAllText(Path.Combine(SeedsDirectory, fileName), sql);
+
+        public void RestoreSeed(string fileName) =>
+            File.Copy(
+                Path.Combine(GetSourceSqlDirectory(), "seeds", fileName),
+                Path.Combine(SeedsDirectory, fileName),
+                overwrite: true);
 
         public bool TableExists(string tableName)
         {
