@@ -66,7 +66,7 @@ export const featureServices: readonly ServiceNavigationItem[] = [
   },
   {
     key: 'quests-achievements-notifications',
-    label: 'Quests & Achievements',
+    label: 'Achievements & Notifications',
     description: 'Track goals, unlock achievements, and receive learning notifications.',
     href: '/quests-and-achievements/',
     icon: 'quests',

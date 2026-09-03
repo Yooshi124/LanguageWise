@@ -39,7 +39,7 @@ export const federatedRemotes = [
     componentExport: 'QuestsAchievementsNotificationsComponent',
     basePath: '/quests-and-achievements',
     routeName: 'quests-achievements',
-    featureName: 'Quests & Achievements',
+    featureName: 'Achievements & Notifications',
   }),
   createRemoteRegistration({
     runtimeName: 'leaderboard_analytics',
