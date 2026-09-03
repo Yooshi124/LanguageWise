@@ -5,6 +5,8 @@ using System.Text.Json.Serialization;
 
 const string ServiceName = "quizzes-courses-service-db";
 const string PublicCatalogError = "The SQLite catalog health check failed.";
+const int DefaultMilestonePageSize = 100;
+const int MaxMilestonePageSize = 200;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -132,6 +134,24 @@ app.MapGet("/api/users/{userId:int}/course-progress", (
     LearningRepository repository) =>
     ToHttpResult(repository.GetStartedCoursesProgress(userId)));
 
+app.MapGet("/api/milestones", (
+    int? afterId,
+    int? limit,
+    LearningRepository repository) =>
+    GetMilestones(repository, null, afterId, limit));
+
+app.MapGet("/api/users/{userId:int}/milestones", (
+    int userId,
+    int? afterId,
+    int? limit,
+    LearningRepository repository) =>
+    userId > 0
+        ? GetMilestones(repository, userId, afterId, limit)
+        : Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["userId"] = ["User ID must be greater than zero."]
+        }));
+
 app.MapPut("/api/lessons/{lessonId:int}/milestones/{userId:int}", (
     int lessonId,
     int userId,
@@ -157,6 +177,31 @@ app.MapDelete("/api/courses/{code}/milestones/{userId:int}", (
     ToHttpResult(repository.UncompleteCourse(code, userId)));
 
 app.Run();
+
+static IResult GetMilestones(
+    LearningRepository repository,
+    int? userId,
+    int? afterId,
+    int? limit)
+{
+    var cursor = afterId ?? 0;
+    var pageSize = limit ?? DefaultMilestonePageSize;
+    var errors = new Dictionary<string, string[]>();
+
+    if (cursor < 0)
+    {
+        errors["afterId"] = ["Cursor must be zero or greater."];
+    }
+
+    if (pageSize is < 1 or > MaxMilestonePageSize)
+    {
+        errors["limit"] = [$"Limit must be between 1 and {MaxMilestonePageSize}."];
+    }
+
+    return errors.Count > 0
+        ? Results.ValidationProblem(errors)
+        : Results.Ok(repository.GetMilestones(userId, cursor, pageSize));
+}
 
 static IResult ToHttpResult<T>(DomainResult<T> result)
 {

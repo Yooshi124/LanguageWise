@@ -49,6 +49,16 @@ public sealed class AuthorizationTests
                 endpoint.GetProperty("route").GetString() == "/api/assistant/messages" &&
                 endpoint.GetProperty("status").GetString() == "registered" &&
                 endpoint.GetProperty("authRequired").GetBoolean()));
+            Assert.That(endpoints, Has.Some.Matches<JsonElement>(endpoint =>
+                endpoint.GetProperty("method").GetString() == "GET" &&
+                endpoint.GetProperty("route").GetString() == "/api/milestones" &&
+                endpoint.GetProperty("status").GetString() == "registered" &&
+                endpoint.GetProperty("authRequired").GetBoolean()));
+            Assert.That(endpoints, Has.Some.Matches<JsonElement>(endpoint =>
+                endpoint.GetProperty("method").GetString() == "GET" &&
+                endpoint.GetProperty("route").GetString() == "/api/me/milestones" &&
+                endpoint.GetProperty("status").GetString() == "registered" &&
+                endpoint.GetProperty("authRequired").GetBoolean()));
         });
     }
 
@@ -116,13 +126,15 @@ public sealed class AuthorizationTests
         });
     }
 
-    [Test]
-    public async Task Courses_WithoutToken_ReturnsUnauthorized()
+    [TestCase("/api/courses")]
+    [TestCase("/api/milestones")]
+    [TestCase("/api/me/milestones")]
+    public async Task AuthenticatedEndpoints_WithoutToken_ReturnUnauthorized(string path)
     {
         using var fixture = new ApiFixture();
         using var client = fixture.CreateClient();
 
-        var response = await client.GetAsync("/api/courses");
+        var response = await client.GetAsync(path);
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
     }

@@ -16,6 +16,8 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.Extensions.Options;
 
 const string ServiceName = "quizzes-courses-service-backend";
+const int DefaultMilestonePageSize = 100;
+const int MaxMilestonePageSize = 200;
 
 var builder = WebApplication.CreateBuilder(args);
 var databaseServiceUrl = builder.Configuration["Services:Database"] ?? "http://localhost:6003";
@@ -414,6 +416,34 @@ app.MapGet("/api/courses/{code}/progress", async (
         return progress is null ? Results.NotFound() : Results.Ok(progress);
     }, app.Logger));
 
+app.MapGet("/api/milestones", async (
+    int? afterId,
+    int? limit,
+    CatalogClient client,
+    CancellationToken cancellationToken) =>
+    await GetMilestonesAsync(
+        afterId,
+        limit,
+        (cursor, pageSize) => client.GetMilestonesAsync(cursor, pageSize, cancellationToken),
+        app.Logger));
+
+app.MapGet("/api/me/milestones", async (
+    int? afterId,
+    int? limit,
+    HttpContext context,
+    CatalogClient client,
+    CancellationToken cancellationToken) =>
+    await ExecuteForUserAsync(context, userId =>
+        GetMilestonesAsync(
+            afterId,
+            limit,
+            (cursor, pageSize) => client.GetUserMilestonesAsync(
+                userId,
+                cursor,
+                pageSize,
+                cancellationToken),
+            app.Logger), app.Logger));
+
 // Vocabulary the user has unlocked: every course they have started, limited to the
 // lessons whose milestone they have achieved. Other services (e.g. mini-games) call
 // this endpoint with the user's token instead of reaching into the database service.
@@ -498,6 +528,31 @@ app.MapDelete("/api/courses/{code}/milestone", async (
 app.Run();
 
 static string Normalize(string value) => value.Trim().ToLowerInvariant();
+
+static Task<IResult> GetMilestonesAsync(
+    int? afterId,
+    int? limit,
+    Func<int, int, Task<MilestonePage>> getPage,
+    ILogger logger)
+{
+    var cursor = afterId ?? 0;
+    var pageSize = limit ?? DefaultMilestonePageSize;
+    var errors = new Dictionary<string, string[]>();
+
+    if (cursor < 0)
+    {
+        errors["afterId"] = ["Cursor must be zero or greater."];
+    }
+
+    if (pageSize is < 1 or > MaxMilestonePageSize)
+    {
+        errors["limit"] = [$"Limit must be between 1 and {MaxMilestonePageSize}."];
+    }
+
+    return errors.Count > 0
+        ? Task.FromResult(Results.ValidationProblem(errors))
+        : ExecuteAsync(async () => Results.Ok(await getPage(cursor, pageSize)), logger);
+}
 
 static async Task<IResult> ExecuteAsync(Func<Task<IResult>> action, ILogger logger)
 {
