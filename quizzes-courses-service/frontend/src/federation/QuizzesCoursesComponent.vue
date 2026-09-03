@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
+import AppTopBar from '../components/AppTopBar.vue'
 import GarryAssistant from '../components/GarryAssistant.vue'
 import type { FeatureHostContext } from './contracts'
 import { setFeatureHostContext } from './featureHost'
@@ -20,6 +21,7 @@ onBeforeUnmount(() => setFeatureHostContext(undefined))
 
 <template>
   <section class="feature-quizzes-courses">
+    <AppTopBar />
     <router-view />
     <GarryAssistant
       v-if="showAssistant && hostContext?.user"
