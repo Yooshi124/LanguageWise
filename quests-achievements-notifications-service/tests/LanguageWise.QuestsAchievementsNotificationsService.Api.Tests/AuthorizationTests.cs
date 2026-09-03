@@ -91,23 +91,6 @@ public sealed class AuthorizationTests
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
     }
 
-    [Test]
-    public async Task Preferences_WithLegacyFormContent_ReturnsBadRequest()
-    {
-        using var fixture = new ApiFixture();
-        using var client = fixture.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
-        using var content = new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["email"] = "amber@example.com",
-            ["notifyAll"] = "on"
-        });
-
-        var response = await client.PutAsync("/api/preferences", content);
-
-        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
-    }
-
     private sealed class ApiFixture : WebApplicationFactory<Program>
     {
         private readonly RSA rsa = RSA.Create(2048);

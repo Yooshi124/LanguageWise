@@ -165,18 +165,11 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .service-table td, .service-table th { padding: 16px !important; vertical-align: top; }
 .service-table tbody th { white-space: nowrap; }
 .service-table code { padding: 3px 7px; border-radius: 6px; color: #4338ca; background: #eef2ff; }
-.federation-spike,
 .remote-unavailable {
   min-height: 100vh;
   padding: clamp(84px, 9vw, 128px) clamp(24px, 6vw, 96px);
   background: radial-gradient(circle at 88% 4%, #e0e7ff 0, transparent 28rem), #f6f7fb;
 }
-.federation-spike__panel { max-width: 880px; margin: 0 auto; padding: clamp(10px, 2vw, 24px); }
-.federation-spike__facts { display: grid; margin: 12px 0 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.federation-spike__facts div { padding: 16px; border: 1px solid #e1e5ee; border-radius: 12px; background: #f8f9fc; }
-.federation-spike__facts dt { color: #667085; font-size: .78rem; font-weight: 700; text-transform: uppercase; }
-.federation-spike__facts dd { margin: 4px 0 0; color: #172033; font-weight: 700; overflow-wrap: anywhere; }
-.federation-spike__detail { margin: 24px 0 0; padding: 16px; border-radius: 12px; color: #065f46; background: #d1fae5; }
 .remote-unavailable { max-width: none; }
 .remote-unavailable__icon { display: grid; width: 64px; height: 64px; place-items: center; border-radius: 18px; color: #4338ca; background: #e0e7ff; }
 .remote-unavailable__eyebrow { margin: 24px 0 8px; color: #4f46e5; font-size: .78rem; font-weight: 800; text-transform: uppercase; }
@@ -247,7 +240,6 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .app-sidebar:not(.expanded) .sidebar-nav-item { justify-content: flex-start; padding-inline: 18px; }
   .mobile-sidebar-close, .mobile-nav-trigger { display: grid; }
   .shared-home-container { padding-top: 84px !important; }
-  .federation-spike__facts { grid-template-columns: 1fr; }
   .host-state h1 { font-size: 2.25rem; }
   .login-shell { max-width: 500px; grid-template-columns: 1fr; }
   .login-brand-panel { min-height: 190px; padding: 1.5rem; }

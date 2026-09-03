@@ -1,30 +1,25 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('./federation/quizzesCoursesRemote', () => ({
-  isQuizzesCoursesPath: () => false,
-  quizzesCoursesRoutesReady: () => false,
-  registerQuizzesCoursesRoutes: vi.fn(),
-}))
-
-vi.mock('./federation/chatDiscussionRemote', () => ({
-  isChatDiscussionPath: (path: string) => path.startsWith('/chat-discussion'),
-  chatDiscussionRoutesReady: () => false,
-  registerChatDiscussionRoutes: vi.fn((router) => {
-    router.addRoute({
-      path: '/chat-discussion',
-      name: 'chat-discussion-test',
-      component: { template: '<div />' },
-      meta: { requiresAuth: true },
-      children: [
-        {
+vi.mock('./federation/remotes', () => ({
+  federatedRemotes: [{
+    fallbackRouteName: 'chat-discussion-unavailable',
+    matches: (path: string) => path.startsWith('/chat-discussion'),
+    ready: () => false,
+    register: vi.fn((router) => {
+      router.addRoute({
+        path: '/chat-discussion',
+        name: 'chat-discussion-test',
+        component: { template: '<div />' },
+        meta: { requiresAuth: true },
+        children: [{
           path: 'posts/:id',
           name: 'chat-discussion-post-test',
           component: { template: '<div />' },
           meta: { requiresAuth: true },
-        },
-      ],
-    })
-  }),
+        }],
+      })
+    }),
+  }],
 }))
 
 afterEach(() => {
@@ -32,15 +27,6 @@ afterEach(() => {
 })
 
 describe('router authentication', () => {
-  it('redirects the compatibility login URL to the canonical route', async () => {
-    vi.resetModules()
-    const { default: router } = await import('./router')
-
-    await router.push('/login.html?returnUrl=/analytics#account')
-
-    expect(router.currentRoute.value.fullPath).toBe('/login?returnUrl=/analytics#account')
-  })
-
   it('redirects a signed-out protected route and preserves its URL', async () => {
     vi.resetModules()
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 401 })))

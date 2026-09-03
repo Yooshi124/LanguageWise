@@ -283,17 +283,6 @@ public sealed class AuthorizationTests
     }
 
     [Test]
-    public async Task LegacyMe_WithBearerToken_ReturnsNotFound()
-    {
-        using var fixture = new ApiFixture();
-        using var client = fixture.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
-
-        var response = await client.GetAsync("/api/me");
-        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
-    }
-
-    [Test]
     public async Task GetPost_ReturnsTheFirstPageOfCommentsWithThePost()
     {
         using var fixture = new ApiFixture();

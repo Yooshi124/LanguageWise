@@ -127,18 +127,6 @@ public sealed class AuthorizationTests
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
     }
 
-    [Test]
-    public async Task LegacyMe_WithBearerToken_ReturnsNotFound()
-    {
-        using var fixture = new ApiFixture();
-        using var client = fixture.CreateClient();
-        client.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
-
-        var response = await client.GetAsync("/api/me");
-        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
-    }
-
     private sealed class ApiFixture : WebApplicationFactory<Program>
     {
         private readonly RSA rsa = RSA.Create(2048);

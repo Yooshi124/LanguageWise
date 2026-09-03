@@ -10,7 +10,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@module-federation/runtime": "2.9.0",
     "@module-federation/vite": "1.21.2",
     "@tanstack/vue-query": "5.102.8",
     "highcharts": "11.4.8",

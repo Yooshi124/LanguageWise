@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "@mdi/js": "7.4.47",
-    "@module-federation/runtime": "2.9.0",
     "@module-federation/vite": "1.21.2",
     "dompurify": "^3.2.6",
     "markdown-it": "^14.1.0",

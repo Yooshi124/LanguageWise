@@ -16,28 +16,15 @@ const languages = {
     pl: { flag: 'pl.svg', colour: '#d4213d' }
 };
 
-const aliases = {
-    german: 'de',
-    french: 'fr',
-    italian: 'it',
-    dutch: 'nl',
-    spanish: 'es',
-    polish: 'pl'
-};
-
-function languageFor(code) {
-    return languages[aliases[code] ?? code];
-}
-
 const flagsPath = '/remotes/chat-discussion/flags';
 
 /** The accent colour for a forum, falling back to the shared indigo. */
 export function forumColour(code) {
-    return languageFor(code)?.colour ?? '#4f46e5';
+    return languages[code]?.colour ?? '#4f46e5';
 }
 
 /** The flag URL for a language forum, or null when the forum has no flag. */
 export function forumFlag(code) {
-    const language = languageFor(code);
+    const language = languages[code];
     return language ? `${flagsPath}/${language.flag}` : null;
 }

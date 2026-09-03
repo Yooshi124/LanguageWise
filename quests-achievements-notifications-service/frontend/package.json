@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@mdi/js": "7.4.47",
-    "@module-federation/runtime": "2.9.0",
     "@module-federation/vite": "1.21.2",
     "vue": "3.5.42",
     "vue-router": "4.6.4"
