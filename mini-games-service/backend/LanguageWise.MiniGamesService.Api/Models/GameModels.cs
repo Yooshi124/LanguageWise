@@ -2,11 +2,10 @@ using System.Text.Json;
 
 namespace LanguageWise.MiniGamesService.Api.Models;
 
-/// <summary>API response for a game.</summary>
+/// <summary>API response for a game. Users relate to games through game attempts, not directly.</summary>
 public sealed record GameResponse(
     int Id,
     string GameType,
-    int UserId,
     string CourseCode,
     string Solution,
     IReadOnlyList<string> Words,

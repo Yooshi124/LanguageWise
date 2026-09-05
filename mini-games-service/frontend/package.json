@@ -6,17 +6,22 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "dependencies": {
     "@mdi/js": "7.4.47",
     "@module-federation/vite": "1.21.2",
+    "dompurify": "^3.2.6",
+    "markdown-it": "^14.1.0",
     "vue": "3.5.42",
     "vue-router": "4.6.4"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "6.0.8",
+    "jsdom": "26.1.0",
     "typescript": "5.8.3",
-    "vite": "7.3.6"
+    "vite": "7.3.6",
+    "vitest": "3.2.4"
   }
 }

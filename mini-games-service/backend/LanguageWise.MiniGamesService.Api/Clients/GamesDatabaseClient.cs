@@ -43,15 +43,11 @@ public sealed class GamesDatabaseClient(HttpClient httpClient)
     public async Task<GameResponse?> GetGameAsync(int gameId, CancellationToken cancellationToken = default) =>
         await GetOptionalAsync<GameResponse>($"api/games/{gameId}", cancellationToken);
 
-    public async Task<IReadOnlyList<GameResponse>> GetGamesByUserIdAsync(int userId, CancellationToken cancellationToken = default) =>
-        await httpClient.GetFromJsonAsync<List<GameResponse>>($"api/games/user/{userId}", cancellationToken) ?? [];
-
-    public async Task<IReadOnlyList<GameResponse>> GetGamesByUserIdAndTypeAsync(int userId, string gameType, CancellationToken cancellationToken = default) =>
-        await httpClient.GetFromJsonAsync<List<GameResponse>>($"api/games/user/{userId}/type/{gameType}", cancellationToken) ?? [];
+    public async Task<IReadOnlyList<GameResponse>> GetGamesForUserAsync(int userId, CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<List<GameResponse>>($"api/games/for-user/{userId}", cancellationToken) ?? [];
 
     public async Task<GameResponse?> CreateGameAsync(
         string gameType,
-        int userId,
         string courseCode,
         string solution,
         IReadOnlyList<string> words,
@@ -61,7 +57,7 @@ public sealed class GamesDatabaseClient(HttpClient httpClient)
     {
         using var response = await httpClient.PostAsJsonAsync(
             "api/games",
-            new { gameType, userId, courseCode, solution, words, difficulty, expiresAt },
+            new { gameType, courseCode, solution, words, difficulty, expiresAt },
             JsonOptions,
             cancellationToken);
         return response.IsSuccessStatusCode

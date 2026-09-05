@@ -280,7 +280,7 @@ public sealed class GameSessionManager(
     {
         try
         {
-            var createdGame = await databaseClient.CreateGameAsync(gameType, userId, courseCode ?? "all", solution, words);
+            var createdGame = await databaseClient.CreateGameAsync(gameType, courseCode ?? "all", solution, words);
             if (createdGame is null)
             {
                 logger.LogWarning("Could not persist a new {GameType} game for user {UserId}: the database rejected the create", gameType, userId);

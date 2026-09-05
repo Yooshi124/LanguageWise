@@ -1,9 +1,11 @@
 <Solution>
   <Folder Name="/backend/">
     <Project Path="backend/LanguageWise.MiniGamesService.Api/LanguageWise.MiniGamesService.Api.csproj" />
+    <Project Path="database/LanguageWise.MiniGamesService.Db/LanguageWise.MiniGamesService.Db.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/LanguageWise.MiniGamesService.Api.Tests/LanguageWise.MiniGamesService.Api.Tests.csproj" />
+    <Project Path="tests/LanguageWise.MiniGamesService.Db.Tests/LanguageWise.MiniGamesService.Db.Tests.csproj" />
   </Folder>
   <Folder Name="/frontend/">
     <File Path="frontend/index.html" />

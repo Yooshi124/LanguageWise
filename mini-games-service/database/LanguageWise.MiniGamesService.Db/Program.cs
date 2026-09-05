@@ -54,14 +54,9 @@ app.MapGet("/health", (GameRepository gameRepository, GameAttemptRepository atte
 .Produces(StatusCodes.Status500InternalServerError);
 
 // Games endpoints
-app.MapGet("/api/games/user/{userId}", (int userId, GameRepository gameRepository) =>
-    Results.Ok(gameRepository.GetByUserId(userId)))
-.WithName("GetGamesByUserId")
-.Produces<IReadOnlyList<Game>>(StatusCodes.Status200OK);
-
-app.MapGet("/api/games/user/{userId}/type/{gameType}", (int userId, string gameType, GameRepository gameRepository) =>
-    Results.Ok(gameRepository.GetByUserIdAndGameType(userId, gameType)))
-.WithName("GetGamesByUserIdAndType")
+app.MapGet("/api/games/for-user/{userId}", (int userId, GameRepository gameRepository) =>
+    Results.Ok(gameRepository.GetForAttemptUser(userId)))
+.WithName("GetGamesForUser")
 .Produces<IReadOnlyList<Game>>(StatusCodes.Status200OK);
 
 app.MapGet("/api/games/{id}", (int id, GameRepository gameRepository) =>
@@ -77,7 +72,6 @@ app.MapPost("/api/games", (CreateGameRequest request, GameRepository gameReposit
 {
     var game = gameRepository.Create(
         request.GameType,
-        request.UserId,
         request.CourseCode,
         request.Solution,
         request.Words,
