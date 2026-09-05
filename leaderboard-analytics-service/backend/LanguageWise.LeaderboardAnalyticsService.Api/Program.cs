@@ -1,10 +1,12 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
+using System.Threading.RateLimiting;
 using LanguageWise.LeaderboardAnalyticsService.Api.Clients;
 using LanguageWise.LeaderboardAnalyticsService.Api.Models;
 using LanguageWise.LeaderboardAnalyticsService.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -17,6 +19,7 @@ builder.Services.AddHttpClient<QuizzesCoursesClient>(client =>
     client.BaseAddress = new Uri(quizzesCoursesServiceUrl.TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(10);
 });
+builder.Services.AddScoped<AnalyticsProfileService>();
 
 var ollamaServiceUrl = builder.Configuration["Services:Ollama"] ?? "http://localhost:11434";
 builder.Services.Configure<OllamaOptions>(builder.Configuration.GetSection("Ollama"));
@@ -24,6 +27,36 @@ builder.Services.AddHttpClient<ISummaryGenerator, OllamaSummaryGenerator>(client
 {
     client.BaseAddress = new Uri(ollamaServiceUrl.TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(20);
+});
+
+builder.Services.Configure<OpenRouterOptions>(
+    builder.Configuration.GetSection(OpenRouterOptions.SectionName));
+builder.Services.AddHttpClient<OpenRouterAssistantClient>(client =>
+{
+    client.BaseAddress = new Uri("https://openrouter.ai/api/v1/");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddHttpClient<OllamaAssistantClient>(client =>
+{
+    client.BaseAddress = new Uri(ollamaServiceUrl.TrimEnd('/') + "/");
+    client.Timeout = Timeout.InfiniteTimeSpan;
+});
+builder.Services.AddTransient<IAssistantCompletionClient, FallbackAssistantCompletionClient>();
+builder.Services.AddSingleton<AssistantRequestValidator>();
+builder.Services.AddSingleton<IAssistantPromptBuilder, AssistantPromptBuilder>();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("assistant-per-user", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value ?? "anonymous",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
 });
 
 var verificationKeyPath = builder.Configuration["Auth:VerificationKeyPath"] ?? "/run/secrets/signing_public_key";
@@ -69,6 +102,7 @@ var app = builder.Build();
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapGet("/health", () => Results.Ok())
     .AllowAnonymous();
@@ -173,6 +207,88 @@ app.MapPost("/api/lessons-completed-summary", async (
     var summary = await generator.GenerateAsync(chartData, cancellationToken);
     return Results.Ok(summary);
 });
+
+// ---------------------------------------------------------------------------
+// Garry Assistant
+// ---------------------------------------------------------------------------
+
+app.MapPost("/api/assistant/messages", async (
+    AssistantMessageRequest? request,
+    HttpContext context,
+    AssistantRequestValidator validator,
+    AnalyticsProfileService profileService,
+    IAssistantPromptBuilder promptBuilder,
+    IAssistantCompletionClient completionClient,
+    ILoggerFactory loggerFactory,
+    CancellationToken cancellationToken) =>
+{
+    var validation = validator.Validate(request);
+    if (validation.Request is null)
+    {
+        return Results.ValidationProblem(
+            validation.Errors.ToDictionary(error => error.Key, error => error.Value));
+    }
+
+    var subject = context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+    if (!int.TryParse(subject, out var userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!TryGetIncomingBearerToken(context, out var token))
+    {
+        return Results.Unauthorized();
+    }
+
+    AnalyticsProfile profile;
+    try
+    {
+        profile = await profileService.GetAsync(
+            userId,
+            context.User.Identity?.Name ?? string.Empty,
+            token,
+            cancellationToken);
+    }
+    catch (Exception exception) when (exception is not OperationCanceledException)
+    {
+        app.Logger.LogError(exception, "Failed to load assistant profile for user {UserId}.", userId);
+        return Results.Problem(
+            title: "The analytics profile is unavailable.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    try
+    {
+        var messages = promptBuilder.BuildMessages(validation.Request, profile);
+        var completion = await completionClient.StartCompletionAsync(messages, cancellationToken);
+        return new AssistantSseResult(
+            completion,
+            loggerFactory.CreateLogger<AssistantSseResult>());
+    }
+    catch (AssistantProviderException exception)
+    {
+        app.Logger.LogWarning(
+            "All assistant providers rejected the request; final HTTP status was {HttpStatus}.",
+            (int)exception.StatusCode);
+        return Results.Problem(
+            title: "Garry is unavailable.",
+            detail: "The assistant could not start a response. Please try again.",
+            statusCode: StatusCodes.Status502BadGateway);
+    }
+    catch (Exception exception) when (
+        exception is HttpRequestException
+        || (exception is OperationCanceledException && !cancellationToken.IsCancellationRequested))
+    {
+        app.Logger.LogWarning(
+            "All assistant providers were unreachable with error type {ErrorType}.",
+            exception.GetType().Name);
+        return Results.Problem(
+            title: "Garry is unavailable.",
+            detail: "The assistant could not start a response. Please try again.",
+            statusCode: StatusCodes.Status502BadGateway);
+    }
+})
+    .RequireRateLimiting("assistant-per-user");
 
 app.Run();
 

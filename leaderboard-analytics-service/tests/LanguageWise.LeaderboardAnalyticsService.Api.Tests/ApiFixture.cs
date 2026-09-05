@@ -28,6 +28,7 @@ internal sealed class ApiFixture : WebApplicationFactory<Program>
 
     internal ISummaryGenerator SummaryGenerator { get; set; } = new FakeSummaryGenerator();
     internal HttpMessageHandler? QuizzesCoursesHandler { get; set; }
+    internal IAssistantCompletionClient? AssistantCompletionClient { get; set; }
 
     internal string CreateToken(int userId = 7, string username = "justin")
     {
@@ -72,6 +73,11 @@ internal sealed class ApiFixture : WebApplicationFactory<Program>
                 services.AddSingleton(new QuizzesCoursesClient(
                     httpClient,
                     new MemoryCache(new MemoryCacheOptions())));
+            }
+            if (AssistantCompletionClient is not null)
+            {
+                services.RemoveAll<IAssistantCompletionClient>();
+                services.AddSingleton(AssistantCompletionClient);
             }
         });
     }
