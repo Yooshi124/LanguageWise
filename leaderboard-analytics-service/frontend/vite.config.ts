@@ -14,6 +14,7 @@ export default defineConfig({
         vue: { singleton: true, strictVersion: true, requiredVersion: '3.5.42' },
         'vue-router': { singleton: true, strictVersion: true, requiredVersion: '4.6.4' },
         '@tanstack/vue-query': { singleton: true, strictVersion: true, requiredVersion: '5.102.8' },
+        '@mdi/js': { singleton: true, strictVersion: true, requiredVersion: '7.4.47' },
       },
       bundleAllCSS: false,
       dts: false,

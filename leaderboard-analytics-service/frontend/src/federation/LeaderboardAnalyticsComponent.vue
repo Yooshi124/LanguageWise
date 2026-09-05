@@ -1,16 +1,18 @@
 <script setup lang="ts">
-interface HostContext {
-  readonly user: { id: number; name: string } | null
-  navigate(path: string): Promise<void>
-  signIn(returnUrl?: string): void
-  signOut(): Promise<void>
-}
+import GarryAssistant from '../components/GarryAssistant.vue'
+import type { HostContext } from '../models'
 
-defineProps<{ hostContext?: HostContext }>()
+const props = defineProps<{ hostContext?: HostContext }>()
 </script>
 
 <template>
   <section class="feature-leaderboard-analytics">
     <RouterView />
+    <GarryAssistant
+      v-if="props.hostContext?.user"
+      :key="props.hostContext.user.id"
+      :user-id="props.hostContext.user.id"
+      @unauthorized="props.hostContext.signIn()"
+    />
   </section>
 </template>
