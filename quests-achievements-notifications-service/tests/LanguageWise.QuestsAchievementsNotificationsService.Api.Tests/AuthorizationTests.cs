@@ -82,6 +82,44 @@ public sealed class AuthorizationTests
     }
 
     [Test]
+    public async Task Assistant_WithoutToken_ReturnsUnauthorized()
+    {
+        using var fixture = new ApiFixture();
+        using var client = fixture.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/api/assistant/messages", AssistantRequest());
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+    }
+
+    [Test]
+    public async Task Assistant_WithBearerToken_StreamsAnswerGroundedInProfile()
+    {
+        using var fixture = new ApiFixture();
+        using var client = fixture.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
+
+        var response = await client.PostAsJsonAsync("/api/assistant/messages", AssistantRequest());
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(response.Content.Headers.ContentType?.MediaType, Is.EqualTo("text/event-stream"));
+            Assert.That(body, Does.Contain("event: delta"));
+            Assert.That(body, Does.Contain("Garry answer"));
+            Assert.That(body, Does.Contain("event: done"));
+        });
+        await fixture.Assistant.Received(1).StartCompletionAsync(
+            Arg.Is<IReadOnlyList<AssistantChatMessage>>(messages =>
+                messages.Any(message => message.Content.Contains("\"username\":\"amber\""))
+                && messages.Any(message => message.Content.Contains("\"notifyPostEngagement\":true"))
+                && messages.Any(message => message.Content.Contains("\"notificationId\":12"))
+                && messages.Any(message => message.Content.Contains("What should I aim for next?"))),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task Preferences_WithMalformedJson_ReturnsBadRequest()
     {
         using var fixture = new ApiFixture();
@@ -136,6 +174,11 @@ public sealed class AuthorizationTests
     private static PreferenceUpdateRequest EnabledPreferences() => new(
         "learner@example.com", true, true, true, true, true, true, true, true, true);
 
+    private static AssistantMessageRequest AssistantRequest() => new(
+        "What should I aim for next?",
+        [],
+        new AssistantRouteContext("quests-achievements-home"));
+
     private sealed class ApiFixture : WebApplicationFactory<Program>
     {
         private readonly RSA rsa = RSA.Create(2048);
@@ -146,12 +189,17 @@ public sealed class AuthorizationTests
         {
             this.notifyAll = notifyAll;
             File.WriteAllText(publicKeyPath, rsa.ExportSubjectPublicKeyInfoPem());
+            Assistant.StartCompletionAsync(
+                    Arg.Any<IReadOnlyList<AssistantChatMessage>>(),
+                    Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<IAssistantEventStream>(new StubAssistantEventStream()));
             EmailGenerator.GenerateAsync(Arg.Any<EmailContext>(), Arg.Any<CancellationToken>())
                 .Returns(new EmailContent("Welcome", "Welcome body", false));
             EmailSender.IsConfigured.Returns(true);
         }
 
         internal ProfileDataHandler DataHandler { get; private set; } = null!;
+        internal IAssistantCompletionClient Assistant { get; } = Substitute.For<IAssistantCompletionClient>();
         internal IEmailContentGenerator EmailGenerator { get; } = Substitute.For<IEmailContentGenerator>();
         internal IEmailSender EmailSender { get; } = Substitute.For<IEmailSender>();
 
@@ -192,6 +240,8 @@ public sealed class AuthorizationTests
                 services.AddSingleton(EmailGenerator);
                 services.RemoveAll<IEmailSender>();
                 services.AddSingleton(EmailSender);
+                services.RemoveAll<IAssistantCompletionClient>();
+                services.AddSingleton(Assistant);
             });
         }
 
@@ -204,6 +254,20 @@ public sealed class AuthorizationTests
                 File.Delete(publicKeyPath);
             }
         }
+    }
+
+    private sealed class StubAssistantEventStream : IAssistantEventStream
+    {
+        public async IAsyncEnumerable<ProviderStreamEvent> ReadEventsAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return ProviderStreamEvent.Delta("Garry answer");
+            yield return ProviderStreamEvent.Done();
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private sealed class ProfileDataHandler(bool notifyAll) : HttpMessageHandler

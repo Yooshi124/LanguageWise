@@ -1,11 +1,15 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Threading.RateLimiting;
 using LanguageWise.QuestsAchievementsNotificationsService.Api;
 using LanguageWise.QuestsAchievementsNotificationsService.Api.Clients;
 using LanguageWise.QuestsAchievementsNotificationsService.Api.Models;
+using LanguageWise.QuestsAchievementsNotificationsService.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 
 const string ServiceName = "quests-achievements-notifications-service-backend";
@@ -20,6 +24,7 @@ builder.Services.AddHttpClient<AppDataClient>(client =>
     client.BaseAddress = new Uri(databaseServiceUrl.TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(10);
 });
+builder.Services.AddScoped<ProfileService>();
 
 var ollamaServiceUrl = builder.Configuration["Services:Ollama"] ?? "http://localhost:11434";
 builder.Services.Configure<OllamaOptions>(builder.Configuration.GetSection("Ollama"));
@@ -28,6 +33,35 @@ builder.Services.AddHttpClient<IEmailContentGenerator, OllamaEmailGenerator>(cli
 {
     client.BaseAddress = new Uri(ollamaServiceUrl.TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(15);
+});
+builder.Services.Configure<OpenRouterOptions>(
+    builder.Configuration.GetSection(OpenRouterOptions.SectionName));
+builder.Services.AddHttpClient<OpenRouterAssistantClient>(client =>
+{
+    client.BaseAddress = new Uri("https://openrouter.ai/api/v1/");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddHttpClient<OllamaAssistantClient>(client =>
+{
+    client.BaseAddress = new Uri(ollamaServiceUrl.TrimEnd('/') + "/");
+    client.Timeout = Timeout.InfiniteTimeSpan;
+});
+builder.Services.AddTransient<IAssistantCompletionClient, FallbackAssistantCompletionClient>();
+builder.Services.AddSingleton<AssistantRequestValidator>();
+builder.Services.AddSingleton<IAssistantPromptBuilder, AssistantPromptBuilder>();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("assistant-per-user", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value ?? "anonymous",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
 });
 builder.Services.AddSingleton<ISmtpTransport, MailKitSmtpTransport>();
 builder.Services.AddSingleton<IEmailSender, GmailEmailSender>();
@@ -74,13 +108,14 @@ var app = builder.Build();
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = ServiceName }))
     .AllowAnonymous();
 
 app.MapGet("/api/profile", async (
     HttpContext context,
-    AppDataClient client,
+    ProfileService profileService,
     CancellationToken cancellationToken) =>
 {
     var userId = NotificationRules.GetUserId(context.User);
@@ -91,45 +126,10 @@ app.MapGet("/api/profile", async (
 
     try
     {
-        var preferences = await client.GetPreferencesAsync(userId.Value, cancellationToken)
-            ?? DefaultPreferences(userId.Value);
-        var achievements = await client.GetAchievementsAsync(cancellationToken);
-        var progress = (await client.GetUserAchievementsAsync(userId.Value, cancellationToken))
-            .ToDictionary(item => item.AchievementId, item => item.Progress);
-        var notifications = await client.GetNotificationsAsync(userId.Value, cancellationToken);
-        var view = achievements.Select(achievement => new AchievementProgress(
-            achievement.AchievementId,
-            achievement.Name,
-            achievement.Image,
-            progress.GetValueOrDefault(achievement.AchievementId),
-            achievement.ProgressNeeded)).ToList();
-
-        return Results.Ok(new
-        {
-            username = context.User.Identity?.Name ?? string.Empty,
-            preferences = new
-            {
-                preferences.Email,
-                preferences.NotifyAll,
-                preferences.NotifyCommunityContribution,
-                preferences.NotifyPostEngagement,
-                preferences.NotifyLessonCompletion,
-                preferences.NotifyCourseCompletion,
-                preferences.NotifyQuizResult,
-                preferences.NotifyMinigameWin,
-                preferences.NotifyLoginStreak,
-                preferences.NotifyAchievements
-            },
-            achievements = view,
-            notifications = notifications.Select(notification => new
-            {
-                notification.NotificationId,
-                notification.Trigger,
-                notification.Time,
-                notification.EmailSubject,
-                notification.EmailBody
-            })
-        });
+        return Results.Ok(await profileService.GetAsync(
+            userId.Value,
+            context.User.Identity?.Name ?? string.Empty,
+            cancellationToken));
     }
     catch (Exception exception)
     {
@@ -139,6 +139,78 @@ app.MapGet("/api/profile", async (
             statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 });
+
+app.MapPost("/api/assistant/messages", async (
+    AssistantMessageRequest? request,
+    HttpContext context,
+    AssistantRequestValidator validator,
+    ProfileService profileService,
+    IAssistantPromptBuilder promptBuilder,
+    IAssistantCompletionClient completionClient,
+    ILoggerFactory loggerFactory,
+    CancellationToken cancellationToken) =>
+{
+    var validation = validator.Validate(request);
+    if (validation.Request is null)
+    {
+        return Results.ValidationProblem(
+            validation.Errors.ToDictionary(error => error.Key, error => error.Value));
+    }
+
+    var userId = NotificationRules.GetUserId(context.User);
+    if (userId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    ProfileResponse profile;
+    try
+    {
+        profile = await profileService.GetAsync(
+            userId.Value,
+            context.User.Identity?.Name ?? string.Empty,
+            cancellationToken);
+    }
+    catch (Exception exception) when (exception is not OperationCanceledException)
+    {
+        app.Logger.LogError(exception, "Failed to load assistant profile for user {UserId}.", userId);
+        return Results.Problem(
+            title: "The profile service is unavailable.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    try
+    {
+        var messages = promptBuilder.BuildMessages(validation.Request, profile);
+        var completion = await completionClient.StartCompletionAsync(messages, cancellationToken);
+        return new AssistantSseResult(
+            completion,
+            loggerFactory.CreateLogger<AssistantSseResult>());
+    }
+    catch (AssistantProviderException exception)
+    {
+        app.Logger.LogWarning(
+            "All assistant providers rejected the request; final HTTP status was {HttpStatus}.",
+            (int)exception.StatusCode);
+        return Results.Problem(
+            title: "Garry is unavailable.",
+            detail: "The assistant could not start a response. Please try again.",
+            statusCode: StatusCodes.Status502BadGateway);
+    }
+    catch (Exception exception) when (
+        exception is HttpRequestException
+        || (exception is OperationCanceledException && !cancellationToken.IsCancellationRequested))
+    {
+        app.Logger.LogWarning(
+            "All assistant providers were unreachable with error type {ErrorType}.",
+            exception.GetType().Name);
+        return Results.Problem(
+            title: "Garry is unavailable.",
+            detail: "The assistant could not start a response. Please try again.",
+            statusCode: StatusCodes.Status502BadGateway);
+    }
+})
+    .RequireRateLimiting("assistant-per-user");
 
 app.MapPut("/api/preferences", async (
     HttpContext context,
@@ -361,9 +433,6 @@ app.MapPost("/api/events", async (
 });
 
 app.Run();
-
-static UserPreferences DefaultPreferences(int userId) =>
-    new(userId, null, true, true, true, true, true, true, true, true, true);
 
 static async Task<PreferenceUpdateRequest?> ReadPreferencesAsync(
     HttpRequest request,
