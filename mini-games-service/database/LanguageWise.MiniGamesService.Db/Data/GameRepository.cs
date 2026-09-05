@@ -8,33 +8,23 @@ namespace LanguageWise.MiniGamesService.Db.Data;
 /// <summary>Plain ADO.NET data access for the Games table.</summary>
 public sealed class GameRepository(string connectionString)
 {
-    private const string SelectColumns = "SELECT Id, GameType, UserId, CourseCode, Solution, Words, Difficulty, CreatedAt, ExpiresAt FROM Games";
+    private const string SelectColumns = "SELECT Id, GameType, CourseCode, Solution, Words, Difficulty, CreatedAt, ExpiresAt FROM Games";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    public IReadOnlyList<Game> GetByUserId(int userId)
+    /// <summary>Games a user has played, resolved through their GameAttempts (the associative link).</summary>
+    public IReadOnlyList<Game> GetForAttemptUser(int userId)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = $"{SelectColumns} WHERE UserId = $userId ORDER BY CreatedAt DESC;";
+        command.CommandText =
+            """
+            SELECT DISTINCT Games.Id, Games.GameType, Games.CourseCode, Games.Solution, Games.Words, Games.Difficulty, Games.CreatedAt, Games.ExpiresAt
+            FROM Games
+            INNER JOIN GameAttempts ON GameAttempts.GameId = Games.Id
+            WHERE GameAttempts.UserId = $userId
+            ORDER BY Games.CreatedAt DESC;
+            """;
         command.Parameters.AddWithValue("$userId", userId);
-
-        var games = new List<Game>();
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
-        {
-            games.Add(Map(reader));
-        }
-
-        return games;
-    }
-
-    public IReadOnlyList<Game> GetByUserIdAndGameType(int userId, string gameType)
-    {
-        using var connection = Open();
-        using var command = connection.CreateCommand();
-        command.CommandText = $"{SelectColumns} WHERE UserId = $userId AND GameType = $gameType ORDER BY CreatedAt DESC;";
-        command.Parameters.AddWithValue("$userId", userId);
-        command.Parameters.AddWithValue("$gameType", gameType);
 
         var games = new List<Game>();
         using var reader = command.ExecuteReader();
@@ -57,7 +47,7 @@ public sealed class GameRepository(string connectionString)
         return reader.Read() ? Map(reader) : null;
     }
 
-    public Game Create(string gameType, int userId, string courseCode, string solution, IReadOnlyList<string> words, string difficulty = "intermediate", string? expiresAt = null)
+    public Game Create(string gameType, string courseCode, string solution, IReadOnlyList<string> words, string difficulty = "intermediate", string? expiresAt = null)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
@@ -67,12 +57,11 @@ public sealed class GameRepository(string connectionString)
 
         command.CommandText =
             """
-            INSERT INTO Games (GameType, UserId, CourseCode, Solution, Words, Difficulty, CreatedAt, ExpiresAt)
-            VALUES ($gameType, $userId, $courseCode, $solution, $words, $difficulty, $createdAt, $expiresAt)
-            RETURNING Id, GameType, UserId, CourseCode, Solution, Words, Difficulty, CreatedAt, ExpiresAt;
+            INSERT INTO Games (GameType, CourseCode, Solution, Words, Difficulty, CreatedAt, ExpiresAt)
+            VALUES ($gameType, $courseCode, $solution, $words, $difficulty, $createdAt, $expiresAt)
+            RETURNING Id, GameType, CourseCode, Solution, Words, Difficulty, CreatedAt, ExpiresAt;
             """;
         command.Parameters.AddWithValue("$gameType", gameType);
-        command.Parameters.AddWithValue("$userId", userId);
         command.Parameters.AddWithValue("$courseCode", courseCode);
         command.Parameters.AddWithValue("$solution", solution);
         command.Parameters.AddWithValue("$words", wordsJson);
@@ -113,18 +102,17 @@ public sealed class GameRepository(string connectionString)
 
     private static Game Map(SqliteDataReader reader)
     {
-        var wordsJson = reader.GetString(5);
+        var wordsJson = reader.GetString(4);
         var wordsElement = JsonSerializer.Deserialize<JsonElement>(wordsJson);
         
         return new Game(
             reader.GetInt32(0),
             reader.GetString(1),
-            reader.GetInt32(2),
+            reader.GetString(2),
             reader.GetString(3),
-            reader.GetString(4),
             wordsElement,
+            reader.GetString(5),
             reader.GetString(6),
-            reader.GetString(7),
-            reader.IsDBNull(8) ? null : reader.GetString(8));
+            reader.IsDBNull(7) ? null : reader.GetString(7));
     }
 }

@@ -1,5 +1,6 @@
 <script setup>
-import { onBeforeUnmount } from 'vue';
+import { computed, onBeforeUnmount } from 'vue';
+import AssistantChat from '../components/AssistantChat.vue';
 import { setFeatureHostContext } from './featureHost.js';
 
 const props = defineProps({
@@ -9,6 +10,8 @@ const props = defineProps({
 	}
 });
 
+const showAssistant = computed(() => props.hostContext?.user != null);
+
 setFeatureHostContext(props.hostContext);
 onBeforeUnmount(() => setFeatureHostContext(undefined));
 </script>
@@ -16,5 +19,10 @@ onBeforeUnmount(() => setFeatureHostContext(undefined));
 <template>
 	<section class="feature-mini-games">
 		<RouterView />
+		<AssistantChat
+			v-if="showAssistant"
+			:key="hostContext.user.id"
+			:user-id="hostContext.user.id"
+		/>
 	</section>
 </template>

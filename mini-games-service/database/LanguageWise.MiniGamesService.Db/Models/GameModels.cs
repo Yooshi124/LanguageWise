@@ -2,11 +2,10 @@ using System.Text.Json;
 
 namespace LanguageWise.MiniGamesService.Db.Models;
 
-/// <summary>A row of the Games table.</summary>
+/// <summary>A row of the Games table. Users relate to games through GameAttempts, not directly.</summary>
 public sealed record Game(
     int Id,
     string GameType,
-    int UserId,
     string CourseCode,
     string Solution,
     JsonElement Words,
@@ -30,7 +29,6 @@ public sealed record GameAttempt(
 /// <summary>Input for creating a new game.</summary>
 public sealed record CreateGameRequest(
     string GameType,
-    int UserId,
     string CourseCode,
     string Solution,
     IReadOnlyList<string> Words,

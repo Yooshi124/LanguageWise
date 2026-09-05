@@ -1,5 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Net;
 using System.Security.Cryptography;
+using System.Threading.RateLimiting;
 using LanguageWise.MiniGamesService.Api.Clients;
 using LanguageWise.MiniGamesService.Api.Feature.Associations;
 using LanguageWise.MiniGamesService.Api.Feature.GuessTheWord;
@@ -10,6 +12,7 @@ using LanguageWise.MiniGamesService.Api.Options;
 using LanguageWise.MiniGamesService.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Extensions.Options;
 
@@ -63,6 +66,43 @@ builder.Services.AddHttpClient<IVocabularyCompletionClient, OpenRouterVocabulary
         client.Timeout = TimeSpan.FromSeconds(60);
     });
 builder.Services.AddSingleton<IAiVocabularyProvider, OpenRouterVocabularyProvider>();
+
+// Mini games assistant (streaming chat), modelled on the quizzes-courses assistant setup.
+builder.Services.AddHttpClient<IAssistantCompletionClient, OpenRouterAssistantClient>(
+    (services, client) =>
+    {
+        var options = services.GetRequiredService<IOptions<OpenRouterOptions>>().Value;
+        client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
+        client.Timeout = Timeout.InfiniteTimeSpan;
+    });
+builder.Services.AddSingleton<AssistantRequestValidator>();
+builder.Services.AddSingleton<IAssistantPromptBuilder, AssistantPromptBuilder>();
+builder.Services.AddSingleton<IAssistantContextService, AssistantContextService>();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        if (!context.HttpContext.Response.HasStarted)
+        {
+            await Results.Problem(
+                title: "Too many assistant requests.",
+                detail: "Please wait before sending another assistant message.",
+                statusCode: StatusCodes.Status429TooManyRequests)
+                .ExecuteAsync(context.HttpContext);
+        }
+    };
+    options.AddPolicy("assistant-per-user", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value ?? "anonymous",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+});
 
 // Register vocabulary providers and supporting services
 builder.Services.AddSingleton<IVocabularyProvider>(serviceProvider =>
@@ -120,6 +160,7 @@ var app = builder.Build();
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.Use(async (context, next) =>
 {
@@ -139,6 +180,76 @@ app.Use(async (context, next) =>
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = ServiceName }))
     .AllowAnonymous();
+
+// Streaming mini games assistant. The backend owns the prompt, the canonical game rules
+// context, and the provider credentials; the browser only renders the SSE stream.
+app.MapPost("/api/assistant/messages", async (
+    AssistantMessageRequest request,
+    AssistantRequestValidator validator,
+    IAssistantContextService contextService,
+    IAssistantPromptBuilder promptBuilder,
+    IAssistantCompletionClient completionClient,
+    IOptions<OpenRouterOptions> openRouterOptions,
+    ILoggerFactory loggerFactory,
+    CancellationToken cancellationToken) =>
+{
+    var validation = validator.Validate(request);
+    if (validation.Request is null)
+    {
+        return Results.ValidationProblem(
+            validation.Errors.ToDictionary(error => error.Key, error => error.Value));
+    }
+
+    if (string.IsNullOrWhiteSpace(openRouterOptions.Value.ApiKey))
+    {
+        return Results.Problem(
+            title: "The assistant is not configured.",
+            detail: "The assistant service is temporarily unavailable.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    var assistantContext = contextService.GetContext(validation.Request.Context);
+
+    try
+    {
+        var messages = promptBuilder.BuildMessages(
+            validation.Request,
+            assistantContext.CanonicalContext!);
+        var completion = await completionClient.StartCompletionAsync(messages, cancellationToken);
+        return new AssistantSseResult(
+            completion,
+            loggerFactory.CreateLogger<AssistantSseResult>());
+    }
+    catch (AssistantProviderException exception)
+    {
+        app.Logger.LogWarning(
+            "Assistant provider rejected a request with HTTP status {HttpStatus}.",
+            (int)exception.StatusCode);
+        if (exception.StatusCode == HttpStatusCode.TooManyRequests)
+        {
+            return Results.Problem(
+                title: "The assistant is temporarily rate limited.",
+                detail: "OpenRouter's free model is busy or its request allowance has been reached. Please wait and try again.",
+                statusCode: StatusCodes.Status429TooManyRequests);
+        }
+
+        return Results.Problem(
+            title: "The assistant provider is unavailable.",
+            detail: "The assistant could not start a response. Please try again.",
+            statusCode: StatusCodes.Status502BadGateway);
+    }
+    catch (HttpRequestException exception)
+    {
+        app.Logger.LogWarning(
+            "Assistant provider request failed with error type {ErrorType}.",
+            exception.GetType().Name);
+        return Results.Problem(
+            title: "The assistant provider is unavailable.",
+            detail: "The assistant could not start a response. Please try again.",
+            statusCode: StatusCodes.Status502BadGateway);
+    }
+})
+    .RequireRateLimiting("assistant-per-user");
 
 // Languages the user has unlocked vocabulary in (started courses with completed lessons).
 // The frontend offers these as the per-user language selection for the games.
@@ -181,7 +292,7 @@ app.MapGet("/api/stats/completions", async (HttpContext context, string? courseC
 {
     var userId = GetUserId(context);
 
-    var games = await databaseClient.GetGamesByUserIdAsync(userId, cancellationToken);
+    var games = await databaseClient.GetGamesForUserAsync(userId, cancellationToken);
     var attempts = await databaseClient.GetGameAttemptsByUserIdAsync(userId, cancellationToken);
 
     var gameTypesById = games

@@ -3,7 +3,6 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS Games (
     Id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     GameType            TEXT NOT NULL CHECK (GameType IN ('guess_the_word', 'word_search', 'associations')),
-    UserId              INTEGER NOT NULL CHECK (UserId > 0),
     CourseCode          TEXT NOT NULL,
     Solution            TEXT NOT NULL,
     Words               TEXT NOT NULL CHECK (json_valid(Words)),
@@ -26,9 +25,7 @@ CREATE TABLE IF NOT EXISTS GameAttempts (
     FOREIGN KEY (GameId) REFERENCES Games(Id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS IX_Games_UserId ON Games(UserId);
 CREATE INDEX IF NOT EXISTS IX_Games_CourseCode ON Games(CourseCode);
-CREATE INDEX IF NOT EXISTS IX_Games_GameType_UserId ON Games(GameType, UserId);
 CREATE INDEX IF NOT EXISTS IX_GameAttempts_UserId ON GameAttempts(UserId);
 CREATE INDEX IF NOT EXISTS IX_GameAttempts_GameId ON GameAttempts(GameId);
 CREATE INDEX IF NOT EXISTS IX_GameAttempts_UserId_CreatedAt ON GameAttempts(UserId, StartedAt);
