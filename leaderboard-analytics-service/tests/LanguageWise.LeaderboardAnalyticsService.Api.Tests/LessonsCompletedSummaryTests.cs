@@ -121,11 +121,68 @@ public sealed class LessonsCompletedSummaryTests
 
     private sealed record LessonsCompletedSummaryDto(string Summary, string Trend, string BestCourse);
 
+    [Test]
+    public async Task Generator_WhenModelReturnsUnknownBestCourse_ReplacesWithCanonicalTopCourse()
+    {
+        // Two courses: French has the higher final cumulative count and is the
+        // canonical "best" per the fallback rule. The model hallucinates a
+        // course that the learner never took; it must not be returned verbatim.
+        var chartData = new LessonsCompletedResponse(
+            42,
+            new DateOnly(2026, 1, 1),
+            new DateOnly(2026, 1, 2),
+            [
+                new LessonsCompletedSeries("de", "German", [
+                    new LessonsCompletedPoint(new DateOnly(2026, 1, 1), 1),
+                    new LessonsCompletedPoint(new DateOnly(2026, 1, 2), 2)
+                ]),
+                new LessonsCompletedSeries("fr", "French", [
+                    new LessonsCompletedPoint(new DateOnly(2026, 1, 1), 3),
+                    new LessonsCompletedPoint(new DateOnly(2026, 1, 2), 5)
+                ])
+            ]);
+        var modelJson = """
+        {
+            "message": {
+                "content": "{\"summary\":\"Great momentum.\",\"trend\":\"up\",\"bestCourse\":\"Klingon\"}"
+            }
+        }
+        """;
+        using var httpClient = new HttpClient(new StaticResponseHandler(modelJson))
+        {
+            BaseAddress = new Uri("http://ollama/")
+        };
+        var generator = new OllamaSummaryGenerator(
+            httpClient,
+            Options.Create(new OllamaOptions()),
+            NullLogger<OllamaSummaryGenerator>.Instance);
+
+        var result = await generator.GenerateAsync(chartData);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Summary, Is.EqualTo("Great momentum."));
+            Assert.That(result.Trend, Is.EqualTo("up"));
+            Assert.That(result.BestCourse, Is.EqualTo("French"));
+        });
+    }
+
     private sealed class TimeoutHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken) =>
             Task.FromException<HttpResponseMessage>(new TaskCanceledException("Ollama timed out."));
+    }
+
+    private sealed class StaticResponseHandler(string json) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
+            });
     }
 }

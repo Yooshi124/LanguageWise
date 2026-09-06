@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 import LessonsCompletedChart from '../components/LessonsCompletedChart.vue'
 import AiSummaryCard from '../components/AiSummaryCard.vue'
+import { useAnalyticsUserId } from '../composables/useAnalyticsUser'
 
 interface LanguageRanking {
     id: number
@@ -13,13 +15,15 @@ interface LanguageRanking {
 }
 
 const apiBase = '/analytics/api'
+const userId = useAnalyticsUserId()
 
 const {
     data: myRankings,
     isLoading: isMyLoading,
     isError: isMyError,
 } = useQuery<LanguageRanking[]>({
-    queryKey: ['my-language-rankings'],
+    queryKey: ['my-language-rankings', userId],
+    enabled: computed(() => userId.value !== null),
     queryFn: async () => {
         const res = await fetch(`${apiBase}/my-language-rankings`, {
             credentials: 'same-origin',

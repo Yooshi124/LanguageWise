@@ -92,9 +92,7 @@ public sealed class OllamaSummaryGenerator(
 
     private static LessonsCompletedSummaryResponse Fallback(LessonsCompletedResponse chartData)
     {
-        var bestSeries = chartData.Series
-            .OrderByDescending(series => series.Points.Count == 0 ? 0 : series.Points[^1].LessonsCompleted)
-            .FirstOrDefault();
+        var bestSeries = FindBestSeries(chartData);
         var bestCourse = bestSeries?.CourseTitle ?? "your top course";
         var trend = ComputeTrendFromSeries(bestSeries);
         var totalLessons = chartData.Series.Sum(series => series.Points.Count == 0 ? 0 : series.Points[^1].LessonsCompleted);
@@ -108,6 +106,11 @@ public sealed class OllamaSummaryGenerator(
             trend,
             bestCourse);
     }
+
+    private static LessonsCompletedSeries? FindBestSeries(LessonsCompletedResponse chartData) =>
+        chartData.Series
+            .OrderByDescending(series => series.Points.Count == 0 ? 0 : series.Points[^1].LessonsCompleted)
+            .FirstOrDefault();
 
     private static string ComputeTrendFromSeries(LessonsCompletedSeries? series)
     {
@@ -141,7 +144,7 @@ public sealed class OllamaSummaryGenerator(
         var match = chartData.Series
             .Select(series => series.CourseTitle)
             .FirstOrDefault(title => string.Equals(title, trimmed, StringComparison.OrdinalIgnoreCase));
-        return match ?? trimmed;
+        return match ?? FindBestSeries(chartData)?.CourseTitle ?? "your top course";
     }
 
     private static string Truncate(string value, int maximumLength) =>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
+import { useAnalyticsUserId } from '../composables/useAnalyticsUser'
 
 interface LessonsCompletedSummary {
     summary: string
@@ -9,9 +10,11 @@ interface LessonsCompletedSummary {
 }
 
 const apiBase = '/analytics/api'
+const userId = useAnalyticsUserId()
 
 const { data, isLoading, isError } = useQuery<LessonsCompletedSummary>({
-    queryKey: ['lessons-completed-summary'],
+    queryKey: ['lessons-completed-summary', userId],
+    enabled: computed(() => userId.value !== null),
     queryFn: async () => {
         const res = await fetch(`${apiBase}/lessons-completed-summary`, {
             method: 'POST',

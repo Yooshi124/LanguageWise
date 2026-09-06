@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
 import Highcharts from 'highcharts'
 import Accessibility from 'highcharts/modules/accessibility'
+import { useAnalyticsUserId } from '../composables/useAnalyticsUser'
 
 Accessibility(Highcharts)
 
@@ -25,9 +26,11 @@ interface LessonsCompletedResponse {
 }
 
 const apiBase = '/analytics/api'
+const userId = useAnalyticsUserId()
 
 const { data, isLoading, isError } = useQuery<LessonsCompletedResponse>({
-    queryKey: ['lessons-completed-over-time'],
+    queryKey: ['lessons-completed-over-time', userId],
+    enabled: computed(() => userId.value !== null),
     queryFn: async () => {
         const res = await fetch(`${apiBase}/lessons-completed-over-time`, {
             credentials: 'same-origin',
