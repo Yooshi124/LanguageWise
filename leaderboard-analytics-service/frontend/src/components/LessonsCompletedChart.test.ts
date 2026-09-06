@@ -1,7 +1,9 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { computed, ref } from 'vue'
 import LessonsCompletedChart from './LessonsCompletedChart.vue'
+import { AnalyticsUserIdKey } from '../composables/useAnalyticsUser'
 
 const { chartFactory, chartUpdate, chartDestroy } = vi.hoisted(() => ({
   chartFactory: vi.fn(),
@@ -27,6 +29,11 @@ const initialData = {
   }],
 }
 
+function analyticsProvide(userId: number | null) {
+  const userIdRef = ref<number | null>(userId)
+  return { provide: { [AnalyticsUserIdKey as symbol]: computed(() => userIdRef.value) } }
+}
+
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.clearAllMocks()
@@ -40,7 +47,7 @@ describe('LessonsCompletedChart', () => {
     ))
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const wrapper = mount(LessonsCompletedChart, {
-      global: { plugins: [[VueQueryPlugin, { queryClient }]] },
+      global: { plugins: [[VueQueryPlugin, { queryClient }]], ...analyticsProvide(7) },
     })
     await flushPromises()
 
@@ -51,7 +58,7 @@ describe('LessonsCompletedChart', () => {
     expect(options.yAxis.allowDecimals).toBe(false)
     expect(options.tooltip.shared).toBe(true)
 
-    queryClient.setQueryData(['lessons-completed-over-time'], {
+    queryClient.setQueryData(['lessons-completed-over-time', 7], {
       ...initialData,
       series: [{ ...initialData.series[0], points: [{ date: '2026-01-02', lessonsCompleted: 4 }] }],
     })
