@@ -22,6 +22,18 @@ public sealed class UsersClient(HttpClient httpClient)
         return result ?? new VerifyResponse(false, 0);
     }
 
+    internal async Task<AccountChange> CreateAsync(string username, string password, CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync("api/users", new { Username = username, Password = password }, cancellationToken);
+        return await ReadAccountChangeAsync(response, cancellationToken);
+    }
+
+    internal async Task<AccountChange> UpdateAsync(int userId, string? username, string? password, CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PatchAsJsonAsync($"api/users/{userId}", new { Username = username, Password = password }, cancellationToken);
+        return await ReadAccountChangeAsync(response, cancellationToken);
+    }
+
     internal async Task<int?> RecordLoginAsync(int userId, CancellationToken cancellationToken = default)
     {
         using var response = await httpClient.PostAsync($"api/users/{userId}/login-streak", null, cancellationToken);
@@ -96,7 +108,33 @@ public sealed class UsersClient(HttpClient httpClient)
         response.EnsureSuccessStatusCode();
         return true;
     }
+
+    private static async Task<AccountChange> ReadAccountChangeAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        switch (response.StatusCode)
+        {
+            case HttpStatusCode.Conflict:
+                return new AccountChange(AccountChangeStatus.UsernameTaken);
+            case HttpStatusCode.NotFound:
+                return new AccountChange(AccountChangeStatus.NotFound);
+        }
+
+        response.EnsureSuccessStatusCode();
+        var account = await response.Content.ReadFromJsonAsync<UserAccount>(cancellationToken);
+        return new AccountChange(AccountChangeStatus.Saved, account);
+    }
 }
+
+internal enum AccountChangeStatus
+{
+    Saved,
+    NotFound,
+    UsernameTaken,
+}
+
+internal sealed record AccountChange(AccountChangeStatus Status, UserAccount? Account = null);
+
+internal sealed record UserAccount(int Id, string Username);
 
 internal sealed record LoginStreakResponse(int Value);
 
