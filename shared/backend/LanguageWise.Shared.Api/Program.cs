@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using LanguageWise.Shared.Api;
 using LanguageWise.Shared.Api.Clients;
 using Microsoft.IdentityModel.Tokens;
 
@@ -148,12 +149,129 @@ app.MapPost("/api/logout", (HttpContext ctx) =>
     return Results.Ok();
 });
 
+// Bytes are proxied rather than redirected to: the database service is not reachable from the browser.
+app.MapGet("/api/users/{userId:int}/profile-picture", async (
+    int userId,
+    UsersClient usersClient,
+    CancellationToken cancellationToken) =>
+{
+    var picture = await usersClient.GetProfilePictureAsync(userId, cancellationToken);
+    return picture is null ? Results.NotFound() : Results.Ok(ToProfilePictureDetail(picture));
+});
+
+app.MapGet("/api/users/{userId:int}/profile-picture/content", async (
+    int userId,
+    HttpContext ctx,
+    UsersClient usersClient,
+    CancellationToken cancellationToken) =>
+{
+    var image = await usersClient.DownloadProfilePictureAsync(userId, cancellationToken);
+    if (image is null)
+    {
+        return Results.NotFound();
+    }
+
+    // Unlike chat images the URL is reused when the picture is replaced, so it must be revalidated.
+    ctx.Response.Headers.CacheControl = "no-cache";
+    ctx.Response.Headers.XContentTypeOptions = "nosniff";
+    return Results.File(image.Bytes, image.ContentType);
+});
+
+app.MapPut("/api/users/{userId:int}/profile-picture", async (
+    int userId,
+    HttpContext ctx,
+    IFormFile? file,
+    UsersClient usersClient,
+    CancellationToken cancellationToken) =>
+{
+    var token = ctx.Request.Cookies["token"];
+    var user = string.IsNullOrEmpty(token) ? null : ValidateToken(token);
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (user.Id != userId)
+    {
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+
+    var errors = ImageRules.ValidateUpload(file?.ContentType, file?.Length ?? 0);
+    if (errors.Count > 0)
+    {
+        return Results.ValidationProblem(errors);
+    }
+
+    if (!await LooksLikeDeclaredFormatAsync(file!, cancellationToken))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["file"] = ["That file is not the image format it claims to be."]
+        });
+    }
+
+    await using var content = file!.OpenReadStream();
+    var picture = await usersClient.UploadProfilePictureAsync(
+        userId,
+        content,
+        ImageRules.Normalise(file.ContentType),
+        ImageRules.SafeFileName(file.FileName),
+        cancellationToken);
+
+    return picture is null ? Results.NotFound() : Results.Ok(ToProfilePictureDetail(picture));
+})
+    // The token is read explicitly from a SameSite=Strict cookie, so no ambient credential can be forged.
+    .DisableAntiforgery();
+
+app.MapDelete("/api/users/{userId:int}/profile-picture", async (
+    int userId,
+    HttpContext ctx,
+    UsersClient usersClient,
+    CancellationToken cancellationToken) =>
+{
+    var token = ctx.Request.Cookies["token"];
+    var user = string.IsNullOrEmpty(token) ? null : ValidateToken(token);
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (user.Id != userId)
+    {
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+
+    return await usersClient.DeleteProfilePictureAsync(userId, cancellationToken)
+        ? Results.NoContent()
+        : Results.NotFound();
+});
+
 app.Run();
+
+// The storage key is dropped: the browser addresses the picture by user ID.
+static ProfilePictureDetail ToProfilePictureDetail(ProfilePicture picture) => new(
+    picture.FileName,
+    picture.ContentType,
+    picture.SizeBytes,
+    picture.UploadedAt);
+
+// IFormFile buffers the part, so opening the stream a second time for the upload costs nothing.
+static async Task<bool> LooksLikeDeclaredFormatAsync(IFormFile file, CancellationToken cancellationToken)
+{
+    var header = new byte[ImageRules.SignatureLength];
+
+    await using var stream = file.OpenReadStream();
+    var read = await stream.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false, cancellationToken);
+
+    return ImageRules.MatchesContentType(file.ContentType, header.AsSpan(0, read));
+}
 
 internal sealed record LoginRequest(string Username, string Password);
 
 internal sealed record VerifyResponse(bool Authenticated, int UserId);
 
 internal sealed record AuthenticatedUser(int Id, string Name);
+
+internal sealed record ProfilePictureDetail(string FileName, string ContentType, long SizeBytes, DateTime UploadedAt);
 
 public sealed class SharedApiAssemblyMarker;
