@@ -1,3 +1,6 @@
+using System.Net;
+using System.Net.Http.Headers;
+
 namespace LanguageWise.Shared.Api.Clients;
 
 /// <summary>
@@ -19,6 +22,18 @@ public sealed class UsersClient(HttpClient httpClient)
         return result ?? new VerifyResponse(false, 0);
     }
 
+    internal async Task<AccountChange> CreateAsync(string username, string password, CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PostAsJsonAsync("api/users", new { Username = username, Password = password }, cancellationToken);
+        return await ReadAccountChangeAsync(response, cancellationToken);
+    }
+
+    internal async Task<AccountChange> UpdateAsync(int userId, string? username, string? password, CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PatchAsJsonAsync($"api/users/{userId}", new { Username = username, Password = password }, cancellationToken);
+        return await ReadAccountChangeAsync(response, cancellationToken);
+    }
+
     internal async Task<int?> RecordLoginAsync(int userId, CancellationToken cancellationToken = default)
     {
         using var response = await httpClient.PostAsync($"api/users/{userId}/login-streak", null, cancellationToken);
@@ -30,6 +45,104 @@ public sealed class UsersClient(HttpClient httpClient)
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<LoginStreakResponse>(cancellationToken: cancellationToken))?.Value;
     }
+
+    internal async Task<ProfilePicture?> GetProfilePictureAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync($"api/users/{userId}/profile-picture", cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ProfilePicture>(cancellationToken);
+    }
+
+    // Buffered rather than streamed on; ImageRules.MaxBytes keeps that small.
+    internal async Task<ImageContent?> DownloadProfilePictureAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.GetAsync($"api/users/{userId}/profile-picture/content", cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        return new ImageContent(
+            await response.Content.ReadAsByteArrayAsync(cancellationToken),
+            response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream");
+    }
+
+    // Raw body: the browser's multipart form is already parsed and validated here.
+    internal async Task<ProfilePicture?> UploadProfilePictureAsync(
+        int userId,
+        Stream content,
+        string contentType,
+        string fileName,
+        CancellationToken cancellationToken = default)
+    {
+        using var body = new StreamContent(content);
+        body.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+
+        using var response = await httpClient.PutAsync(
+            $"api/users/{userId}/profile-picture?fileName={Uri.EscapeDataString(fileName)}",
+            body,
+            cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ProfilePicture>(cancellationToken);
+    }
+
+    internal async Task<bool> DeleteProfilePictureAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.DeleteAsync($"api/users/{userId}/profile-picture", cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return false;
+        }
+
+        response.EnsureSuccessStatusCode();
+        return true;
+    }
+
+    private static async Task<AccountChange> ReadAccountChangeAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        switch (response.StatusCode)
+        {
+            case HttpStatusCode.Conflict:
+                return new AccountChange(AccountChangeStatus.UsernameTaken);
+            case HttpStatusCode.NotFound:
+                return new AccountChange(AccountChangeStatus.NotFound);
+        }
+
+        response.EnsureSuccessStatusCode();
+        var account = await response.Content.ReadFromJsonAsync<UserAccount>(cancellationToken);
+        return new AccountChange(AccountChangeStatus.Saved, account);
+    }
 }
 
+internal enum AccountChangeStatus
+{
+    Saved,
+    NotFound,
+    UsernameTaken,
+}
+
+internal sealed record AccountChange(AccountChangeStatus Status, UserAccount? Account = null);
+
+internal sealed record UserAccount(int Id, string Username);
+
 internal sealed record LoginStreakResponse(int Value);
+
+internal sealed record ProfilePicture(
+    string StorageKey,
+    string FileName,
+    string ContentType,
+    long SizeBytes,
+    DateTime UploadedAt);
+
+internal sealed record ImageContent(byte[] Bytes, string ContentType);

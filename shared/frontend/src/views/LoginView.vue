@@ -103,6 +103,17 @@ async function submit() {
             Sign in
           </v-btn>
         </v-form>
+        <p class="login-divider">New to LanguageWise?</p>
+        <v-btn
+          :to="{ name: 'create-account', query: $route.query }"
+          variant="outlined"
+          color="primary"
+          size="large"
+          block
+          :disabled="submitting"
+        >
+          Create account
+        </v-btn>
         <p class="login-account-note">One account for every LanguageWise experience.</p>
       </div>
     </section>

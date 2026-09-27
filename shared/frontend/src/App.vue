@@ -13,7 +13,7 @@ const sidebarExpanded = ref(false)
 const mobileSidebarOpen = ref(false)
 const hostError = ref('')
 const renderKey = ref(0)
-const showShell = computed(() => route.name !== 'login')
+const showShell = computed(() => route.name !== 'login' && route.name !== 'create-account')
 
 async function bootstrapAuthentication() {
   hostError.value = ''

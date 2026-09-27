@@ -232,6 +232,41 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .login-form-panel h1 { margin: 0; font-size: clamp(2rem, 4vw, 2.8rem); line-height: 1.1; letter-spacing: -.045em; }
 .login-subtitle { margin: .85rem 0 2rem; color: #667085; }
 .login-account-note { margin: 1.5rem 0 0; color: #98a2b3; font-size: .82rem; text-align: center; }
+.login-divider { margin: 1.5rem 0 .75rem; color: #667085; font-size: .9rem; text-align: center; }
+.account-page {
+  min-height: 100vh;
+  padding: clamp(84px, 9vw, 128px) clamp(24px, 6vw, 96px);
+  background: radial-gradient(circle at 88% 4%, #e0e7ff 0, transparent 28rem), #f6f7fb;
+}
+.account-page h1 { margin: 0 0 2rem; font-size: clamp(2rem, 5vw, 3rem); line-height: 1.1; }
+.account-card { max-width: 640px; margin-bottom: 1.5rem; padding: .5rem; border: 1px solid rgba(15, 23, 42, .08); border-radius: 20px !important; }
+.account-picture { display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
+.account-picture img { width: 100%; height: 100%; object-fit: cover; }
+.account-initial { color: white; font-size: 2.25rem; font-weight: 800; }
+.account-picture-actions { display: flex; align-items: flex-end; gap: .5rem; flex-wrap: wrap; }
+.profile-picker { margin-bottom: 1rem; }
+.profile-picker__label { margin: 0 0 .3rem; font-size: .9rem; font-weight: 600; }
+.profile-picker__hint { margin: 0 0 .5rem; color: #667085; font-size: .85rem; }
+.profile-picker__message { margin: 0 0 .5rem; color: #b42318; font-size: .85rem; }
+.profile-picker__item { display: flex; flex-direction: column; align-items: flex-start; gap: .35rem; }
+.profile-picker__thumb { display: block; width: 7rem; height: 7rem; object-fit: cover; border: 1px solid rgba(15, 23, 42, .12); border-radius: 50%; background: #f6f7fb; }
+.profile-picker__input { font: inherit; font-size: .9rem; color: #667085; }
+.profile-picker__input::file-selector-button {
+  display: inline-flex;
+  min-height: 2.25rem;
+  margin-right: .75rem;
+  padding: 0 1rem;
+  align-items: center;
+  border: 0;
+  border-radius: 8px;
+  color: white;
+  background: #4f46e5;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.profile-picker__input::file-selector-button:hover { background: #4338ca; }
+.profile-picker__input:disabled::file-selector-button { cursor: not-allowed; opacity: .6; }
 @media (max-width: 800px) {
   :root { --app-sidebar-width: 0px; }
   .app-shell-content { margin-left: 0; }

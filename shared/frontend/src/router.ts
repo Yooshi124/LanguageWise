@@ -1,4 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import AccountView from './views/AccountView.vue'
+import CreateAccountView from './views/CreateAccountView.vue'
 import HomeView from './views/HomeView.vue'
 import LoginView from './views/LoginView.vue'
 import SignedOutView from './views/SignedOutView.vue'
@@ -10,6 +12,8 @@ const router = createRouter({
   routes: [
     { path: '/', name: 'home', component: HomeView },
     { path: '/login', name: 'login', component: LoginView },
+    { path: '/create-account', name: 'create-account', component: CreateAccountView },
+    { path: '/account', name: 'account', component: AccountView, meta: { requiresAuth: true } },
     { path: '/signed-out', name: 'signed-out', component: SignedOutView },
   ],
   scrollBehavior: () => ({ top: 0 }),

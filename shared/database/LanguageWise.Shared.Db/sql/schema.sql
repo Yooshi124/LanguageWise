@@ -6,5 +6,10 @@ CREATE TABLE IF NOT EXISTS Users (
     Username      TEXT NOT NULL UNIQUE,
     Password      TEXT NOT NULL,
     LastLogin     TEXT,
-    CurrentStreak INTEGER NOT NULL DEFAULT 0
+    CurrentStreak INTEGER NOT NULL DEFAULT 0,
+    ProfilePictureStorageKey  TEXT,
+    ProfilePictureFileName    TEXT,
+    ProfilePictureContentType TEXT,
+    ProfilePictureSizeBytes   INTEGER,
+    ProfilePictureUploadedAt  TEXT
 );

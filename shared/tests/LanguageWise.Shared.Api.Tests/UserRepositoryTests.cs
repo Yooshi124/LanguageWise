@@ -19,7 +19,7 @@ public sealed class UserRepositoryTests
         command.CommandText = """
             CREATE TABLE Users (
                 Id INTEGER PRIMARY KEY,
-                Username TEXT NOT NULL,
+                Username TEXT NOT NULL UNIQUE,
                 Password TEXT NOT NULL,
                 LastLogin TEXT,
                 CurrentStreak INTEGER NOT NULL DEFAULT 0
@@ -66,5 +66,63 @@ public sealed class UserRepositoryTests
         repository.RecordLogin(7, new DateOnly(2026, 9, 1));
 
         Assert.That(repository.RecordLogin(7, new DateOnly(2026, 9, 3)), Is.Zero);
+    }
+
+    [Test]
+    public void Create_WithNewUsername_ReturnsAccountThatCanVerify()
+    {
+        var result = repository.Create("amber", "secret");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Status, Is.EqualTo(UserAccountStatus.Saved));
+            Assert.That(result.Account!.Username, Is.EqualTo("amber"));
+            Assert.That(repository.Verify("amber", "secret"), Is.EqualTo(result.Account.Id));
+        });
+    }
+
+    [Test]
+    public void Create_WithExistingUsername_ReturnsUsernameTaken()
+    {
+        Assert.That(repository.Create("justin", "other"), Is.EqualTo(new UserAccountResult(UserAccountStatus.UsernameTaken)));
+    }
+
+    [Test]
+    public void Update_WithUsernameAndPassword_ChangesBoth()
+    {
+        var result = repository.Update(7, "justin2", "new");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.EqualTo(new UserAccountResult(UserAccountStatus.Saved, new UserAccount(7, "justin2"))));
+            Assert.That(repository.Verify("justin2", "new"), Is.EqualTo(7));
+            Assert.That(repository.Verify("justin", "test"), Is.Null);
+        });
+    }
+
+    [Test]
+    public void Update_WithPasswordOnly_KeepsUsername()
+    {
+        var result = repository.Update(7, null, "new");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.EqualTo(new UserAccountResult(UserAccountStatus.Saved, new UserAccount(7, "justin"))));
+            Assert.That(repository.Verify("justin", "new"), Is.EqualTo(7));
+        });
+    }
+
+    [Test]
+    public void Update_WithUnknownUser_ReturnsNotFound()
+    {
+        Assert.That(repository.Update(99, "ghost", null), Is.EqualTo(new UserAccountResult(UserAccountStatus.NotFound)));
+    }
+
+    [Test]
+    public void Update_WithTakenUsername_ReturnsUsernameTaken()
+    {
+        repository.Create("amber", "secret");
+
+        Assert.That(repository.Update(7, "amber", null), Is.EqualTo(new UserAccountResult(UserAccountStatus.UsernameTaken)));
     }
 }

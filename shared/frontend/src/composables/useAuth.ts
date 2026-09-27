@@ -7,6 +7,12 @@ export interface AuthenticatedUser {
   name: string
 }
 
+export interface AccountChanges {
+  username?: string
+  newPassword?: string
+  currentPassword: string
+}
+
 const user = ref<AuthenticatedUser | null>(null)
 const status = ref<AuthStatus>('loading')
 let authRequest: Promise<boolean> | undefined
@@ -130,6 +136,66 @@ export async function logout() {
   markSignedOut()
 }
 
+async function accountError(response: Response, action: string) {
+  if (response.status === 409) {
+    return new Error('That username is already taken.')
+  }
+
+  if (response.status === 400) {
+    const problem: { errors?: Record<string, string[]> } = await response.json().catch(() => ({}))
+    const message = Object.values(problem.errors ?? {}).flat()[0]
+    if (message) {
+      return new Error(message)
+    }
+  }
+
+  return new Error(`Unable to ${action} (${response.status} ${response.statusText})`)
+}
+
+export async function createAccount(usernameValue: string, password: string) {
+  const response = await fetch('/api/users', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: usernameValue, password }),
+  })
+
+  if (!response.ok) {
+    throw await accountError(response, 'create your account')
+  }
+
+  await login(usernameValue, password)
+}
+
+export async function updateAccount(changes: AccountChanges) {
+  if (!user.value) {
+    throw new Error('Sign in to update your account.')
+  }
+
+  const response = await fetch(`/api/users/${user.value.id}`, {
+    method: 'PATCH',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(changes),
+  })
+
+  if (response.status === 401) {
+    markSignedOut()
+    throw new Error('Your session has expired. Please sign in again.')
+  }
+
+  if (!response.ok) {
+    throw await accountError(response, 'update your account')
+  }
+
+  const updatedUser: unknown = await response.json()
+  if (!isAuthenticatedUser(updatedUser)) {
+    throw new Error('The account response was invalid.')
+  }
+
+  user.value = updatedUser
+}
+
 export function useAuth() {
   return {
     user: readonly(user),
@@ -140,5 +206,7 @@ export function useAuth() {
     login,
     loginUrl,
     logout,
+    createAccount,
+    updateAccount,
   }
 }

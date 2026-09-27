@@ -17,6 +17,11 @@ public sealed class DatabaseInitializer(string connectionString, string sqlDirec
         Execute(connection, ReadSqlFile("schema.sql"));
         EnsureColumn(connection, "LastLogin", "TEXT");
         EnsureColumn(connection, "CurrentStreak", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "ProfilePictureStorageKey", "TEXT");
+        EnsureColumn(connection, "ProfilePictureFileName", "TEXT");
+        EnsureColumn(connection, "ProfilePictureContentType", "TEXT");
+        EnsureColumn(connection, "ProfilePictureSizeBytes", "INTEGER");
+        EnsureColumn(connection, "ProfilePictureUploadedAt", "TEXT");
         logger.LogInformation("Schema applied to {ConnectionString}.", connectionString);
 
         Execute(connection, ReadSqlFile("seed.sql"));
