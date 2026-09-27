@@ -46,6 +46,33 @@ app.MapPost("/api/users/verify", (LoginInput input, UserRepository users) =>
         : Results.Unauthorized();
 });
 
+app.MapPost("/api/users", (CreateUserInput input, UserRepository users) =>
+{
+    if (string.IsNullOrWhiteSpace(input.Username) || string.IsNullOrEmpty(input.Password))
+        return Results.BadRequest();
+
+    var result = users.Create(input.Username, input.Password);
+    return result.Status == UserAccountStatus.UsernameTaken
+        ? Results.Conflict()
+        : Results.Created($"/api/users/{result.Account!.Id}", result.Account);
+});
+
+app.MapPatch("/api/users/{userId:int}", (int userId, UpdateUserInput input, UserRepository users) =>
+{
+    if ((input.Username is null && input.Password is null)
+        || (input.Username is not null && string.IsNullOrWhiteSpace(input.Username))
+        || input.Password == string.Empty)
+        return Results.BadRequest();
+
+    var result = users.Update(userId, input.Username, input.Password);
+    return result.Status switch
+    {
+        UserAccountStatus.NotFound => Results.NotFound(),
+        UserAccountStatus.UsernameTaken => Results.Conflict(),
+        _ => Results.Ok(result.Account),
+    };
+});
+
 app.MapPost("/api/users/{userId:int}/login-streak", (int userId, UserRepository users) =>
 {
     var value = users.RecordLogin(userId, DateOnly.FromDateTime(DateTime.UtcNow));
@@ -108,3 +135,7 @@ app.MapDelete("/api/users/{userId:int}/profile-picture", (int userId, UserReposi
 app.Run();
 
 internal sealed record LoginInput(string Username, string Password);
+
+internal sealed record CreateUserInput(string Username, string Password);
+
+internal sealed record UpdateUserInput(string? Username, string? Password);
