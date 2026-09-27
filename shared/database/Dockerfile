@@ -27,7 +27,8 @@ RUN apt-get update \
 COPY --from=build /app/publish ./
 
 ENV ASPNETCORE_HTTP_PORTS=8080 \
-    Database__Path=/data/shared.db
+    Database__Path=/data/shared.db \
+    Images__Path=/data/images
 
 VOLUME ["/data"]
 

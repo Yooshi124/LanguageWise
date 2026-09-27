@@ -11,6 +11,7 @@ var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
 }.ToString();
 
 builder.Services.AddSingleton(new UserRepository(connectionString));
+builder.Services.AddSingleton(new ImageStore(builder.Configuration["Images:Path"] ?? "data/images"));
 builder.Services.AddSingleton(serviceProvider => new DatabaseInitializer(
     connectionString,
     Path.Combine(AppContext.BaseDirectory, "sql"),
@@ -49,6 +50,59 @@ app.MapPost("/api/users/{userId:int}/login-streak", (int userId, UserRepository 
 {
     var value = users.RecordLogin(userId, DateOnly.FromDateTime(DateTime.UtcNow));
     return value is null ? Results.NoContent() : Results.Ok(new { value });
+});
+
+app.MapGet("/api/users/{userId:int}/profile-picture", (int userId, UserRepository users) =>
+    users.GetProfilePicture(userId) is { } picture ? Results.Ok(picture) : Results.NotFound());
+
+app.MapGet("/api/users/{userId:int}/profile-picture/content", (int userId, UserRepository users, ImageStore images) =>
+{
+    if (users.GetProfilePicture(userId) is not { } picture)
+    {
+        return Results.NotFound();
+    }
+
+    var content = images.Open(picture.StorageKey);
+    return content is null ? Results.NotFound() : Results.Stream(content, picture.ContentType);
+});
+
+// Raw body, not multipart: the backend has already parsed and validated the browser's form.
+app.MapPut("/api/users/{userId:int}/profile-picture", async (
+    int userId,
+    HttpRequest request,
+    UserRepository users,
+    ImageStore images,
+    CancellationToken cancellationToken,
+    string? fileName = null) =>
+{
+    var previous = users.GetProfilePicture(userId);
+    var storageKey = ImageStore.NewKey();
+    var sizeBytes = await images.SaveAsync(storageKey, request.Body, cancellationToken);
+
+    var picture = users.SetProfilePicture(userId, new ProfilePictureInput(storageKey, fileName, request.ContentType, sizeBytes));
+    if (picture is null)
+    {
+        images.Delete(storageKey);
+        return Results.NotFound();
+    }
+
+    if (previous is not null)
+    {
+        images.Delete(previous.StorageKey);
+    }
+
+    return Results.Ok(picture);
+});
+
+app.MapDelete("/api/users/{userId:int}/profile-picture", (int userId, UserRepository users, ImageStore images) =>
+{
+    if (users.GetProfilePicture(userId) is not { } picture || !users.ClearProfilePicture(userId))
+    {
+        return Results.NotFound();
+    }
+
+    images.Delete(picture.StorageKey);
+    return Results.NoContent();
 });
 
 app.Run();
