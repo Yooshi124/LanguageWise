@@ -56,6 +56,55 @@ describe('useAuth', () => {
     expect(useAuth().user.value).toEqual({ id: 1, name: 'amber' })
   })
 
+  it('signs in after creating an account', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ id: 12, name: 'newbie' }, 201))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(jsonResponse({ id: 12, name: 'newbie' }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { createAccount, useAuth } = await loadAuth()
+
+    await createAccount('newbie', 'long-enough')
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/users',
+      '/api/login',
+      '/api/check-login',
+    ])
+    expect(useAuth().user.value).toEqual({ id: 12, name: 'newbie' })
+  })
+
+  it('reports a taken username when creating an account', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 409 })))
+    const { createAccount } = await loadAuth()
+
+    await expect(createAccount('amber', 'long-enough')).rejects.toThrow(
+      'That username is already taken.',
+    )
+  })
+
+  it('updates the signed-in user and surfaces validation messages', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ id: 7, name: 'justin' }))
+      .mockResolvedValueOnce(
+        jsonResponse({ errors: { currentPassword: ['Current password is incorrect.'] } }, 400),
+      )
+      .mockResolvedValueOnce(jsonResponse({ id: 7, name: 'justin2' }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { ensureAuthenticated, updateAccount, useAuth } = await loadAuth()
+    await ensureAuthenticated()
+
+    await expect(
+      updateAccount({ username: 'justin2', currentPassword: 'wrong' }),
+    ).rejects.toThrow('Current password is incorrect.')
+    await updateAccount({ username: 'justin2', currentPassword: 'right' })
+
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/users/7', expect.objectContaining({ method: 'PATCH' }))
+    expect(useAuth().username.value).toBe('justin2')
+  })
+
   it('uses the canonical login route and preserves the return URL', async () => {
     window.history.replaceState({}, '', '/analytics/?range=30#summary')
     const { loginUrl } = await loadAuth()

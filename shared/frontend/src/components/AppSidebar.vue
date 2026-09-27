@@ -25,9 +25,12 @@ const accountLabel = computed(() => {
   return 'Checking login'
 })
 
-const accountHref = computed(() =>
-  auth.status.value === 'signed-out' ? auth.loginUrl() : undefined,
-)
+const accountHref = computed(() => {
+  if (auth.status.value === 'authenticated') {
+    return '/account'
+  }
+  return auth.status.value === 'signed-out' ? auth.loginUrl() : undefined
+})
 
 function isActive(href: string) {
   return href === '/' ? route.path === '/' : route.path.startsWith(href.replace(/\/$/, ''))
@@ -125,7 +128,8 @@ onBeforeUnmount(() => clearTimeout(hoverTimer))
         :label="accountLabel"
         icon="profile"
         :href="accountHref"
-        native
+        :active="route.path === '/account'"
+        :native="!auth.isAuthenticated.value"
         :static="!accountHref"
         :show-label="expanded || mobileOpen"
       />
