@@ -34,35 +34,14 @@ builder.Services.AddHttpClient<IEmailContentGenerator, OllamaEmailGenerator>(cli
     client.BaseAddress = new Uri(ollamaServiceUrl.TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(15);
 });
-builder.Services.Configure<OpenRouterOptions>(
-    builder.Configuration.GetSection(OpenRouterOptions.SectionName));
-builder.Services.AddHttpClient<OpenRouterAssistantClient>(client =>
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient<IAssistantCompletionClient, GarryCompletionClient>(client =>
 {
-    client.BaseAddress = new Uri("https://openrouter.ai/api/v1/");
-    client.Timeout = TimeSpan.FromSeconds(30);
-});
-builder.Services.AddHttpClient<OllamaAssistantClient>(client =>
-{
-    client.BaseAddress = new Uri(ollamaServiceUrl.TrimEnd('/') + "/");
+    client.BaseAddress = new Uri((builder.Configuration["Services:Garry"] ?? "http://localhost:5010").TrimEnd('/') + "/");
     client.Timeout = Timeout.InfiniteTimeSpan;
 });
-builder.Services.AddTransient<IAssistantCompletionClient, FallbackAssistantCompletionClient>();
 builder.Services.AddSingleton<AssistantRequestValidator>();
 builder.Services.AddSingleton<IAssistantPromptBuilder, AssistantPromptBuilder>();
-builder.Services.AddRateLimiter(options =>
-{
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddPolicy("assistant-per-user", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            httpContext.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value ?? "anonymous",
-            _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 10,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0,
-                AutoReplenishment = true
-            }));
-});
 builder.Services.AddSingleton<ISmtpTransport, MailKitSmtpTransport>();
 builder.Services.AddSingleton<IEmailSender, GmailEmailSender>();
 
@@ -108,7 +87,6 @@ var app = builder.Build();
 
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseRateLimiter();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = ServiceName }))
     .AllowAnonymous();
@@ -190,8 +168,15 @@ app.MapPost("/api/assistant/messages", async (
     catch (AssistantProviderException exception)
     {
         app.Logger.LogWarning(
-            "All assistant providers rejected the request; final HTTP status was {HttpStatus}.",
+            "Garry could not start the request; HTTP status was {HttpStatus}.",
             (int)exception.StatusCode);
+        if (exception.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+        {
+            return Results.Problem(
+                title: "Too many assistant requests.",
+                detail: "Please wait before sending another question.",
+                statusCode: StatusCodes.Status429TooManyRequests);
+        }
         return Results.Problem(
             title: "Garry is unavailable.",
             detail: "The assistant could not start a response. Please try again.",
@@ -209,8 +194,7 @@ app.MapPost("/api/assistant/messages", async (
             detail: "The assistant could not start a response. Please try again.",
             statusCode: StatusCodes.Status502BadGateway);
     }
-})
-    .RequireRateLimiting("assistant-per-user");
+});
 
 app.MapPut("/api/preferences", async (
     HttpContext context,

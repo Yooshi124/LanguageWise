@@ -1,10 +1,9 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using LanguageWise.ChatDiscussionService.Api.Models;
-using LanguageWise.ChatDiscussionService.Api.Options;
-using Microsoft.Extensions.Options;
 
 namespace LanguageWise.ChatDiscussionService.Api.Clients;
 
@@ -13,6 +12,46 @@ public interface IAssistantCompletionClient
     Task<AssistantCompletionStream> StartCompletionAsync(
         IReadOnlyList<AssistantChatMessage> messages,
         CancellationToken cancellationToken);
+}
+
+public sealed class GarryCompletionClient(HttpClient client, IHttpContextAccessor contextAccessor) : IAssistantCompletionClient
+{
+    public async Task<AssistantCompletionStream> StartCompletionAsync(
+        IReadOnlyList<AssistantChatMessage> messages, CancellationToken cancellationToken)
+    {
+        var context = contextAccessor.HttpContext ?? throw new InvalidOperationException("No assistant request context.");
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var token = authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+            ? authorization["Bearer ".Length..].Trim()
+            : context.Request.Cookies["token"];
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/completions")
+        {
+            Content = JsonContent.Create(new
+            {
+                message = messages[^1].Content,
+                history = messages.Skip(2).SkipLast(1),
+                domainRules = messages[0].Content,
+                canonicalContext = messages[1].Content
+            })
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var status = response.StatusCode;
+            response.Dispose();
+            throw new AssistantProviderException("Garry could not start the assistant.", status);
+        }
+        try
+        {
+            return new AssistantCompletionStream(response, await response.Content.ReadAsStreamAsync(cancellationToken), true);
+        }
+        catch
+        {
+            response.Dispose();
+            throw;
+        }
+    }
 }
 
 /// <summary>
@@ -26,81 +65,18 @@ public interface IAssistantEventStream : IAsyncDisposable
 }
 
 /// <summary>
-/// AI mode's model call. Opens a streaming chat completion against Ollama and
-/// hands back the raw response stream, so the first token can reach the browser
-/// long before the last one is written.
-/// </summary>
-public sealed class OllamaAssistantClient(
-    HttpClient httpClient,
-    IOptions<OllamaOptions> options) : IAssistantCompletionClient
-{
-    private readonly OllamaOptions options = options.Value;
-
-    public async Task<AssistantCompletionStream> StartCompletionAsync(
-        IReadOnlyList<AssistantChatMessage> messages,
-        CancellationToken cancellationToken)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "api/chat")
-        {
-            Content = JsonContent.Create(new OllamaChatRequest(
-                options.Model,
-                messages,
-                Stream: true,
-                Think: false,
-                new OllamaModelOptions(
-                    options.Temperature,
-                    options.TopP,
-                    options.MaxOutputTokens)))
-        };
-
-        var response = await httpClient.SendAsync(
-            request,
-            HttpCompletionOption.ResponseHeadersRead,
-            cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            var statusCode = response.StatusCode;
-            response.Dispose();
-
-            // A 404 here is almost always the model not having been pulled, which
-            // is worth separating from the model being there and refusing.
-            throw new AssistantProviderException(
-                "The assistant model rejected the request.",
-                statusCode);
-        }
-
-        // The response and its stream both stay alive until the caller disposes
-        // the AssistantCompletionStream, so only dispose here if handing it over fails.
-        var disposeResponse = true;
-        try
-        {
-            var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            disposeResponse = false;
-            return new AssistantCompletionStream(response, stream);
-        }
-        finally
-        {
-            if (disposeResponse)
-            {
-                response.Dispose();
-            }
-        }
-    }
-}
-
-/// <summary>
-/// Ollama's streaming response, read one chunk at a time. The wire format is
-/// newline-delimited JSON rather than server-sent events: one object per line,
-/// each carrying a fragment, and the last one flagged done.
+/// The assistant's streaming response. Garry relays server-sent events ("data: {...}"
+/// lines); the legacy Ollama newline-delimited JSON format is still parsed for test
+/// doubles that replay it directly.
 ///
-/// A stream that stops without that flag has lost part of the answer, so it is
+/// A stream that stops without a done event has lost part of the answer, so it is
 /// an error rather than a short reply — a truncated response is never passed off
 /// as a complete one.
 /// </summary>
 public sealed class AssistantCompletionStream(
     HttpResponseMessage response,
-    Stream responseStream) : IAssistantEventStream
+    Stream responseStream,
+    bool fromGarry = false) : IAssistantEventStream
 {
     internal const string DeltaType = "delta";
     internal const string DoneType = "done";
@@ -114,6 +90,25 @@ public sealed class AssistantCompletionStream(
     public async IAsyncEnumerable<ProviderStreamEvent> ReadEventsAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        if (fromGarry)
+        {
+            using var garryReader = new StreamReader(responseStream);
+            while (await garryReader.ReadLineAsync(cancellationToken) is { } garryLine)
+            {
+                if (!garryLine.StartsWith("data: ", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                var streamEvent = ParseGarryEvent(garryLine[6..]);
+                yield return streamEvent;
+                if (streamEvent.Type == DoneType)
+                {
+                    yield break;
+                }
+            }
+            throw new AssistantProviderStreamException();
+        }
+
         using var reader = new StreamReader(responseStream);
         var doneReceived = false;
 
@@ -149,6 +144,28 @@ public sealed class AssistantCompletionStream(
         responseStream.Dispose();
         response.Dispose();
         return ValueTask.CompletedTask;
+    }
+
+    private static ProviderStreamEvent ParseGarryEvent(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (root.TryGetProperty("content", out var content))
+            {
+                return ProviderStreamEvent.Delta(content.GetString()!);
+            }
+            if (root.TryGetProperty("reason", out var reason))
+            {
+                return ProviderStreamEvent.Done(reason.GetString() ?? "stop");
+            }
+        }
+        catch (JsonException)
+        {
+            throw new AssistantProviderStreamException();
+        }
+        throw new AssistantProviderStreamException();
     }
 
     private static IReadOnlyList<ProviderStreamEvent> ParseChunk(string line)

@@ -1,5 +1,3 @@
-using System.Text.Json.Serialization;
-
 namespace LanguageWise.LeaderboardAnalyticsService.Api.Models;
 
 public sealed record AssistantMessageRequest(
@@ -18,18 +16,6 @@ public sealed record AssistantDoneEvent(string Reason);
 public sealed record AssistantErrorEvent(string Message, string Code);
 
 public sealed record AssistantChatMessage(string Role, string Content);
-
-public sealed record OpenRouterChatRequest(
-    string Model,
-    IReadOnlyList<AssistantChatMessage> Messages,
-    bool Stream,
-    [property: JsonPropertyName("max_tokens")] int MaxTokens);
-
-public sealed record OllamaChatRequest(
-    string Model,
-    IReadOnlyList<AssistantChatMessage> Messages,
-    bool Stream,
-    bool Think);
 
 public sealed record ValidatedAssistantRequest(
     string Message,

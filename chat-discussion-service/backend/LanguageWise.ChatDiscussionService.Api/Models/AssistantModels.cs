@@ -1,5 +1,3 @@
-using System.Text.Json.Serialization;
-
 namespace LanguageWise.ChatDiscussionService.Api.Models;
 
 // ---------------------------------------------------------------------------
@@ -35,19 +33,5 @@ public sealed record AssistantDeltaEvent(string Content);
 public sealed record AssistantDoneEvent(string Reason);
 
 public sealed record AssistantErrorEvent(string Message, string Code);
-
-// The Ollama /api/chat wire shape. Its option names are snake_case and do not
-// match the C# ones, so they are spelled out rather than left to the serializer.
-public sealed record OllamaChatRequest(
-    string Model,
-    IReadOnlyList<AssistantChatMessage> Messages,
-    bool Stream,
-    bool Think,
-    OllamaModelOptions Options);
-
-public sealed record OllamaModelOptions(
-    double Temperature,
-    [property: JsonPropertyName("top_p")] double TopP,
-    [property: JsonPropertyName("num_predict")] int NumPredict);
 
 public sealed record AssistantChatMessage(string Role, string Content);

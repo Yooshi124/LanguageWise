@@ -2,19 +2,14 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography;
-using System.Threading.RateLimiting;
 using LanguageWise.ChatDiscussionService.Api;
 using LanguageWise.ChatDiscussionService.Api.Clients;
 using LanguageWise.ChatDiscussionService.Api.Models;
-using LanguageWise.ChatDiscussionService.Api.Options;
 using LanguageWise.ChatDiscussionService.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 const string ServiceName = "chat-discussion-service-backend";
-const string AssistantRateLimitPolicy = "assistant-per-user";
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -34,25 +29,10 @@ builder.Services.AddHttpClient<AchievementEventsClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(20);
 });
 
-// AI mode. The model runs in the shared 'ollama' container, so there is nothing
-// to configure beyond its address, which resolves by container name inside
-// Docker exactly as the database address above does.
-var ollamaServiceUrl = builder.Configuration["Services:Ollama"] ?? "http://localhost:11434";
-
-builder.Services
-    .AddOptions<OllamaOptions>()
-    .Bind(builder.Configuration.GetSection(OllamaOptions.SectionName))
-    .Validate(
-        options => !string.IsNullOrWhiteSpace(options.Model),
-        "Ollama:Model is required.")
-    .Validate(
-        options => options.MaxOutputTokens is > 0 and <= 8192,
-        "Ollama:MaxOutputTokens must be between 1 and 8192.")
-    .ValidateOnStart();
-
-builder.Services.AddHttpClient<IAssistantCompletionClient, OllamaAssistantClient>(client =>
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient<IAssistantCompletionClient, GarryCompletionClient>(client =>
 {
-    client.BaseAddress = new Uri(ollamaServiceUrl.TrimEnd('/') + "/");
+    client.BaseAddress = new Uri((builder.Configuration["Services:Garry"] ?? "http://localhost:5010").TrimEnd('/') + "/");
 
     // No timeout: the response is a stream that stays open for as long as the
     // model keeps writing, and the first token after a cold start is slow.
@@ -67,31 +47,6 @@ builder.Services.AddScoped<IAssistantContextService, AssistantContextService>();
 // The model is metered, so one signed-in user cannot spend the whole allowance.
 // Partitioned by 'sub' rather than IP: everyone here is signed in anyway, and a
 // shared campus address should not be one bucket.
-builder.Services.AddRateLimiter(options =>
-{
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.OnRejected = async (context, _) =>
-    {
-        if (!context.HttpContext.Response.HasStarted)
-        {
-            await Results.Problem(
-                title: "Too many assistant requests.",
-                detail: "Please wait a moment before sending another question.",
-                statusCode: StatusCodes.Status429TooManyRequests)
-                .ExecuteAsync(context.HttpContext);
-        }
-    };
-    options.AddPolicy(AssistantRateLimitPolicy, httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            httpContext.User.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? "anonymous",
-            _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 10,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0,
-                AutoReplenishment = true
-            }));
-});
 
 // Tokens are minted by shared-backend and signed with the private half of this
 // key pair. This service only ever verifies them.
@@ -138,7 +93,6 @@ var app = builder.Build();
 
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseRateLimiter();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = ServiceName }));
 
@@ -832,14 +786,13 @@ app.MapDelete("/api/images/{id:int}", (
 //
 // Guard is deliberately not used here. It reports an unreachable *database*,
 // which is the wrong thing to say about the assistant: the answer comes from
-// Ollama and the help topics it is grounded in are compiled in.
+// Garry and the help topics it is grounded in are compiled in.
 //
 // The answer is streamed as server-sent events, so every failure that can happen
 // before the first byte is a normal problem response, and everything after it is
 // an 'error' event inside the stream. See AssistantSseResult.
 //
-// A missing model is the exception: it degrades rather than failing, streaming
-// the retrieved help text in place of an answer. That only works before the
+// If Garry cannot start either provider, stream the retrieved help text. That only works before the
 // first fragment is sent — a model that dies part-way has already put half an
 // answer on screen, and swapping in the help text underneath it would be worse
 // than saying the response was interrupted.
@@ -868,10 +821,6 @@ app.MapPost("/api/assistant/messages", async (
     var assistantContext = await contextService.GetContextAsync(validation.Request, cancellationToken);
     var logger = loggerFactory.CreateLogger<AssistantSseResult>();
 
-    // No model is an expected condition, not an error: Ollama may not be running,
-    // or its model may never have been pulled. Either way the retrieved help text
-    // already answers "how do I create a post", so it is streamed instead and the
-    // browser labels it as coming from the help pages.
     IAssistantEventStream completion;
     try
     {
@@ -882,12 +831,20 @@ app.MapPost("/api/assistant/messages", async (
         completion = await completionClient.StartCompletionAsync(messages, cancellationToken);
     }
     catch (AssistantProviderException exception) when (
-        exception.StatusCode == HttpStatusCode.NotFound)
+        exception.StatusCode == HttpStatusCode.ServiceUnavailable)
     {
         app.Logger.LogWarning(
-            "The assistant model is not installed; answering from the help topics alone.");
+            "Garry could not start a response; answering from the help topics alone.");
 
         completion = new HelpTextEventStream(assistantContext.FallbackAnswer);
+    }
+    catch (AssistantProviderException exception) when (
+        exception.StatusCode == HttpStatusCode.TooManyRequests)
+    {
+        return Results.Problem(
+            title: "Too many assistant requests.",
+            detail: "Please wait before sending another question.",
+            statusCode: StatusCodes.Status429TooManyRequests);
     }
     catch (Exception exception) when (
         exception is HttpRequestException
@@ -915,8 +872,7 @@ app.MapPost("/api/assistant/messages", async (
 
     return new AssistantSseResult(completion, logger);
 })
-    .RequireAuthorization()
-    .RequireRateLimiting(AssistantRateLimitPolicy);
+    .RequireAuthorization();
 
 app.Run();
 

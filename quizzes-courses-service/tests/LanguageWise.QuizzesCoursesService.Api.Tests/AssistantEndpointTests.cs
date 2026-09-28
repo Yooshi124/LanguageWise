@@ -32,7 +32,7 @@ public sealed class AssistantEndpointTests
     }
 
     [Test]
-    public async Task PostMessages_WithoutApiKey_ReturnsServiceUnavailableBeforeStreaming()
+    public async Task PostMessages_WithoutLocalApiKey_StreamsViaGarry()
     {
         var completion = Completion.Success("Hello");
         using var fixture = new AssistantApiFixture(string.Empty, completion);
@@ -43,11 +43,11 @@ public sealed class AssistantEndpointTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.ServiceUnavailable));
-            Assert.That(response.Content.Headers.ContentType?.MediaType, Is.EqualTo("application/problem+json"));
-            Assert.That(body, Does.Contain("assistant is not configured"));
-            Assert.That(completion.CallCount, Is.Zero);
-            Assert.That(fixture.CatalogCallCount, Is.Zero);
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(response.Content.Headers.ContentType?.MediaType, Is.EqualTo("text/event-stream"));
+            Assert.That(body, Does.Contain("Hello"));
+            Assert.That(completion.CallCount, Is.EqualTo(1));
+            Assert.That(fixture.CatalogCallCount, Is.EqualTo(1));
         });
     }
 
@@ -138,7 +138,7 @@ public sealed class AssistantEndpointTests
             Assert.That(response.Content.Headers.ContentType?.MediaType, Is.EqualTo("application/problem+json"));
             Assert.That(body, Does.Not.Contain("TooManyRequests"));
             Assert.That(body, Does.Not.Contain("text/event-stream"));
-            Assert.That(body, Does.Contain("free model is busy"));
+            Assert.That(body, Does.Contain("Please wait before sending another assistant message"));
         });
     }
 
@@ -191,7 +191,7 @@ public sealed class AssistantEndpointTests
     }
 
     [Test]
-    public async Task PostMessages_EnforcesPerUserRateLimit()
+    public async Task PostMessages_DoesNotEnforceASecondLocalRateLimit()
     {
         using var fixture = new AssistantApiFixture("configured", Completion.Success("Hello"));
         using var client = fixture.CreateAuthenticatedClient();
@@ -204,16 +204,16 @@ public sealed class AssistantEndpointTests
             Assert.That(accepted.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         }
 
-        using var rejected = await client.PostAsJsonAsync(
+        using var acceptedAgain = await client.PostAsJsonAsync(
             "/api/assistant/messages",
             ValidHomeRequest());
 
         Assert.Multiple(() =>
         {
-            Assert.That(rejected.StatusCode, Is.EqualTo(HttpStatusCode.TooManyRequests));
+            Assert.That(acceptedAgain.StatusCode, Is.EqualTo(HttpStatusCode.OK));
             Assert.That(
-                rejected.Content.Headers.ContentType?.MediaType,
-                Is.EqualTo("application/problem+json"));
+                acceptedAgain.Content.Headers.ContentType?.MediaType,
+                Is.EqualTo("text/event-stream"));
         });
     }
 
