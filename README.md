@@ -29,6 +29,8 @@ Start the complete system from the repository root:
 docker compose up -d --build
 ```
 
+On machines using Podman, run `podman compose up -d --build` instead.
+
 ---
 
 ## Features
@@ -145,24 +147,31 @@ The authenticated SMTP username is always used as the sender address.
 
 ## Garry assistant configuration
 
-The quizzes and courses service includes Garry, a language-learning assistant
-powered through OpenRouter. The backend owns Garry's prompt, course and lesson
-context, model settings, and provider credentials. The browser only renders the
-streamed response and keeps a bounded transcript in `sessionStorage`; chats are
-not written to the database.
+Garry runs in a private container shared by all five assistant endpoints. Each
+feature backend verifies the signed-in user and supplies its authorized domain
+rules and current context; Garry adds the same personality everywhere and streams
+the reply. Garry tries OpenRouter first and falls back to the shared Ollama model
+when OpenRouter cannot start. The feature backends do not choose a provider. The
+browser keeps its existing assistant URLs and stores bounded transcripts in
+`sessionStorage`; chats are not written to the database.
 
 Copy the example environment file and add an OpenRouter API key:
 
 ```powershell
-Copy-Item quizzes-courses-service\backend\.env.example quizzes-courses-service\backend\.env
+Copy-Item garry-ai-service\backend\.env.example garry-ai-service\backend\.env
 ```
 
 ```text
 OpenRouter__ApiKey=your-openrouter-api-key
 ```
 
-Docker Compose loads this ignored file into the quizzes and courses backend.
-The default model is `google/gemma-4-26b-a4b-it`; override
-`OpenRouter__Model` in the same file if the model identifier changes. When no
-key is configured, the rest of the service remains available and Garry returns
-a clear unavailable response without exposing configuration details.
+Docker Compose loads this ignored file only into Garry. The default OpenRouter
+model is `google/gemma-4-26b-a4b-it`; `OpenRouter__Model`,
+`OpenRouter__BaseUrl`, and `OpenRouter__MaxOutputTokens` can be overridden there. Without a key, Garry uses
+Ollama. If neither provider can start, the discussion assistant uses its help
+articles; other assistants report temporary unavailability. Garry applies one
+10-request-per-minute limit per user across all five assistants. This limit is
+in memory, so Garry must remain a single replica unless a distributed limiter
+is introduced. Garry has no public port: the private Compose network is the
+trust boundary for service-supplied rules, while the forwarded user JWT verifies
+the learner's identity.

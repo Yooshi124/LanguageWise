@@ -15,6 +15,46 @@ public interface IAssistantCompletionClient
         CancellationToken cancellationToken);
 }
 
+public sealed class GarryCompletionClient(HttpClient client, IHttpContextAccessor contextAccessor) : IAssistantCompletionClient
+{
+    public async Task<AssistantCompletionStream> StartCompletionAsync(
+        IReadOnlyList<OpenRouterChatMessage> messages, CancellationToken cancellationToken)
+    {
+        var context = contextAccessor.HttpContext ?? throw new InvalidOperationException("No assistant request context.");
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var token = authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+            ? authorization["Bearer ".Length..].Trim()
+            : context.Request.Cookies["token"];
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/completions")
+        {
+            Content = JsonContent.Create(new
+            {
+                message = messages[^1].Content,
+                history = messages.Skip(2).SkipLast(1),
+                domainRules = messages[0].Content,
+                canonicalContext = messages[1].Content
+            })
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var status = response.StatusCode;
+            response.Dispose();
+            throw new AssistantProviderException("Garry could not start the assistant.", status);
+        }
+        try
+        {
+            return new AssistantCompletionStream(response, await response.Content.ReadAsStreamAsync(cancellationToken), true);
+        }
+        catch
+        {
+            response.Dispose();
+            throw;
+        }
+    }
+}
+
 public sealed class OpenRouterAssistantClient(
     HttpClient httpClient,
     IOptions<OpenRouterOptions> options) : IAssistantCompletionClient
@@ -86,11 +126,31 @@ public sealed class OpenRouterAssistantClient(
 
 public sealed class AssistantCompletionStream(
     HttpResponseMessage response,
-    Stream responseStream) : IAsyncDisposable
+    Stream responseStream,
+    bool fromGarry = false) : IAsyncDisposable
 {
     public async IAsyncEnumerable<ProviderStreamEvent> ReadEventsAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        if (fromGarry)
+        {
+            using var garryReader = new StreamReader(responseStream);
+            while (await garryReader.ReadLineAsync(cancellationToken) is { } garryLine)
+            {
+                if (!garryLine.StartsWith("data: ", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                var streamEvent = ParseGarryEvent(garryLine[6..]);
+                yield return streamEvent;
+                if (streamEvent.Type == "done")
+                {
+                    yield break;
+                }
+            }
+            throw new AssistantProviderStreamException();
+        }
+
         using var reader = new StreamReader(responseStream);
         var dataLines = new List<string>();
         var doneReceived = false;
@@ -146,6 +206,28 @@ public sealed class AssistantCompletionStream(
         responseStream.Dispose();
         response.Dispose();
         return ValueTask.CompletedTask;
+    }
+
+    private static ProviderStreamEvent ParseGarryEvent(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (root.TryGetProperty("content", out var content))
+            {
+                return ProviderStreamEvent.Delta(content.GetString()!);
+            }
+            if (root.TryGetProperty("reason", out var reason))
+            {
+                return ProviderStreamEvent.Done(reason.GetString() ?? "stop");
+            }
+        }
+        catch (JsonException)
+        {
+            throw new AssistantProviderStreamException();
+        }
+        throw new AssistantProviderStreamException();
     }
 
     private static IReadOnlyList<ProviderStreamEvent> ParseEvent(IReadOnlyList<string> dataLines)

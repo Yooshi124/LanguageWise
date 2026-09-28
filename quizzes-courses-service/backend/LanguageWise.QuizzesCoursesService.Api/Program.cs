@@ -35,54 +35,15 @@ builder.Services.AddHttpClient<AchievementEventsClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(20);
 });
 
-builder.Services
-    .AddOptions<OpenRouterOptions>()
-    .Bind(builder.Configuration.GetSection(OpenRouterOptions.SectionName))
-    .Validate(
-        options => Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out _),
-        "OpenRouter:BaseUrl must be an absolute URL.")
-    .Validate(
-        options => !string.IsNullOrWhiteSpace(options.Model),
-        "OpenRouter:Model is required.")
-    .Validate(
-        options => options.MaxOutputTokens is > 0 and <= 8192,
-        "OpenRouter:MaxOutputTokens must be between 1 and 8192.")
-    .ValidateOnStart();
-builder.Services.AddHttpClient<IAssistantCompletionClient, OpenRouterAssistantClient>(
-    (services, client) =>
-    {
-        var options = services.GetRequiredService<IOptions<OpenRouterOptions>>().Value;
-        client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
-        client.Timeout = Timeout.InfiniteTimeSpan;
-    });
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient<IAssistantCompletionClient, GarryCompletionClient>(client =>
+{
+    client.BaseAddress = new Uri((builder.Configuration["Services:Garry"] ?? "http://localhost:5010").TrimEnd('/') + "/");
+    client.Timeout = Timeout.InfiniteTimeSpan;
+});
 builder.Services.AddSingleton<AssistantRequestValidator>();
 builder.Services.AddSingleton<IAssistantPromptBuilder, AssistantPromptBuilder>();
 builder.Services.AddScoped<IAssistantContextService, AssistantContextService>();
-builder.Services.AddRateLimiter(options =>
-{
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.OnRejected = async (context, cancellationToken) =>
-    {
-        if (!context.HttpContext.Response.HasStarted)
-        {
-            await Results.Problem(
-                title: "Too many assistant requests.",
-                detail: "Please wait before sending another assistant message.",
-                statusCode: StatusCodes.Status429TooManyRequests)
-                .ExecuteAsync(context.HttpContext);
-        }
-    };
-    options.AddPolicy("assistant-per-user", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            httpContext.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value ?? "anonymous",
-            _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 10,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0,
-                AutoReplenishment = true
-            }));
-});
 
 var verificationKeyPath = builder.Configuration["Auth:VerificationKeyPath"] ?? "/run/secrets/signing_public_key";
 var rsa = RSA.Create();
@@ -127,7 +88,6 @@ var app = builder.Build();
 
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseRateLimiter();
 
 app.MapGet("/health", async (
     CatalogClient client,
@@ -199,7 +159,6 @@ app.MapPost("/api/assistant/messages", async (
     IAssistantContextService contextService,
     IAssistantPromptBuilder promptBuilder,
     IAssistantCompletionClient completionClient,
-    IOptions<OpenRouterOptions> openRouterOptions,
     ILoggerFactory loggerFactory,
     CancellationToken cancellationToken) =>
 {
@@ -208,14 +167,6 @@ app.MapPost("/api/assistant/messages", async (
     {
         return Results.ValidationProblem(
             validation.Errors.ToDictionary(error => error.Key, error => error.Value));
-    }
-
-    if (string.IsNullOrWhiteSpace(openRouterOptions.Value.ApiKey))
-    {
-        return Results.Problem(
-            title: "The assistant is not configured.",
-            detail: "The assistant service is temporarily unavailable.",
-            statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 
     AssistantContextResult assistantContext;
@@ -283,7 +234,7 @@ app.MapPost("/api/assistant/messages", async (
         {
             return Results.Problem(
                 title: "Garry is temporarily rate limited.",
-                detail: "OpenRouter's free model is busy or its request allowance has been reached. Please wait and try again.",
+                detail: "Please wait before sending another assistant message.",
                 statusCode: StatusCodes.Status429TooManyRequests);
         }
 
@@ -302,8 +253,7 @@ app.MapPost("/api/assistant/messages", async (
             detail: "The assistant could not start a response. Please try again.",
             statusCode: StatusCodes.Status502BadGateway);
     }
-})
-    .RequireRateLimiting("assistant-per-user");
+});
 
 app.MapGet("/api/courses", async (CatalogClient client, CancellationToken cancellationToken) =>
     await ExecuteAsync(

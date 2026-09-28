@@ -526,13 +526,12 @@ public sealed class AuthorizationTests
         });
     }
 
-    /// <summary>Ollama's answer when the model has never been pulled.</summary>
     [Test]
-    public async Task AssistantMessages_WhenTheModelIsNotInstalled_StreamsTheHelpTextInstead()
+    public async Task AssistantMessages_WhenBothProvidersFail_StreamsTheHelpTextInstead()
     {
         using var fixture = new ApiFixture
         {
-            AssistantOverride = new FailingAssistantCompletionClient(HttpStatusCode.NotFound)
+            AssistantOverride = new FailingAssistantCompletionClient(HttpStatusCode.ServiceUnavailable)
         };
         using var client = fixture.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
