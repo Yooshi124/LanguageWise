@@ -4,8 +4,6 @@ using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using LanguageWise.ChatDiscussionService.Api.Models;
-using LanguageWise.ChatDiscussionService.Api.Options;
-using Microsoft.Extensions.Options;
 
 namespace LanguageWise.ChatDiscussionService.Api.Clients;
 
@@ -67,75 +65,11 @@ public interface IAssistantEventStream : IAsyncDisposable
 }
 
 /// <summary>
-/// AI mode's model call. Opens a streaming chat completion against Ollama and
-/// hands back the raw response stream, so the first token can reach the browser
-/// long before the last one is written.
-/// </summary>
-public sealed class OllamaAssistantClient(
-    HttpClient httpClient,
-    IOptions<OllamaOptions> options) : IAssistantCompletionClient
-{
-    private readonly OllamaOptions options = options.Value;
-
-    public async Task<AssistantCompletionStream> StartCompletionAsync(
-        IReadOnlyList<AssistantChatMessage> messages,
-        CancellationToken cancellationToken)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "api/chat")
-        {
-            Content = JsonContent.Create(new OllamaChatRequest(
-                options.Model,
-                messages,
-                Stream: true,
-                Think: false,
-                new OllamaModelOptions(
-                    options.Temperature,
-                    options.TopP,
-                    options.MaxOutputTokens)))
-        };
-
-        var response = await httpClient.SendAsync(
-            request,
-            HttpCompletionOption.ResponseHeadersRead,
-            cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            var statusCode = response.StatusCode;
-            response.Dispose();
-
-            // A 404 here is almost always the model not having been pulled, which
-            // is worth separating from the model being there and refusing.
-            throw new AssistantProviderException(
-                "The assistant model rejected the request.",
-                statusCode);
-        }
-
-        // The response and its stream both stay alive until the caller disposes
-        // the AssistantCompletionStream, so only dispose here if handing it over fails.
-        var disposeResponse = true;
-        try
-        {
-            var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            disposeResponse = false;
-            return new AssistantCompletionStream(response, stream);
-        }
-        finally
-        {
-            if (disposeResponse)
-            {
-                response.Dispose();
-            }
-        }
-    }
-}
-
-/// <summary>
-/// Ollama's streaming response, read one chunk at a time. The wire format is
-/// newline-delimited JSON rather than server-sent events: one object per line,
-/// each carrying a fragment, and the last one flagged done.
+/// The assistant's streaming response. Garry relays server-sent events ("data: {...}"
+/// lines); the legacy Ollama newline-delimited JSON format is still parsed for test
+/// doubles that replay it directly.
 ///
-/// A stream that stops without that flag has lost part of the answer, so it is
+/// A stream that stops without a done event has lost part of the answer, so it is
 /// an error rather than a short reply — a truncated response is never passed off
 /// as a complete one.
 /// </summary>

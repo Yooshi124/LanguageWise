@@ -29,7 +29,7 @@ public sealed class CompletionResult(ProviderStream stream, ILogger<CompletionRe
             }
             catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested) { }
             catch (IOException) when (context.RequestAborted.IsCancellationRequested) { }
-            catch (Exception exception) when (exception is IOException or JsonException or HttpRequestException or InvalidOperationException)
+            catch (Exception exception) when (exception is IOException or JsonException or HttpRequestException or InvalidOperationException or InvalidDataException)
             {
                 logger.LogWarning("Provider stream ended unexpectedly: {ErrorType}", exception.GetType().Name);
                 await SendAsync(context.Response, "error", new

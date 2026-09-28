@@ -2,15 +2,11 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography;
-using System.Threading.RateLimiting;
 using LanguageWise.ChatDiscussionService.Api;
 using LanguageWise.ChatDiscussionService.Api.Clients;
 using LanguageWise.ChatDiscussionService.Api.Models;
-using LanguageWise.ChatDiscussionService.Api.Options;
 using LanguageWise.ChatDiscussionService.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 const string ServiceName = "chat-discussion-service-backend";

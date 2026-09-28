@@ -3,8 +3,6 @@ using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using LanguageWise.QuizzesCoursesService.Api.Models;
-using LanguageWise.QuizzesCoursesService.Api.Options;
-using Microsoft.Extensions.Options;
 
 namespace LanguageWise.QuizzesCoursesService.Api.Clients;
 
@@ -51,75 +49,6 @@ public sealed class GarryCompletionClient(HttpClient client, IHttpContextAccesso
         {
             response.Dispose();
             throw;
-        }
-    }
-}
-
-public sealed class OpenRouterAssistantClient(
-    HttpClient httpClient,
-    IOptions<OpenRouterOptions> options) : IAssistantCompletionClient
-{
-    private const int MaximumRateLimitRetries = 3;
-    private readonly OpenRouterOptions options = options.Value;
-
-    public async Task<AssistantCompletionStream> StartCompletionAsync(
-        IReadOnlyList<OpenRouterChatMessage> messages,
-        CancellationToken cancellationToken)
-    {
-        for (var attempt = 0; ; attempt++)
-        {
-            using var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
-            {
-                Content = JsonContent.Create(new OpenRouterChatRequest(
-                    options.Model,
-                    messages,
-                    Stream: true,
-                    options.MaxOutputTokens))
-            };
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey);
-            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
-
-            var response = await httpClient.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken);
-            if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests &&
-                attempt < MaximumRateLimitRetries)
-            {
-                var retryDelay = response.Headers.RetryAfter?.Delta ??
-                    TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
-                response.Dispose();
-                await Task.Delay(
-                    retryDelay > TimeSpan.FromSeconds(8)
-                        ? TimeSpan.FromSeconds(8)
-                        : retryDelay,
-                    cancellationToken);
-                continue;
-            }
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var statusCode = response.StatusCode;
-                response.Dispose();
-                throw new AssistantProviderException(
-                    "The assistant provider rejected the request.",
-                    statusCode);
-            }
-
-            var disposeResponse = true;
-            try
-            {
-                var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-                disposeResponse = false;
-                return new AssistantCompletionStream(response, stream);
-            }
-            finally
-            {
-                if (disposeResponse)
-                {
-                    response.Dispose();
-                }
-            }
         }
     }
 }

@@ -65,6 +65,20 @@ public sealed class CompletionEndpointTests
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
     }
 
+    [Test]
+    public async Task Completion_WhenProviderStreamTruncates_SendsErrorEventInsteadOfCrashing()
+    {
+        using var fixture = new GarryFixture("{\"message\":{\"content\":\"Hello\"},\"done\":false}\n");
+        using var client = fixture.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
+
+        using var response = await client.PostAsJsonAsync("/api/completions", ValidRequest("game rules"));
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.That(content, Does.Contain("event: error"));
+    }
+
     private static object ValidRequest(string rules) => new
     {
         message = "Explain this",
@@ -73,7 +87,7 @@ public sealed class CompletionEndpointTests
         canonicalContext = "{}"
     };
 
-    private sealed class GarryFixture : WebApplicationFactory<Program>
+    private sealed class GarryFixture(string? ollamaResponseBody = null) : WebApplicationFactory<Program>
     {
         private readonly RSA rsa = RSA.Create(2048);
         private readonly string keyPath = Path.Combine(Path.GetTempPath(), $"garry-test-{Guid.NewGuid():N}.pem");
@@ -91,7 +105,7 @@ public sealed class CompletionEndpointTests
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IHttpClientFactory>();
-                services.AddSingleton<IHttpClientFactory>(new OllamaFactory());
+                services.AddSingleton<IHttpClientFactory>(new OllamaFactory(ollamaResponseBody));
             });
         }
 
@@ -120,22 +134,23 @@ public sealed class CompletionEndpointTests
         }
     }
 
-    private sealed class OllamaFactory : IHttpClientFactory
+    private sealed class OllamaFactory(string? responseBody = null) : IHttpClientFactory
     {
-        public HttpClient CreateClient(string name) => new(new Handler())
+        public HttpClient CreateClient(string name) => new(new Handler(responseBody))
         {
             BaseAddress = new Uri("http://localhost/")
         };
     }
 
-    private sealed class Handler : HttpMessageHandler
+    private sealed class Handler(string? responseBody = null) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(
-                    "{\"message\":{\"content\":\"Hello\"},\"done\":false}\n" +
-                    "{\"done\":true,\"done_reason\":\"stop\"}\n", Encoding.UTF8)
+                    responseBody ??
+                        "{\"message\":{\"content\":\"Hello\"},\"done\":false}\n" +
+                        "{\"done\":true,\"done_reason\":\"stop\"}\n", Encoding.UTF8)
             });
     }
 }
