@@ -154,7 +154,7 @@ app.MapGet("/api/posts", (
     HttpContext context,
     DiscussionClient client,
     CancellationToken cancellationToken,
-    int? userId = null,
+    bool mine = false,
     string? forumCode = null,
     string? q = null,
     string? sort = null,
@@ -176,13 +176,19 @@ app.MapGet("/api/posts", (
             });
         }
 
+        var viewerId = DiscussionRules.GetUserId(context.User);
+        if (mine && viewerId is null)
+        {
+            return Results.Unauthorized();
+        }
+
         var posts = await client.GetPostsAsync(
-            userId,
+            mine ? viewerId : null,
             forumCode,
             q,
             limit,
             offset,
-            DiscussionRules.GetUserId(context.User),
+            viewerId,
             cancellationToken);
 
         return Results.Ok(posts);
@@ -283,7 +289,8 @@ app.MapPost("/api/posts", (
     Guard(async () =>
     {
         var userId = DiscussionRules.GetUserId(context.User);
-        if (userId is null)
+        var userName = DiscussionRules.GetUserName(context.User);
+        if (userId is null || string.IsNullOrWhiteSpace(userName))
         {
             return Results.Unauthorized();
         }
@@ -298,7 +305,7 @@ app.MapPost("/api/posts", (
 
         var created = await client.CreatePostAsync(
             userId.Value,
-            DiscussionRules.GetUserName(context.User),
+            userName,
             request!.Title!.Trim(),
             request.Content!.Trim(),
             request.ForumCode!.Trim(),
@@ -399,7 +406,8 @@ app.MapPost("/api/posts/{id:int}/comments", (
     Guard(async () =>
     {
         var userId = DiscussionRules.GetUserId(context.User);
-        if (userId is null)
+        var userName = DiscussionRules.GetUserName(context.User);
+        if (userId is null || string.IsNullOrWhiteSpace(userName))
         {
             return Results.Unauthorized();
         }
@@ -413,7 +421,7 @@ app.MapPost("/api/posts/{id:int}/comments", (
         var created = await client.CreateCommentAsync(
             id,
             userId.Value,
-            DiscussionRules.GetUserName(context.User),
+            userName,
             request!.Content!.Trim(),
             cancellationToken);
 

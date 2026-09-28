@@ -40,6 +40,80 @@ public sealed class AuthorizationTests
     }
 
     [Test]
+    public async Task GetPosts_MineWithoutToken_ReturnsUnauthorized()
+    {
+        using var fixture = new ApiFixture();
+        using var client = fixture.CreateClient();
+
+        var response = await client.GetAsync("/api/posts?mine=true");
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+    }
+
+    [Test]
+    public async Task GetPosts_Mine_FiltersByTheSignedInUser()
+    {
+        using var fixture = new ApiFixture();
+        using var client = fixture.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
+
+        var response = await client.GetAsync("/api/posts?mine=true");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(
+                fixture.Database.LastRequestUri?.Query,
+                Does.Contain($"userId={FakeDiscussionDatabase.SignedInUserId}&"));
+        });
+    }
+
+    [Test]
+    public async Task GetPosts_IgnoresAUserIdInTheQuery()
+    {
+        using var fixture = new ApiFixture();
+        using var client = fixture.CreateClient();
+
+        await client.GetAsync($"/api/posts?userId={FakeDiscussionDatabase.OtherUserId}");
+
+        Assert.That(fixture.Database.LastRequestUri?.Query, Does.Not.Contain("userId="));
+    }
+
+    [Test]
+    public async Task CreatePost_WithTokenWithoutAName_ReturnsUnauthorized()
+    {
+        using var fixture = new ApiFixture();
+        using var client = fixture.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", fixture.CreateToken(name: null));
+
+        var response = await client.PostAsJsonAsync(
+            "/api/posts",
+            new { title = "Hello", content = "World", forumCode = "global" });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+            Assert.That(fixture.Database.LastRequestMethod, Is.Not.EqualTo(HttpMethod.Post));
+        });
+    }
+
+    [Test]
+    public async Task CreateComment_WithTokenWithBlankName_ReturnsUnauthorized()
+    {
+        using var fixture = new ApiFixture();
+        using var client = fixture.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", fixture.CreateToken(name: " "));
+
+        var response = await client.PostAsJsonAsync("/api/posts/1/comments", new { content = "Hi" });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+            Assert.That(fixture.Database.LastRequestMethod, Is.Not.EqualTo(HttpMethod.Post));
+        });
+    }
+
+    [Test]
     public async Task CreatePost_WithoutToken_ReturnsUnauthorized()
     {
         using var fixture = new ApiFixture();
@@ -950,14 +1024,17 @@ public sealed class AuthorizationTests
         /// </summary>
         internal IAssistantCompletionClient? AssistantOverride { get; set; }
 
-        internal string CreateToken()
+        internal string CreateToken(string? name = "lachlan")
         {
+            List<Claim> claims = [new Claim(JwtRegisteredClaimNames.Sub, FakeDiscussionDatabase.SignedInUserId.ToString())];
+            if (name is not null)
+            {
+                claims.Add(new Claim(JwtRegisteredClaimNames.Name, name));
+            }
+
             var descriptor = new SecurityTokenDescriptor
             {
-                Subject = new ClaimsIdentity([
-                    new Claim(JwtRegisteredClaimNames.Sub, FakeDiscussionDatabase.SignedInUserId.ToString()),
-                    new Claim(JwtRegisteredClaimNames.Name, "lachlan")
-                ]),
+                Subject = new ClaimsIdentity(claims),
                 Expires = DateTime.UtcNow.AddMinutes(5),
                 SigningCredentials = new SigningCredentials(new RsaSecurityKey(rsa), SecurityAlgorithms.RsaSha256)
             };

@@ -33,6 +33,21 @@ builder.Services.AddHttpClient<CourseCatalogClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(10);
 });
 
+var usersServiceUrl = builder.Configuration["Services:Users"] ?? "http://localhost:6000";
+builder.Services.AddHttpClient(nameof(UserDirectoryClient), client =>
+{
+    client.BaseAddress = new Uri(usersServiceUrl.TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
+
+var authorNameSyncInterval = TimeSpan.FromMinutes(
+    builder.Configuration.GetValue("AuthorNames:SyncIntervalMinutes", 5));
+builder.Services.AddHostedService(serviceProvider => new AuthorNameSync(
+    serviceProvider.GetRequiredService<DiscussionRepository>(),
+    serviceProvider.GetRequiredService<IHttpClientFactory>(),
+    authorNameSyncInterval,
+    serviceProvider.GetRequiredService<ILogger<AuthorNameSync>>()));
+
 var app = builder.Build();
 app.Services.GetRequiredService<DatabaseInitializer>().Initialise();
 

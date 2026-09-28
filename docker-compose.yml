@@ -189,6 +189,7 @@ services:
     environment:
       Database__Path: /data/chat-discussion-service.db
       Services__Courses: http://quizzes-courses-service-db:8080
+      Services__Users: http://shared-db:8080
     volumes:
       - chat-discussion-service-db-data:/data
     ports:

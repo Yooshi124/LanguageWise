@@ -16,7 +16,7 @@ let debounce = null;
 
 const activeTerm = computed(() => (typeof route.query.q === 'string' ? route.query.q : ''));
 
-const filter = computed(() => ({ userId: me.value?.id, q: route.query.q || undefined }));
+const filter = computed(() => ({ mine: true, q: route.query.q || undefined }));
 
 watch(term, (value) => {
     window.clearTimeout(debounce);
@@ -37,7 +37,7 @@ watch(activeTerm, (value) => {
     }
 });
 
-watch(filter, () => load(filter.value), { deep: true });
+watch([filter, () => me.value?.id], () => load(filter.value), { deep: true });
 
 onMounted(() => load(filter.value));
 onBeforeUnmount(() => window.clearTimeout(debounce));

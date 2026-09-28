@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue';
+import AuthorAvatar from './AuthorAvatar.vue';
 import ConfirmDialog from './ConfirmDialog.vue';
 import ImageGallery from './ImageGallery.vue';
 import ImagePicker from './ImagePicker.vue';
@@ -119,7 +120,10 @@ function onLike({ liked, count }) {
 
 <template>
     <li class="cd-comment">
-        <p class="cd-comment__author">{{ comment.authorName || 'Unknown author' }}</p>
+        <p class="cd-comment__author">
+            <AuthorAvatar :user-id="comment.userId" :name="comment.authorName" />
+            <span>{{ comment.authorName || 'Unknown author' }}</span>
+        </p>
         <p class="cd-comment__meta">
             <span>{{ formatDate(comment.createdAt) }}</span>
             <span v-if="comment.updatedAt !== comment.createdAt" class="cd-comment__edited">(edited)</span>

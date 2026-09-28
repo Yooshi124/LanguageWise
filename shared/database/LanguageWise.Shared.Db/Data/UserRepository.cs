@@ -97,6 +97,30 @@ public sealed class UserRepository(string connectionString)
         }
     }
 
+    public IReadOnlyList<UserAccount> GetUsernames(IReadOnlyCollection<int> userIds)
+    {
+        using var connection = new SqliteConnection(connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, Username
+            FROM Users
+            WHERE Id IN (SELECT value FROM json_each($userIds))
+            ORDER BY Id;
+            """;
+        command.Parameters.AddWithValue("$userIds", System.Text.Json.JsonSerializer.Serialize(userIds));
+
+        using var reader = command.ExecuteReader();
+        var accounts = new List<UserAccount>();
+        while (reader.Read())
+        {
+            accounts.Add(MapUserAccount(reader));
+        }
+
+        return accounts;
+    }
+
     public int? RecordLogin(int userId, DateOnly today)
     {
         using var connection = new SqliteConnection(connectionString);
