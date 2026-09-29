@@ -60,7 +60,7 @@ All tools are read-only, validate their inputs, time out after 10 s, cap results
 | `courses_list_quizzes` | `courseCode` | `GET /api/courses/{code}/quizzes` (no questions or answers) |
 | `courses_get_flashcards` | `courseCode`, `lessonSlug` | `GET /api/courses/{code}/flashcard-decks/{slug}` |
 | `courses_get_my_vocabulary` | `courseCode` (optional) | `GET /api/me/vocabulary` |
-| `courses_get_my_milestones` | `limit` (1-50, default 10) | `GET /api/me/milestones` |
+| `courses_get_my_milestones` | `limit` (1-50, default 10) | `GET /api/me/milestones`, plus `/api/courses`, `/lessons` and `/quizzes` to add names |
 
 Quiz details (`GET /api/quizzes/{id}`) and every write endpoint are deliberately not exposed: the first can include answers, and tools must stay read-only.
 

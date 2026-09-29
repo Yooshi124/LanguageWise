@@ -14,7 +14,7 @@ public sealed class GarryToolLoop(
 	ILogger<GarryToolLoop> logger)
 {
 	public const int MaxRounds = 3;
-	public const int MaxToolCalls = 5;
+	public const int MaxToolCalls = 8;
 	private const int MaxToolResultChars = 8000;
 	private const string ToolInstructions = """
 		You can call LanguageWise tools to fetch live data for the signed-in user. Call a tool only when
@@ -65,21 +65,32 @@ public sealed class GarryToolLoop(
 		}
 
 		var callsMade = 0;
+		var callsOverLimit = 0;
+		var completedCalls = new Dictionary<string, ToolEvent>(StringComparer.Ordinal);
 		for (var round = 0; round < MaxRounds; round++)
 		{
 			var reply = await CompleteAsync(provider, messages, toolSchema, allowTools: true, cancellationToken);
 			if (reply.ToolCalls.Count == 0)
 			{
+				LogLimitReached(request.ToolScope, callsOverLimit, roundsExhausted: false);
 				return reply.Content;
 			}
 
 			messages.Add(reply.AssistantMessage);
 			foreach (var call in reply.ToolCalls)
 			{
+				var callKey = $"{call.Name}:{call.Arguments?.GetRawText()}";
 				ToolEvent toolEvent;
-				if (callsMade >= MaxToolCalls)
+				var showInUi = true;
+				if (completedCalls.TryGetValue(callKey, out var previous))
+				{
+					toolEvent = previous;
+					showInUi = false;
+				}
+				else if (callsMade >= MaxToolCalls)
 				{
 					toolEvent = Failed(call, "Tool call limit reached.");
+					callsOverLimit++;
 				}
 				else if (!toolNames.Contains(call.Name))
 				{
@@ -93,15 +104,30 @@ public sealed class GarryToolLoop(
 				{
 					callsMade++;
 					toolEvent = await CallToolAsync(session, call.Name, arguments, cancellationToken);
+					completedCalls[callKey] = toolEvent;
 				}
 
-				await onTool(toolEvent);
+				if (showInUi)
+				{
+					await onTool(toolEvent);
+				}
 				messages.Add(ToolMessage(provider, call, toolEvent));
 			}
 		}
 
+		LogLimitReached(request.ToolScope, callsOverLimit, roundsExhausted: true);
 		var final = await CompleteAsync(provider, messages, toolSchema, allowTools: false, cancellationToken);
 		return final.Content;
+	}
+
+	private void LogLimitReached(string scope, int callsOverLimit, bool roundsExhausted)
+	{
+		if (callsOverLimit > 0 || roundsExhausted)
+		{
+			logger.LogWarning(
+				"Tool loop limit reached for scope {Scope}: {CallsOverLimit} call(s) over the {MaxToolCalls}-call limit, rounds exhausted: {RoundsExhausted}",
+				scope, callsOverLimit, MaxToolCalls, roundsExhausted);
+		}
 	}
 
 	private string? SelectProvider()

@@ -91,26 +91,35 @@ public sealed class StubHttpMessageHandler : HttpMessageHandler
 	public List<HttpRequestMessage> Requests { get; } = [];
 	public HttpStatusCode StatusCode { get; set; } = HttpStatusCode.OK;
 	public string Body { get; set; } = "[]";
+	public Dictionary<string, string> BodiesByPath { get; } = [];
 	public bool Throw { get; set; }
 
 	public void Reset()
 	{
-		Requests.Clear();
+		lock (Requests)
+		{
+			Requests.Clear();
+		}
 		StatusCode = HttpStatusCode.OK;
 		Body = "[]";
+		BodiesByPath.Clear();
 		Throw = false;
 	}
 
 	protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
 	{
-		Requests.Add(request);
+		lock (Requests)
+		{
+			Requests.Add(request);
+		}
 		if (Throw)
 		{
 			throw new HttpRequestException("connection refused");
 		}
+		var body = BodiesByPath.TryGetValue(request.RequestUri!.PathAndQuery, out var routed) ? routed : Body;
 		return Task.FromResult(new HttpResponseMessage(StatusCode)
 		{
-			Content = new StringContent(Body, Encoding.UTF8, "application/json")
+			Content = new StringContent(body, Encoding.UTF8, "application/json")
 		});
 	}
 }

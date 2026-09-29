@@ -23,9 +23,16 @@ public sealed record CourseVocabularyItem(string CourseCode, string CourseTitle,
 public sealed record LessonVocabularyItem(string LessonSlug, string LessonTitle, IReadOnlyList<VocabularyItem> Vocabulary);
 
 public sealed record MyMilestonesResult(IReadOnlyList<MilestoneItem> Milestones);
-public sealed record MilestoneItem(string Kind, int? CourseId, int? LessonId, int? QuizId, DateTimeOffset CompletedAt);
+public sealed record MilestoneItem(
+	string Kind,
+	string? CourseCode,
+	string? CourseTitle,
+	string? LessonSlug,
+	string? LessonTitle,
+	string? QuizTitle,
+	DateTimeOffset CompletedAt);
 
-internal sealed record CourseDto(string Code, string Title, string Description);
+internal sealed record CourseDto(int Id, string Code, string Title, string Description);
 internal sealed record LessonDetailDto(CourseDto? Course, string Slug, string Title, List<VocabularyDto>? Vocabulary);
 internal sealed record VocabularyDto(string Word, string Meaning);
 internal sealed record CourseProgressDto(bool CourseCompleted, List<LessonProgressDto>? Lessons, List<QuizProgressDto>? Quizzes);

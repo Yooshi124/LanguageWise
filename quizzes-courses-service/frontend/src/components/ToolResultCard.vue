@@ -100,7 +100,7 @@ const view = computed<ToolView>(() => {
 		case 'courses_get_my_milestones':
 			return {
 				rows: list(value.milestones).map((milestone) => ({
-					primary: `${capitalise(text(milestone.kind))} completed`,
+					primary: milestoneName(milestone),
 					secondary: formatDate(text(milestone.completedAt)),
 				})),
 			}
@@ -132,6 +132,21 @@ function number(value: unknown) {
 
 function capitalise(value: string) {
 	return value ? value[0]!.toUpperCase() + value.slice(1) : 'Milestone'
+}
+
+function milestoneName(milestone: Record<string, unknown>) {
+	const kind = text(milestone.kind)
+	const name =
+		kind === 'quiz'
+			? text(milestone.quizTitle)
+			: kind === 'lesson'
+				? text(milestone.lessonTitle)
+				: text(milestone.courseTitle)
+	const course = kind === 'course' ? '' : text(milestone.courseTitle)
+	if (!name) {
+		return `${capitalise(kind)} completed`
+	}
+	return course ? `${capitalise(kind)}: ${name} (${course})` : `${capitalise(kind)}: ${name}`
 }
 
 function formatDate(value: string) {

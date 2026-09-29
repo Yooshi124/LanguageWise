@@ -242,26 +242,53 @@ public sealed class McpEndpointTests
 	}
 
 	[Test]
-	public async Task GetMyMilestones_ReturnsMostRecentFirstWithKind()
+	public async Task GetMyMilestones_ReturnsMostRecentFirstWithNames()
 	{
-		factory.Downstream.Body = """
+		factory.Downstream.BodiesByPath["/api/me/milestones?limit=200"] = """
 			{"items":[
-			 {"id":1,"userId":42,"courseId":null,"lessonId":1,"quizId":null,"completedAt":"2026-09-01T10:00:00+00:00"},
+			 {"id":1,"userId":42,"courseId":null,"lessonId":11,"quizId":null,"completedAt":"2026-09-01T10:00:00+00:00"},
 			 {"id":2,"userId":42,"courseId":null,"lessonId":null,"quizId":7,"completedAt":"2026-09-02T10:00:00+00:00"},
 			 {"id":3,"userId":42,"courseId":3,"lessonId":null,"quizId":null,"completedAt":"2026-09-03T10:00:00+00:00"}],
 			 "nextCursor":null}
 			""";
+		factory.Downstream.BodiesByPath["/api/courses"] = """
+			[{"id":3,"code":"it","title":"Italian","description":"Start speaking Italian."}]
+			""";
+		factory.Downstream.BodiesByPath["/api/courses/it/lessons"] = """
+			[{"id":11,"slug":"greetings","title":"Greetings","sortOrder":1}]
+			""";
+		factory.Downstream.BodiesByPath["/api/courses/it/quizzes"] = """
+			[{"id":7,"title":"Greetings quiz","lessonId":11,"lessonSlug":"greetings","lessonTitle":"Greetings","lessonSortOrder":1}]
+			""";
 		await using var client = await factory.CreateMcpClientAsync("courses", factory.CreateUserToken());
 
-		var result = await client.CallToolAsync("courses_get_my_milestones", new Dictionary<string, object?> { ["limit"] = 2 });
+		var result = await client.CallToolAsync("courses_get_my_milestones", new Dictionary<string, object?> { ["limit"] = 3 });
+
+		Assert.That(result.IsError, Is.Not.True);
+		Assert.That(factory.Downstream.Requests, Has.Count.EqualTo(4));
+		var milestones = result.StructuredContent!.Value.GetProperty("milestones");
+		Assert.That(milestones.GetArrayLength(), Is.EqualTo(3));
+		Assert.That(milestones[0].GetProperty("kind").GetString(), Is.EqualTo("course"));
+		Assert.That(milestones[0].GetProperty("courseTitle").GetString(), Is.EqualTo("Italian"));
+		Assert.That(milestones[1].GetProperty("kind").GetString(), Is.EqualTo("quiz"));
+		Assert.That(milestones[1].GetProperty("quizTitle").GetString(), Is.EqualTo("Greetings quiz"));
+		Assert.That(milestones[1].GetProperty("courseCode").GetString(), Is.EqualTo("it"));
+		Assert.That(milestones[2].GetProperty("kind").GetString(), Is.EqualTo("lesson"));
+		Assert.That(milestones[2].GetProperty("lessonSlug").GetString(), Is.EqualTo("greetings"));
+		Assert.That(result.StructuredContent!.Value.GetRawText(), Does.Not.Contain("userId"));
+	}
+
+	[Test]
+	public async Task GetMyMilestones_NoMilestones_SkipsNameLookups()
+	{
+		factory.Downstream.Body = """{"items":[],"nextCursor":null}""";
+		await using var client = await factory.CreateMcpClientAsync("courses", factory.CreateUserToken());
+
+		var result = await client.CallToolAsync("courses_get_my_milestones", new Dictionary<string, object?>());
 
 		Assert.That(result.IsError, Is.Not.True);
 		Assert.That(factory.Downstream.Requests.Single().RequestUri!.PathAndQuery, Is.EqualTo("/api/me/milestones?limit=200"));
-		var milestones = result.StructuredContent!.Value.GetProperty("milestones");
-		Assert.That(milestones.GetArrayLength(), Is.EqualTo(2));
-		Assert.That(milestones[0].GetProperty("kind").GetString(), Is.EqualTo("course"));
-		Assert.That(milestones[1].GetProperty("kind").GetString(), Is.EqualTo("quiz"));
-		Assert.That(result.StructuredContent!.Value.GetRawText(), Does.Not.Contain("userId"));
+		Assert.That(result.StructuredContent!.Value.GetProperty("milestones").GetArrayLength(), Is.EqualTo(0));
 	}
 
 	[TestCase(0)]

@@ -97,12 +97,13 @@ public sealed class ToolLoopTests
 	[Test]
 	public async Task ToolLoop_IsCappedAtMaxRoundsAndCalls()
 	{
-		var twoCalls = """
+		static string ThreeCalls(string a, string b, string c) => $$$$"""
 			{"message":{"role":"assistant","content":"","tool_calls":[
-			 {"function":{"name":"courses_list_courses","arguments":{}}},
-			 {"function":{"name":"courses_list_courses","arguments":{}}}]},"done":true}
+			 {"function":{"name":"courses_get_my_progress","arguments":{"courseCode":"{{{{a}}}}"}}},
+			 {"function":{"name":"courses_get_my_progress","arguments":{"courseCode":"{{{{b}}}}"}}},
+			 {"function":{"name":"courses_get_my_progress","arguments":{"courseCode":"{{{{c}}}}"}}}]},"done":true}
 			""";
-		using var fixture = new ToolFixture(twoCalls, twoCalls, twoCalls, FinalAnswer);
+		using var fixture = new ToolFixture(ThreeCalls("de", "fr", "it"), ThreeCalls("nl", "es", "pl"), ThreeCalls("en", "ja", "ko"), FinalAnswer);
 		using var client = fixture.CreateAuthorizedClient();
 
 		using var response = await client.PostAsJsonAsync("/api/completions", Request("courses"));
@@ -111,9 +112,33 @@ public sealed class ToolLoopTests
 		Assert.That(fixture.Mcp.Calls, Has.Count.EqualTo(GarryToolLoop.MaxToolCalls));
 		Assert.That(fixture.Provider.ToolRequests, Has.Count.EqualTo(GarryToolLoop.MaxRounds + 1));
 		Assert.That(fixture.Provider.ToolRequests[^1], Does.Not.Contain("\"tools\""));
+		Assert.That(fixture.Provider.ToolRequests[^1], Does.Contain("Tool call limit reached."));
+		Assert.That(CountOccurrences(content, "event: tool"), Is.EqualTo(GarryToolLoop.MaxToolCalls + 1));
 		Assert.That(content, Does.Contain("Tool call limit reached."));
 		Assert.That(content, Does.Contain("You finished 1 of 2 lessons."));
 	}
+
+	[Test]
+	public async Task RepeatedToolCall_ReusesResultWithoutExtraEvent()
+	{
+		var twoSameCalls = """
+			{"message":{"role":"assistant","content":"","tool_calls":[
+			 {"function":{"name":"courses_list_courses","arguments":{}}},
+			 {"function":{"name":"courses_list_courses","arguments":{}}}]},"done":true}
+			""";
+		using var fixture = new ToolFixture(twoSameCalls, twoSameCalls, FinalAnswer);
+		using var client = fixture.CreateAuthorizedClient();
+
+		using var response = await client.PostAsJsonAsync("/api/completions", Request("courses"));
+		var content = await response.Content.ReadAsStringAsync();
+
+		Assert.That(fixture.Mcp.Calls, Has.Count.EqualTo(1));
+		Assert.That(CountOccurrences(content, "event: tool"), Is.EqualTo(1));
+		Assert.That(content, Does.Contain("You finished 1 of 2 lessons."));
+	}
+
+	private static int CountOccurrences(string text, string value) =>
+		(text.Length - text.Replace(value, "", StringComparison.Ordinal).Length) / value.Length;
 
 	[Test]
 	public async Task UnknownToolFromModel_IsNotCalled()

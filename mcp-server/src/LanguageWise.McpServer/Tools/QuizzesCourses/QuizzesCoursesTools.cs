@@ -136,7 +136,7 @@ public sealed partial class QuizzesCoursesTools(DownstreamClient downstream)
 	}
 
 	[McpServerTool(Name = "courses_get_my_milestones", Title = "Get my milestones", ReadOnly = true, Idempotent = true, Destructive = false, OpenWorld = false, UseStructuredContent = true)]
-	[Description("Gets the signed-in user's most recent milestones (completed courses, lessons and quizzes) with completion dates. Use courses_list_lessons or courses_list_quizzes to turn ids into names.")]
+	[Description("Gets the signed-in user's most recent milestones (completed courses, lessons and quizzes) with completion dates and the course, lesson and quiz names.")]
 	public async Task<MyMilestonesResult> GetMyMilestonesAsync(
 		[Description("How many recent milestones to return, 1-50. Defaults to 10.")] int limit = 10,
 		CancellationToken cancellationToken = default)
@@ -146,16 +146,46 @@ public sealed partial class QuizzesCoursesTools(DownstreamClient downstream)
 			throw new McpException("limit must be between 1 and 50.");
 		}
 		var page = await downstream.GetAsync<MilestonePageDto>(ServiceName, "api/me/milestones?limit=200", cancellationToken);
-		var items = (page.Items ?? [])
+		var recent = (page.Items ?? [])
 			.OrderByDescending(m => m.CompletedAt)
 			.Take(limit)
-			.Select(m => new MilestoneItem(
-				m.QuizId is not null ? "quiz" : m.LessonId is not null ? "lesson" : "course",
-				m.CourseId,
-				m.LessonId,
-				m.QuizId,
-				m.CompletedAt))
 			.ToList();
+		if (recent.Count == 0)
+		{
+			return new MyMilestonesResult([]);
+		}
+
+		var courses = await downstream.GetAsync<List<CourseDto>>(ServiceName, "api/courses", cancellationToken);
+		var catalogues = await Task.WhenAll(courses.Select(async course =>
+		{
+			var code = Uri.EscapeDataString(course.Code);
+			var lessons = downstream.GetAsync<List<LessonSummaryDto>>(ServiceName, $"api/courses/{code}/lessons", cancellationToken);
+			var quizzes = downstream.GetAsync<List<QuizSummaryDto>>(ServiceName, $"api/courses/{code}/quizzes", cancellationToken);
+			return (Course: course, Lessons: await lessons, Quizzes: await quizzes);
+		}));
+
+		var courseById = courses.ToDictionary(c => c.Id);
+		var lessonById = catalogues
+			.SelectMany(c => c.Lessons.Select(l => (c.Course, Lesson: l)))
+			.ToDictionary(x => x.Lesson.Id);
+		var quizById = catalogues
+			.SelectMany(c => c.Quizzes.Select(q => (c.Course, Quiz: q)))
+			.ToDictionary(x => x.Quiz.Id);
+
+		var items = recent.Select(m =>
+		{
+			if (m.QuizId is { } quizId && quizById.TryGetValue(quizId, out var quiz))
+			{
+				return new MilestoneItem("quiz", quiz.Course.Code, quiz.Course.Title, quiz.Quiz.LessonSlug, quiz.Quiz.LessonTitle, quiz.Quiz.Title, m.CompletedAt);
+			}
+			if (m.QuizId is null && m.LessonId is { } lessonId && lessonById.TryGetValue(lessonId, out var lesson))
+			{
+				return new MilestoneItem("lesson", lesson.Course.Code, lesson.Course.Title, lesson.Lesson.Slug, lesson.Lesson.Title, null, m.CompletedAt);
+			}
+			var kind = m.QuizId is not null ? "quiz" : m.LessonId is not null ? "lesson" : "course";
+			var course = m.CourseId is { } courseId && courseById.TryGetValue(courseId, out var found) ? found : null;
+			return new MilestoneItem(kind, course?.Code, course?.Title, null, null, null, m.CompletedAt);
+		}).ToList();
 		return new MyMilestonesResult(items);
 	}
 
