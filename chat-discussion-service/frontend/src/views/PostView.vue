@@ -13,12 +13,10 @@ import { api, PAGE_SIZE } from '../api.js';
 import { formatDate } from '../format.js';
 import { uploadCommentImages } from '../composables/useImageUploads.js';
 import { isOwnedByFeatureUser } from '../federation/featureHost.js';
-import { useForums } from '../composables/useForums.js';
 
 const props = defineProps({ id: { type: [String, Number], required: true } });
 
 const router = useRouter();
-const { displayName } = useForums();
 
 const post = ref(null);
 const comments = ref([]);
