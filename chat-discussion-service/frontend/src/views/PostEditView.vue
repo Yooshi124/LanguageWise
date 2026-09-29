@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import ConfirmDialog from '../components/ConfirmDialog.vue';
 import PostForm from '../components/PostForm.vue';
 import StateBlock from '../components/StateBlock.vue';
 import { api } from '../api.js';
@@ -17,8 +18,17 @@ const loading = ref(true);
 const loadError = ref(null);
 const busy = ref(false);
 const error = ref('');
+const pendingRemoval = ref(null);
 
 const postId = computed(() => Number(props.id));
+const confirmingRemoval = computed({
+    get: () => pendingRemoval.value !== null,
+    set: (open) => {
+        if (!open) {
+            pendingRemoval.value = null;
+        }
+    }
+});
 
 async function load() {
     loading.value = true;
@@ -64,10 +74,14 @@ async function submit({ images: chosen = [], ...update }) {
 
 // Removing a stored image takes effect at once: it is its own resource, not a field
 // of the post that Save could carry with it.
-async function removeImage(image) {
-    const confirmed = window.confirm(`Remove ${image.fileName}? This cannot be undone.`);
+function removeImage(image) {
+    pendingRemoval.value = image;
+}
 
-    if (!confirmed || busy.value) {
+async function confirmRemoveImage() {
+    const image = pendingRemoval.value;
+
+    if (!image || busy.value) {
         return;
     }
 
@@ -83,6 +97,7 @@ async function removeImage(image) {
             : 'That image could not be removed.';
     } finally {
         busy.value = false;
+        pendingRemoval.value = null;
     }
 }
 
@@ -137,6 +152,15 @@ onMounted(load);
             @submit="submit"
             @cancel="router.push({ name: 'post', params: { id: postId } })"
             @remove-image="removeImage"
+        />
+
+        <ConfirmDialog
+            v-model="confirmingRemoval"
+            title="Remove image?"
+            :message="`Remove ${pendingRemoval?.fileName}? This cannot be undone.`"
+            confirm-label="Remove"
+            :busy="busy"
+            @confirm="confirmRemoveImage"
         />
     </template>
 </template>

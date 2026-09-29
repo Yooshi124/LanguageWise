@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import AuthorAvatar from './AuthorAvatar.vue';
 import ConfirmDialog from './ConfirmDialog.vue';
 import ImageGallery from './ImageGallery.vue';
@@ -23,6 +23,16 @@ const pendingImages = ref([]);
 const imageError = ref('');
 const confirmingDelete = ref(false);
 const deleting = ref(false);
+const pendingRemoval = ref(null);
+
+const confirmingRemoval = computed({
+    get: () => pendingRemoval.value !== null,
+    set: (open) => {
+        if (!open) {
+            pendingRemoval.value = null;
+        }
+    }
+});
 
 function startEditing() {
     draft.value = props.comment.content;
@@ -67,8 +77,14 @@ async function save() {
 
 // Removing an image takes effect at once: it is its own resource, not a field of
 // the comment that Save could carry with it.
-async function removeImage(image) {
-    if (!window.confirm(`Remove ${image.fileName}? This cannot be undone.`) || saving.value) {
+function removeImage(image) {
+    pendingRemoval.value = image;
+}
+
+async function confirmRemoveImage() {
+    const image = pendingRemoval.value;
+
+    if (!image || saving.value) {
         return;
     }
 
@@ -84,6 +100,7 @@ async function removeImage(image) {
         emit('error', error);
     } finally {
         saving.value = false;
+        pendingRemoval.value = null;
     }
 }
 
@@ -178,6 +195,15 @@ function onLike({ liked, count }) {
             message="This cannot be undone."
             :busy="deleting"
             @confirm="remove"
+        />
+
+        <ConfirmDialog
+            v-model="confirmingRemoval"
+            title="Remove image?"
+            :message="`Remove ${pendingRemoval?.fileName}? This cannot be undone.`"
+            confirm-label="Remove"
+            :busy="saving"
+            @confirm="confirmRemoveImage"
         />
     </li>
 </template>
