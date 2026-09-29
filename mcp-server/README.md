@@ -107,3 +107,7 @@ Using quizzes-courses as the example:
    - Return records; they become the tool's structured output.
 4. **Tests** – add cases to `tests/` using `McpServerFactory` and its stub downstream handler.
 5. **Use it from Garry** – send `"toolScope": "<scope>"` in your backend's `POST /api/completions` body. Garry will then run the tool loop and stream `event: tool` (`{name, arguments, isError, result}`) before the `delta` events. Only send `toolScope` once your SSE parser handles the `tool` event.
+6. **Wire your backend and frontend** – `quizzes-courses-service` is the reference implementation:
+   - Backend: `Clients/McpToolClient.cs` (MCP client with your scope), `GET /api/assistant/tools` and `POST /api/assistant/tools/{name}` in `Program.cs` (503 `mcp_disabled` when `Mcp:Enabled` is false), `toolScope` in `GarryCompletionClient`, and the `tool` event relay in `AssistantSseResult`.
+   - Frontend: the `onTool` handler plus `listAssistantTools`/`callAssistantTool` in `api/assistant.ts`, the chip config in `config/assistantTools.ts`, the Tools toggle in `GarryAssistant.vue` and `ToolResultCard.vue`.
+   - Compose: add `Mcp__Enabled`, `Mcp__Endpoint`, `Mcp__ApiKeyPath`, the `mcp_api_key` secret and `extra_hosts` to your backend. CI: set `Mcp__Enabled: false`.

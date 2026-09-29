@@ -1,22 +1,39 @@
 import { readonly, ref } from 'vue'
-import { streamAssistantMessage } from '../api/assistant'
+import {
+  AssistantToolsUnavailableError,
+  callAssistantTool,
+  listAssistantTools,
+  streamAssistantMessage,
+} from '../api/assistant'
 import type {
   AssistantMessage,
   AssistantRouteContext,
+  AssistantTool,
+  AssistantToolResult,
 } from '../models/api'
 
 const maximumStoredMessages = 12
 const maximumConversationCharacters = 12000
 const maximumHistoryMessageCharacters = 12000
+const maximumStoredToolResultCharacters = 20000
 const messages = ref<AssistantMessage[]>([])
 const expanded = ref(false)
 const streaming = ref(false)
 const error = ref<string | null>(null)
+const toolsEnabled = ref(false)
+const tools = ref<AssistantTool[]>([])
+const toolsLoading = ref(false)
+const toolsError = ref<string | null>(null)
+const toolRunning = ref<string | null>(null)
 let activeUserId: number | null = null
 let controller: AbortController | null = null
 
 function storageKey(userId: number) {
   return `languagewise:garry:v1:user:${userId}`
+}
+
+function toolsStorageKey(userId: number) {
+  return `${storageKey(userId)}:tools`
 }
 
 function initialize(userId: number) {
@@ -26,6 +43,11 @@ function initialize(userId: number) {
   streaming.value = false
   error.value = null
   messages.value = loadMessages(userId)
+  tools.value = []
+  toolsError.value = null
+  toolRunning.value = null
+  toolsEnabled.value = sessionStorage.getItem(toolsStorageKey(userId)) === 'on'
+  if (toolsEnabled.value) void loadTools()
 }
 
 async function send(content: string, context: AssistantRouteContext) {
@@ -61,6 +83,12 @@ async function send(content: string, context: AssistantRouteContext) {
             }
           }
         },
+        onTool: (result) => {
+          updateMessage(assistantMessage.id, (current) => ({
+            ...current,
+            toolResults: [...(current.toolResults ?? []), result],
+          }))
+        },
         onDone: () => {
           persist()
         },
@@ -78,6 +106,69 @@ async function send(content: string, context: AssistantRouteContext) {
       controller = null
       streaming.value = false
     }
+  }
+}
+
+function updateMessage(
+  id: string,
+  update: (message: AssistantMessage) => AssistantMessage,
+) {
+  const index = messages.value.findIndex((message) => message.id === id)
+  const current = messages.value[index]
+  if (index >= 0 && current) {
+    messages.value[index] = update(current)
+  }
+}
+
+async function setToolsEnabled(enabled: boolean) {
+  toolsEnabled.value = enabled
+  if (activeUserId !== null) {
+    sessionStorage.setItem(toolsStorageKey(activeUserId), enabled ? 'on' : 'off')
+  }
+  if (enabled && tools.value.length === 0) {
+    await loadTools()
+  }
+}
+
+async function loadTools() {
+  if (toolsLoading.value) return
+  toolsLoading.value = true
+  toolsError.value = null
+  try {
+    tools.value = await listAssistantTools()
+  } catch (cause) {
+    tools.value = []
+    toolsError.value =
+      cause instanceof AssistantToolsUnavailableError && cause.disabled
+        ? 'Garry’s tools are turned off on this server.'
+        : cause instanceof Error
+          ? cause.message
+          : 'Garry’s tools are unavailable right now.'
+  } finally {
+    toolsLoading.value = false
+  }
+}
+
+async function runTool(tool: AssistantTool, args: Record<string, unknown>) {
+  if (streaming.value || toolRunning.value || activeUserId === null) return
+  error.value = null
+  toolRunning.value = tool.name
+  try {
+    const result = await callAssistantTool(tool.name, args)
+    messages.value.push({
+      ...createMessage(
+        'assistant',
+        result.isError
+          ? `I couldn’t use **${tool.title}** just now.`
+          : `Here’s what I found with **${tool.title}**.`,
+      ),
+      toolResults: [result],
+    })
+    persist()
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Garry could not use that tool.'
+  } finally {
+    toolRunning.value = null
   }
 }
 
@@ -106,7 +197,7 @@ function persist() {
   messages.value = completeMessages.slice(-maximumStoredMessages)
   const storedMessages = boundedMessages(
     messages.value.map(normalizeHistoryMessage),
-  )
+  ).map(storableMessage)
   sessionStorage.setItem(storageKey(activeUserId), JSON.stringify(storedMessages))
 }
 
@@ -125,6 +216,13 @@ function loadMessages(userId: number) {
   }
 }
 
+function storableMessage(message: AssistantMessage): AssistantMessage {
+  if (!message.toolResults?.length) return message
+  return JSON.stringify(message.toolResults).length <= maximumStoredToolResultCharacters
+    ? message
+    : { id: message.id, role: message.role, content: message.content }
+}
+
 function isAssistantMessage(value: unknown): value is AssistantMessage {
   if (typeof value !== 'object' || value === null) return false
   const message = value as Record<string, unknown>
@@ -133,8 +231,16 @@ function isAssistantMessage(value: unknown): value is AssistantMessage {
     (message.role === 'user' || message.role === 'assistant') &&
     typeof message.content === 'string' &&
     message.content.trim().length > 0 &&
-    message.content.length <= maximumHistoryMessageCharacters
+    message.content.length <= maximumHistoryMessageCharacters &&
+    (message.toolResults === undefined ||
+      (Array.isArray(message.toolResults) && message.toolResults.every(isToolResult)))
   )
+}
+
+function isToolResult(value: unknown): value is AssistantToolResult {
+  if (typeof value !== 'object' || value === null) return false
+  const result = value as Record<string, unknown>
+  return typeof result.tool === 'string' && typeof result.isError === 'boolean'
 }
 
 function boundedHistory(source: AssistantMessage[], nextMessageCharacters: number) {
@@ -187,9 +293,17 @@ export function useGarryAssistant(userId: number) {
     expanded,
     streaming: readonly(streaming),
     error: readonly(error),
+    toolsEnabled: readonly(toolsEnabled),
+    tools: readonly(tools),
+    toolsLoading: readonly(toolsLoading),
+    toolsError: readonly(toolsError),
+    toolRunning: readonly(toolRunning),
     send,
     retry,
     cancel,
     clear,
+    setToolsEnabled,
+    loadTools,
+    runTool,
   }
 }
