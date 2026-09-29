@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/LanguageWise.McpServer/LanguageWise.McpServer.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/LanguageWise.McpServer.Tests/LanguageWise.McpServer.Tests.csproj" />
+  </Folder>
+</Solution>
