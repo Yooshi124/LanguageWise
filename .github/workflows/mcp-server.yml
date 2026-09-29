@@ -1,0 +1,96 @@
+name: mcp-server
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mcp-server-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  SOLUTION: mcp-server/LanguageWise.McpServer.slnx
+
+jobs:
+  mcp-server-build-and-test:
+    name: mcp-server-build-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Verify the server layout is complete
+        shell: bash
+        run: |
+          missing=0
+          for path in \
+            "mcp-server/LanguageWise.McpServer.slnx" \
+            "mcp-server/src/LanguageWise.McpServer/LanguageWise.McpServer.csproj" \
+            "mcp-server/tests/LanguageWise.McpServer.Tests/LanguageWise.McpServer.Tests.csproj" ; do
+            if [ ! -f "$path" ]; then
+              echo "::error file=$path::Missing from the repository. It may exist locally but be untracked — check .gitignore."
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Verify every project is self-contained
+        shell: bash
+        run: |
+          bad=0
+          for proj in $(find "mcp-server" -name '*.csproj' -not -path '*/bin/*' -not -path '*/obj/*'); do
+            if ! grep -q '<TargetFramework>' "$proj"; then
+              echo "::error file=$proj::No <TargetFramework>. It must not rely on a repository-root Directory.Build.props."
+              bad=1
+            fi
+            if grep -E '<PackageReference' "$proj" | grep -qv 'Version='; then
+              echo "::error file=$proj::A PackageReference has no Version attribute. There is no central package management in this repository."
+              bad=1
+            fi
+          done
+          exit $bad
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-mcp-server-${{ hashFiles('mcp-server/**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-mcp-server-
+            nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore "${{ env.SOLUTION }}"
+
+      - name: Build
+        run: dotnet build "${{ env.SOLUTION }}" -c Release --no-restore
+
+      - name: Run NUnit tests
+        run: >
+          dotnet test "${{ env.SOLUTION }}"
+          -c Release --no-build
+          --logger "trx;LogFileName=mcp-server.trx"
+          --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-server-test-results
+          path: TestResults/
+          if-no-files-found: warn

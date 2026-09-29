@@ -18,6 +18,9 @@ secrets:
     file: ./signing_private_key.pem
   signing_public_key:
     file: ./signing_public_key.pem
+  # Generate using mcp-server/scripts/New-McpApiKey.ps1
+  mcp_api_key:
+    file: ./mcp-server/.mcp-api-key
 
 services:
   ollama:
@@ -60,8 +63,14 @@ services:
       Services__Ollama: http://ollama:11434
       Ollama__Model: gemma4:e4b
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
+      Mcp__Enabled: "true"
+      Mcp__Endpoint: http://host.docker.internal:8200/mcp
+      Mcp__ApiKeyPath: /run/secrets/mcp_api_key
     secrets:
       - signing_public_key
+      - mcp_api_key
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks: [languagewise]
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/health"]
