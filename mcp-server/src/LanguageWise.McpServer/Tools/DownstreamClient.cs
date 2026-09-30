@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
 using LanguageWise.McpServer.Security;
 using ModelContextProtocol;
@@ -12,12 +13,35 @@ public sealed class DownstreamClient(IHttpClientFactory httpClientFactory, McpCa
 
 	public async Task<T> GetAsync<T>(string service, string relativePath, CancellationToken cancellationToken)
 	{
+		var body = await SendAsync(service, HttpMethod.Get, relativePath, null, cancellationToken);
+		try
+		{
+			return JsonSerializer.Deserialize<T>(body, JsonOptions)
+				?? throw new McpException("The service returned an empty response.");
+		}
+		catch (JsonException exception)
+		{
+			logger.LogWarning("Downstream {Service} call failed: {ErrorType}", service, exception.GetType().Name);
+			throw new McpException("The service is unavailable right now. Try again later.");
+		}
+	}
+
+	public async Task PutAsync<TBody>(string service, string relativePath, TBody body, CancellationToken cancellationToken) =>
+		await SendAsync(service, HttpMethod.Put, relativePath, JsonContent.Create(body, options: JsonOptions), cancellationToken);
+
+	private async Task<byte[]> SendAsync(
+		string service,
+		HttpMethod method,
+		string relativePath,
+		HttpContent? content,
+		CancellationToken cancellationToken)
+	{
 		var token = await caller.GetUserTokenAsync()
 			?? throw new McpException("You need to be signed in to use this tool.");
 
 		var maxBytes = configuration.GetValue("Mcp:MaxResultBytes", 32768);
 		var client = httpClientFactory.CreateClient(service);
-		using var request = new HttpRequestMessage(HttpMethod.Get, relativePath);
+		using var request = new HttpRequestMessage(method, relativePath) { Content = content };
 		request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
 		try
@@ -29,6 +53,8 @@ public sealed class DownstreamClient(IHttpClientFactory httpClientFactory, McpCa
 					throw new McpException("You are not allowed to access this data.");
 				case HttpStatusCode.NotFound:
 					throw new McpException("The requested item was not found.");
+				case HttpStatusCode.BadRequest:
+					throw new McpException("The service rejected this change.");
 			}
 			if (!response.IsSuccessStatusCode)
 			{
@@ -45,10 +71,9 @@ public sealed class DownstreamClient(IHttpClientFactory httpClientFactory, McpCa
 			{
 				throw new McpException("The result was too large to return.");
 			}
-			return JsonSerializer.Deserialize<T>(body, JsonOptions)
-				?? throw new McpException("The service returned an empty response.");
+			return body;
 		}
-		catch (Exception exception) when (exception is HttpRequestException or JsonException
+		catch (Exception exception) when (exception is HttpRequestException
 			|| (exception is TaskCanceledException && !cancellationToken.IsCancellationRequested))
 		{
 			logger.LogWarning("Downstream {Service} call failed: {ErrorType}", service, exception.GetType().Name);

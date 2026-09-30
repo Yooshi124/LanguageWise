@@ -53,7 +53,9 @@ const toolChips = computed(() =>
 const toolsBusy = computed(() => garry.streaming.value || garry.toolRunning.value !== null)
 
 function toolLabel(name: string) {
-  return props.assistant.tools?.chips.find((chip) => chip.tool === name)?.label ?? name
+  const chips = props.assistant.tools?.chips.filter((chip) => chip.tool === name) ?? []
+  if (chips.length === 1) return chips[0]!.label
+  return garry.tools.value.find((tool) => tool.name === name)?.title ?? name
 }
 
 async function runTool(chip: FeatureAssistantTool) {
@@ -163,7 +165,7 @@ watch(
             <div v-else class="garry-tool-chips" role="group" aria-label="Garry’s tools">
               <button
                 v-for="entry in toolChips"
-                :key="entry.chip.tool"
+                :key="`${entry.chip.tool}:${entry.chip.label}`"
                 type="button"
                 :disabled="toolsBusy || entry.unavailable !== null"
                 :title="entry.unavailable ?? entry.tool?.description"

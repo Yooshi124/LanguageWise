@@ -36,6 +36,8 @@ Windows may show a firewall prompt the first time; allow private networks so Doc
 | `Mcp:MaxResultBytes` | `32768` | Downstream response size cap |
 | `Downstream:TimeoutSeconds` | `10` | Downstream API timeout |
 | `Services:QuizzesCourses` | `http://localhost:5003` | quizzes-courses-service API |
+| `Services:MiniGames` | `http://localhost:5001` | mini-games-service API |
+| `Services:QuestsAchievements` | `http://localhost:5004` | quests-achievements-notifications-service API |
 
 ## Security model
 

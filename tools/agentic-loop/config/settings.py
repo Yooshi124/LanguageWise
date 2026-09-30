@@ -152,6 +152,7 @@ class Settings:
     rag_base_url: str
     rag_request_timeout_seconds: int
     rag_default_n_results: int
+    rag_technical_key: str
     mcp_base_url: str
     mcp_api_key: str
     mcp_tool_scope: str
@@ -230,6 +231,7 @@ class Settings:
             "API key": redact(self.api_key),
             "GitHub token": redact(self.github_token),
             "MCP API key": redact(self.mcp_api_key),
+            "RAG technical key": redact(self.rag_technical_key),
         }
 
 
@@ -359,6 +361,22 @@ def load_settings(
     rag_default_n_results = _int(
         "RAG_DEFAULT_N_RESULTS", get("RAG_DEFAULT_N_RESULTS"), DEFAULT_RAG_N_RESULTS
     )
+    # The technical endpoint key comes from RAG_TECHNICAL_KEY, falling back to the
+    # key file the rag-server generates (rag-server/.rag-technical-key by default).
+    rag_technical_key = get("RAG_TECHNICAL_KEY")
+    rag_key_path_raw = get("RAG_TECHNICAL_KEY_PATH")
+    rag_key_path = (
+        Path(rag_key_path_raw).expanduser()
+        if rag_key_path_raw
+        else repo_root / "rag-server" / ".rag-technical-key"
+    )
+    if not rag_key_path.is_absolute():
+        rag_key_path = (repo_root / rag_key_path).resolve()
+    if not rag_technical_key and rag_key_path.is_file():
+        try:
+            rag_technical_key = rag_key_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            rag_technical_key = ""
 
     mcp_base_url = get("MCP_BASE_URL") or DEFAULT_MCP_BASE_URL
     if "://" not in mcp_base_url:
@@ -399,6 +417,7 @@ def load_settings(
         rag_base_url=rag_base_url,
         rag_request_timeout_seconds=rag_request_timeout_seconds,
         rag_default_n_results=rag_default_n_results,
+        rag_technical_key=rag_technical_key,
         mcp_base_url=mcp_base_url,
         mcp_api_key=mcp_api_key,
         mcp_tool_scope=mcp_tool_scope,
