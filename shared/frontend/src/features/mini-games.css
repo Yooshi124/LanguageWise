@@ -443,6 +443,12 @@ h1 {
 	outline: 3px solid rgba(16, 137, 122, 0.18);
 }
 
+/* Sit beside the shell's fixed mobile menu button (shown at ≤800px). */
+@media (max-width: 800px) {
+	.back-button { top: 17px; left: 72px; margin-left: 0; }
+	.game-header { margin-top: 3rem; }
+}
+
 .board-shell {
 	width: min(90vw, 34rem);
 	margin: 0 auto;
@@ -683,6 +689,7 @@ h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.25rem); }
 .hint-box .missedWord { color: #c85b70; font-weight: 800; }
 .back-button { position: absolute; top: 2rem; left: 2rem; display: inline-flex; align-items: center; gap: 0.35rem; margin-left: -0.85rem; padding: 0.45rem 0.85rem; border: none; border-radius: 6px; color: #1c2b45; background: transparent; font-weight: 600; text-decoration: none; }
 .back-button:hover, .back-button:focus-visible { background: rgba(180, 83, 9, 0.1); outline: 3px solid rgba(180, 83, 9, 0.18); }
+@media (max-width: 800px) { .back-button { top: 17px; left: 72px; margin-left: 0; } .game-header { margin-top: 3rem; } }
 @media (max-width: 40rem) { .game-layout { flex-direction: column; } .game-grid { width: min(88vw, 30rem); } .hint-box { width: min(70vw, 16rem); } }
 
 }
@@ -734,7 +741,8 @@ h1 { margin: 0; font-size: clamp(2rem, 5vw, 3.25rem); }
  .reset-button { margin-left: 0.5rem; color: #1c2b45; background: #fff; }
  .back-button { position: absolute; top: 2rem; left: 2rem; display: inline-flex; align-items: center; gap: 0.35rem; margin-left: -0.85rem; padding: 0.45rem 0.85rem; border: none; border-radius: 6px; color: #1c2b45; background: transparent; font-weight: 600; text-decoration: none; }
  .back-button:hover, .back-button:focus-visible { background: rgba(66, 84, 164, 0.1); outline: 3px solid rgba(66, 84, 164, 0.18); }
- @media (max-width: 520px) { .game-page { padding-inline: 1rem; } .back-button { position: static; display: inline-block; } .game-header { margin-top: 1.5rem; } .board-shell { padding: 1rem; } .game-grid { gap: 0.45rem; } .word-box { min-height: 4rem; font-size: 0.75rem; } }
+ @media (max-width: 800px) { .back-button { top: 17px; left: 72px; margin-left: 0; } .game-header { margin-top: 3rem; } }
+ @media (max-width: 520px) { .game-page { padding-inline: 1rem; } .game-header { margin-top: 1.5rem; } .board-shell { padding: 1rem; } .game-grid { gap: 0.45rem; } .word-box { min-height: 4rem; font-size: 0.75rem; } }
  
 }
 @scope (.feature-mini-games) {
