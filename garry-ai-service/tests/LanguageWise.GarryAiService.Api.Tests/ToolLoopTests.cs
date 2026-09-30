@@ -79,6 +79,27 @@ public sealed class ToolLoopTests
 	}
 
 	[Test]
+	public async Task DocsSearch_IsUsedButNeverShownAsToolEvent()
+	{
+		var docsCall = """
+			{"message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"docs_search","arguments":{"query":"notifications page"}}}]},"done":true}
+			""";
+		using var fixture = new ToolFixture(docsCall, FinalAnswer);
+		using var client = fixture.CreateAuthorizedClient();
+
+		using var response = await client.PostAsJsonAsync("/api/completions", Request("chat"));
+		var content = await response.Content.ReadAsStringAsync();
+
+		Assert.Multiple(() =>
+		{
+			Assert.That(fixture.Mcp.Calls.Single().Name, Is.EqualTo("docs_search"));
+			Assert.That(fixture.Provider.ToolRequests[1], Does.Contain("\"role\":\"tool\""));
+			Assert.That(content, Does.Not.Contain("event: tool"));
+			Assert.That(content, Does.Contain("You finished 1 of 2 lessons."));
+		});
+	}
+
+	[Test]
 	public async Task WhenMcpIsDown_AnswersWithoutTools()
 	{
 		using var fixture = new ToolFixture(ProgressToolCall, FinalAnswer);
@@ -332,7 +353,8 @@ public sealed class ToolLoopTests
 				Task.FromResult<IReadOnlyList<McpToolDefinition>>(
 				[
 					new("courses_list_courses", "Lists courses", Schema),
-					new("courses_get_my_progress", "Gets progress", Schema)
+					new("courses_get_my_progress", "Gets progress", Schema),
+					new("docs_search", "Searches docs", Schema)
 				]);
 
 			public Task<McpToolCallResult> CallToolAsync(string name, IReadOnlyDictionary<string, JsonElement> arguments, CancellationToken cancellationToken)

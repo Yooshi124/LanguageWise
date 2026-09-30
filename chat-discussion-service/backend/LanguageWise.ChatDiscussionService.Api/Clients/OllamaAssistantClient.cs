@@ -31,7 +31,8 @@ public sealed class GarryCompletionClient(HttpClient client, IHttpContextAccesso
                 message = messages[^1].Content,
                 history = messages.Skip(2).SkipLast(1),
                 domainRules = messages[0].Content,
-                canonicalContext = messages[1].Content
+                canonicalContext = messages[1].Content,
+                toolScope = "chat"
             })
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);

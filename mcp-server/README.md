@@ -38,6 +38,7 @@ Windows may show a firewall prompt the first time; allow private networks so Doc
 | `Services:QuizzesCourses` | `http://localhost:5003` | quizzes-courses-service API |
 | `Services:MiniGames` | `http://localhost:5001` | mini-games-service API |
 | `Services:QuestsAchievements` | `http://localhost:5004` | quests-achievements-notifications-service API |
+| `Services:Rag` | `http://localhost:8100` | RAG server; `docs_search` (offered in every scope) uses its general `POST /query` |
 
 ## Security model
 

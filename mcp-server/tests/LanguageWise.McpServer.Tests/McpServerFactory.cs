@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using LanguageWise.McpServer.Security;
+using LanguageWise.McpServer.Tools.Docs;
 using LanguageWise.McpServer.Tools.MiniGames;
 using LanguageWise.McpServer.Tools.QuestsAchievements;
 using LanguageWise.McpServer.Tools.QuizzesCourses;
@@ -35,6 +36,7 @@ public sealed class McpServerFactory : WebApplicationFactory<Program>
 		builder.UseSetting("Services:QuizzesCourses", "http://quizzes.test");
 		builder.UseSetting("Services:MiniGames", "http://mini-games.test");
 		builder.UseSetting("Services:QuestsAchievements", "http://quests.test");
+		builder.UseSetting("Services:Rag", "http://rag.test");
 		builder.ConfigureServices(services =>
 		{
 			services.AddHttpClient(QuizzesCoursesTools.ServiceName)
@@ -42,6 +44,8 @@ public sealed class McpServerFactory : WebApplicationFactory<Program>
 			services.AddHttpClient(MiniGamesTools.ServiceName)
 				.ConfigurePrimaryHttpMessageHandler(() => Downstream);
 			services.AddHttpClient(QuestsAchievementsTools.ServiceName)
+				.ConfigurePrimaryHttpMessageHandler(() => Downstream);
+			services.AddHttpClient(DocsTools.ServiceName)
 				.ConfigurePrimaryHttpMessageHandler(() => Downstream);
 		});
 	}

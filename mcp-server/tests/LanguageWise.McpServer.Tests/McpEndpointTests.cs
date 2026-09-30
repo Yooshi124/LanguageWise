@@ -59,7 +59,8 @@ public sealed class McpEndpointTests
 			"courses_list_quizzes",
 			"courses_get_flashcards",
 			"courses_get_my_vocabulary",
-			"courses_get_my_milestones"
+			"courses_get_my_milestones",
+			"docs_search"
 		}));
 		Assert.That(tools.All(t => t.ProtocolTool.Annotations?.ReadOnlyHint == true), Is.True);
 	}
@@ -81,7 +82,8 @@ public sealed class McpEndpointTests
 		Assert.That(tools.Select(t => t.Name), Is.EquivalentTo(new[]
 		{
 			"games_get_completion_stats",
-			"games_list_game_languages"
+			"games_list_game_languages",
+			"docs_search"
 		}));
 		Assert.That(tools.All(t => t.ProtocolTool.Annotations?.ReadOnlyHint == true), Is.True);
 	}
@@ -96,11 +98,45 @@ public sealed class McpEndpointTests
 			"quests_get_my_preferences",
 			"quests_set_notifications_enabled",
 			"quests_update_my_preferences",
-			"quests_get_my_achievements"
+			"quests_get_my_achievements",
+			"docs_search"
 		}));
 		Assert.That(
 			tools.Where(t => t.ProtocolTool.Annotations?.ReadOnlyHint == true).Select(t => t.Name),
-			Is.EquivalentTo(new[] { "quests_get_my_preferences", "quests_get_my_achievements" }));
+			Is.EquivalentTo(new[] { "quests_get_my_preferences", "quests_get_my_achievements", "docs_search" }));
+	}
+
+	[TestCase("chat")]
+	[TestCase("leaderboard")]
+	public async Task ListTools_ForScopesWithoutOwnTools_OffersOnlyDocsSearch(string scope)
+	{
+		await using var client = await factory.CreateMcpClientAsync(scope);
+		var tools = await client.ListToolsAsync();
+		Assert.That(tools.Select(t => t.Name), Is.EqualTo(new[] { "docs_search" }));
+	}
+
+	[Test]
+	public async Task DocsSearch_QueriesGeneralRagEndpointAndReturnsPassages()
+	{
+		factory.Downstream.Body = """
+			{"results":[{"source":"quests-achievements-notifications-service","heading":"Notification preferences","relevance":0.7,"text":"A master switch turns all emails on or off."}],"resultCount":1}
+			""";
+		await using var client = await factory.CreateMcpClientAsync("chat", factory.CreateUserToken());
+
+		var result = await client.CallToolAsync("docs_search", new Dictionary<string, object?> { ["query"] = "notifications page", ["maxResults"] = 9 });
+
+		Assert.That(result.IsError, Is.Not.True);
+		var request = factory.Downstream.Requests.Single();
+		using var body = JsonDocument.Parse(factory.Downstream.RequestBodies.Single()!);
+		var passage = result.StructuredContent!.Value.GetProperty("passages")[0];
+		Assert.Multiple(() =>
+		{
+			Assert.That(request.RequestUri!.AbsolutePath, Is.EqualTo("/query"));
+			Assert.That(body.RootElement.GetProperty("query").GetString(), Is.EqualTo("notifications page"));
+			Assert.That(body.RootElement.GetProperty("n_results").GetInt32(), Is.EqualTo(5));
+			Assert.That(passage.GetProperty("heading").GetString(), Is.EqualTo("Notification preferences"));
+			Assert.That(passage.GetProperty("text").GetString(), Does.Contain("master switch"));
+		});
 	}
 
 	[Test]
