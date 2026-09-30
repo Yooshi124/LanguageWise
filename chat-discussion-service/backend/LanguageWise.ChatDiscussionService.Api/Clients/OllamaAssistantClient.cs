@@ -31,7 +31,8 @@ public sealed class GarryCompletionClient(HttpClient client, IHttpContextAccesso
                 message = messages[^1].Content,
                 history = messages.Skip(2).SkipLast(1),
                 domainRules = messages[0].Content,
-                canonicalContext = messages[1].Content
+                canonicalContext = messages[1].Content,
+                toolScope = "chat"
             })
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -100,6 +101,10 @@ public sealed class AssistantCompletionStream(
                     continue;
                 }
                 var streamEvent = ParseGarryEvent(garryLine[6..]);
+                if (streamEvent is null)
+                {
+                    continue;
+                }
                 yield return streamEvent;
                 if (streamEvent.Type == DoneType)
                 {
@@ -146,7 +151,7 @@ public sealed class AssistantCompletionStream(
         return ValueTask.CompletedTask;
     }
 
-    private static ProviderStreamEvent ParseGarryEvent(string json)
+    private static ProviderStreamEvent? ParseGarryEvent(string json)
     {
         try
         {
@@ -159,6 +164,10 @@ public sealed class AssistantCompletionStream(
             if (root.TryGetProperty("reason", out var reason))
             {
                 return ProviderStreamEvent.Done(reason.GetString() ?? "stop");
+            }
+            if (root.TryGetProperty("name", out _) && root.TryGetProperty("arguments", out _))
+            {
+                return null;
             }
         }
         catch (JsonException)

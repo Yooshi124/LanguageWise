@@ -1,5 +1,6 @@
 using LanguageWise.McpServer.Security;
 using LanguageWise.McpServer.Tools;
+using LanguageWise.McpServer.Tools.ChatDiscussion;
 using LanguageWise.McpServer.Tools.MiniGames;
 using LanguageWise.McpServer.Tools.QuizzesCourses;
 
@@ -22,6 +23,11 @@ builder.Services.AddHttpClient(QuizzesCoursesTools.ServiceName, client =>
 builder.Services.AddHttpClient(MiniGamesTools.ServiceName, client =>
 {
 	client.BaseAddress = new Uri((builder.Configuration["Services:MiniGames"] ?? "http://localhost:5001").TrimEnd('/') + "/");
+	client.Timeout = downstreamTimeout;
+});
+builder.Services.AddHttpClient(ChatDiscussionTools.ServiceName, client =>
+{
+	client.BaseAddress = new Uri((builder.Configuration["Services:ChatDiscussion"] ?? "http://localhost:5002").TrimEnd('/') + "/");
 	client.Timeout = downstreamTimeout;
 });
 

@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using LanguageWise.McpServer.Security;
+using LanguageWise.McpServer.Tools.ChatDiscussion;
 using LanguageWise.McpServer.Tools.MiniGames;
 using LanguageWise.McpServer.Tools.QuizzesCourses;
 using Microsoft.AspNetCore.Hosting;
@@ -33,11 +34,14 @@ public sealed class McpServerFactory : WebApplicationFactory<Program>
 		builder.UseSetting("Auth:VerificationKeyPath", publicKeyPath);
 		builder.UseSetting("Services:QuizzesCourses", "http://quizzes.test");
 		builder.UseSetting("Services:MiniGames", "http://mini-games.test");
+		builder.UseSetting("Services:ChatDiscussion", "http://chat-discussion.test");
 		builder.ConfigureServices(services =>
 		{
 			services.AddHttpClient(QuizzesCoursesTools.ServiceName)
 				.ConfigurePrimaryHttpMessageHandler(() => Downstream);
 			services.AddHttpClient(MiniGamesTools.ServiceName)
+				.ConfigurePrimaryHttpMessageHandler(() => Downstream);
+			services.AddHttpClient(ChatDiscussionTools.ServiceName)
 				.ConfigurePrimaryHttpMessageHandler(() => Downstream);
 		});
 	}

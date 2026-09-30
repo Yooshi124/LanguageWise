@@ -15,11 +15,10 @@ public interface IAssistantContextService
 /// The retrieval half of AI mode: everything the model is allowed to treat as
 /// fact, rendered as server-controlled JSON.
 ///
-/// Grounded in <see cref="HelpKnowledgeBase"/> rather than live forum data on
-/// purpose — the assistant explains how the forum works, and it deliberately
-/// cannot read the thread the user happens to be looking at. The route context
-/// only biases which help topics are retrieved, so standing on the edit page
-/// surfaces the editing topic even when the question does not name it.
+/// Grounded in <see cref="HelpKnowledgeBase"/> for feature guidance. Live forum
+/// content is fetched separately through scoped, read-only MCP tools when needed.
+/// The route context only biases which help topics are retrieved, so standing on
+/// the edit page surfaces the editing topic even when the question does not name it.
 /// </summary>
 public sealed class AssistantContextService(DiscussionClient client) : IAssistantContextService
 {

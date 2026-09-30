@@ -142,8 +142,8 @@ internal static class HelpKnowledgeBase
             AI mode is this assistant. It answers questions about how the discussion forum works,
             such as how to create, edit or delete a post, how commenting and likes work, and where
             to find your own posts.
-            It only knows about this forum's own features. It cannot read or write posts on your
-            behalf, and it does not know what is in any particular thread.
+            It only helps with this forum. It can look up public posts and comments when relevant,
+            but it cannot create, edit or delete anything on your behalf.
             """,
             ["assistant", "chatbot", "bot", "help", "aimode", "support"])
     ];
