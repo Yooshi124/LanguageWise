@@ -8,10 +8,80 @@ import { handleUnauthorized } from '../federation/featureHost.js';
 
 const API_BASE = '/mini-games/api';
 
+export class AssistantToolsUnavailableError extends Error {
+  constructor(message, disabled) {
+    super(message);
+    this.name = 'AssistantToolsUnavailableError';
+    this.disabled = disabled;
+  }
+}
+
+/**
+ * Lists the MCP tools Garry can use for this feature (empty when tools are disabled server-side).
+ * @param {AbortSignal} [signal]
+ */
+export async function listAssistantTools(signal) {
+  const response = await fetch(`${API_BASE}/assistant/tools`, {
+    signal,
+    credentials: 'same-origin',
+    headers: { Accept: 'application/json' }
+  });
+  await ensureToolResponse(response);
+  const body = await response.json();
+  return Array.isArray(body.tools) ? body.tools : [];
+}
+
+/**
+ * Calls one MCP tool directly (not through a chat turn).
+ * @param {string} name
+ * @param {Record<string, unknown>} args
+ * @param {AbortSignal} [signal]
+ */
+export async function callAssistantTool(name, args, signal) {
+  const response = await fetch(`${API_BASE}/assistant/tools/${encodeURIComponent(name)}`, {
+    method: 'POST',
+    signal,
+    credentials: 'same-origin',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(args)
+  });
+  await ensureToolResponse(response);
+  const body = await response.json();
+  return {
+    tool: body.tool ?? name,
+    arguments: args,
+    isError: body.isError === true,
+    result: body.result ?? null
+  };
+}
+
+async function ensureToolResponse(response) {
+  if (response.status === 401) {
+    handleUnauthorized();
+  }
+  if (response.ok) return;
+  if (response.status === 503 || response.status === 502) {
+    let problem;
+    try {
+      problem = await response.clone().json();
+    } catch {
+      problem = undefined;
+    }
+    throw new AssistantToolsUnavailableError(
+      problem?.detail || "Garry's tools are unavailable right now.",
+      problem?.code === 'mcp_disabled'
+    );
+  }
+  throw new Error(await responseError(response));
+}
+
 /**
  * Stream an assistant reply.
  * @param {{message: string, history: Array<{role: string, content: string}>, context: {routeName: string, courseCode?: string, mode?: string}}} request
- * @param {{onDelta: (content: string) => void, onDone: () => void}} handlers
+ * @param {{onDelta: (content: string) => void, onDone: () => void, onTool?: (result: {tool: string, arguments?: Record<string, unknown>, isError: boolean, result: unknown}) => void}} handlers
  * @param {AbortSignal} signal
  */
 export async function streamAssistantMessage(request, handlers, signal) {
@@ -94,6 +164,18 @@ function handleFrame(frame, handlers) {
     handlers.onDone();
     return true;
   }
+  if (eventName === 'tool') {
+    const tool = readString(payload, 'name');
+    if (tool && handlers.onTool) {
+      handlers.onTool({
+        tool,
+        arguments: isRecord(payload.arguments) ? payload.arguments : undefined,
+        isError: payload.isError === true,
+        result: payload.result ?? null
+      });
+    }
+    return false;
+  }
   if (eventName === 'error') {
     throw new Error(
       readString(payload, 'message') ||
@@ -108,6 +190,10 @@ function readString(value, key) {
   if (typeof value !== 'object' || value === null || !(key in value)) return null;
   const property = value[key];
   return typeof property === 'string' ? property : null;
+}
+
+function isRecord(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 async function responseError(response) {

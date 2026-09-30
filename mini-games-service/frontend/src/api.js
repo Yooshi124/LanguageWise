@@ -11,6 +11,12 @@ const AI_LANGUAGE_STORAGE_KEY = 'mini_games_ai_language';
 
 const API_BASE = '/mini-games/api';
 
+/** Abort a request if the server hasn't responded within this long. */
+const REQUEST_TIMEOUT_MS = 15000;
+/** GET requests are read-only, so a single retry after a network blip is safe. */
+const GET_RETRY_ATTEMPTS = 2;
+const GET_RETRY_DELAY_MS = 400;
+
 /** Error code the backend returns when the user has no playable vocabulary yet. */
 export const NO_VOCABULARY_CODE = 'NO_VOCABULARY';
 
@@ -77,16 +83,7 @@ export function setAiLanguage(code) {
  * @returns {Promise<{contentAvailable: boolean, aiAvailable: boolean, defaultMode: string, contentLanguages: Array, aiLanguages: Array}>}
  */
 export async function fetchGameModes() {
-  const response = await fetch(`${API_BASE}/game-modes`, {
-    method: 'GET',
-    headers: { Accept: 'application/json' }
-  });
-
-  if (!response.ok) {
-    throw await toApiError(response, 'Failed to load game modes');
-  }
-
-  return response.json();
+  return get(`${API_BASE}/game-modes`, 'Failed to load game modes');
 }
 
 /**
@@ -95,16 +92,7 @@ export async function fetchGameModes() {
  * @returns {Promise<Array<{code: string, title: string}>>}
  */
 export async function fetchGameLanguages() {
-  const response = await fetch(`${API_BASE}/game-languages`, {
-    method: 'GET',
-    headers: { Accept: 'application/json' }
-  });
-
-  if (!response.ok) {
-    throw await toApiError(response, 'Failed to load your languages');
-  }
-
-  return response.json();
+  return get(`${API_BASE}/game-languages`, 'Failed to load your languages');
 }
 
 /**
@@ -119,16 +107,7 @@ export async function fetchCompletionStats(courseCode, userId) {
     ? `?courseCode=${encodeURIComponent(courseCode)}`
     : '';
 
-  const response = await fetch(`${API_BASE}/stats/completions${query}`, {
-    method: 'GET',
-    headers: { Accept: 'application/json' }
-  });
-
-  if (!response.ok) {
-    throw await toApiError(response, 'Failed to load your completion stats');
-  }
-
-  return response.json();
+  return get(`${API_BASE}/stats/completions${query}`, 'Failed to load your completion stats');
 }
 
 /**
@@ -172,18 +151,73 @@ async function toApiError(response, fallbackMessage) {
   return error;
 }
 
-async function post(path, body) {
-  const response = await fetch(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body)
-  });
+/** True for errors that mean the request never reached (or heard back from) the server. */
+function isNetworkError(error) {
+  return error instanceof TypeError || error?.name === 'AbortError';
+}
 
-  if (!response.ok) {
-    throw await toApiError(response, `Request failed: ${response.status}`);
+/** Replace raw fetch/AbortController errors with a message a player can act on. */
+function toNetworkAwareError(error) {
+  if (error?.name === 'AbortError') {
+    return new Error('The request timed out. Check your connection and try again.');
   }
+  if (error instanceof TypeError) {
+    return new Error('Could not reach the server. Check your connection and try again.');
+  }
+  return error;
+}
 
-  return response.status === 204 ? null : response.json();
+/** fetch() with a hard timeout, so a hung request surfaces as an error instead of an endless spinner. */
+async function fetchWithTimeout(path, init) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(path, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+/**
+ * GET is idempotent, so a transient network failure (timeout, DNS blip, dropped connection)
+ * is retried once after a short delay before giving up.
+ */
+async function get(path, fallbackMessage) {
+  for (let attempt = 1; attempt <= GET_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetchWithTimeout(path, { method: 'GET', headers: { Accept: 'application/json' } });
+      if (!response.ok) {
+        throw await toApiError(response, fallbackMessage);
+      }
+      return response.status === 204 ? null : response.json();
+    } catch (error) {
+      if (attempt < GET_RETRY_ATTEMPTS && isNetworkError(error)) {
+        await new Promise((resolve) => window.setTimeout(resolve, GET_RETRY_DELAY_MS));
+        continue;
+      }
+      throw toNetworkAwareError(error);
+    }
+  }
+}
+
+// POST requests trigger gameplay side effects (guesses, hints, resets), so they are never
+// retried automatically — a duplicate submit could cost the player an extra guess or mistake.
+async function post(path, body) {
+  try {
+    const response = await fetchWithTimeout(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      throw await toApiError(response, `Request failed: ${response.status}`);
+    }
+
+    return response.status === 204 ? null : response.json();
+  } catch (error) {
+    throw toNetworkAwareError(error);
+  }
 }
 
 /**
@@ -219,16 +253,7 @@ export async function initializeGame(gameType, userId, courseCode) {
  * @param {number} userId - Optional user ID (uses stored or default if not provided)
  */
 export async function getGameState(gameType, userId) {
-  const response = await fetch(`${API_BASE}/${gameType}`, {
-    method: 'GET',
-    headers: { 'Content-Type': 'application/json' }
-  });
-
-  if (!response.ok) {
-    throw await toApiError(response, `Failed to load ${gameType}`);
-  }
-
-  return response.json();
+  return get(`${API_BASE}/${gameType}`, `Failed to load ${gameType}`);
 }
 
 /**
@@ -283,3 +308,13 @@ export function submitAssociationsGuess(words, userId) {
 export function resetGame(gameType, userId) {
   return post(`${API_BASE}/${gameType}/reset`);
 }
+
+/**
+ * Search the platform's documentation corpus via the RAG-backed docs search.
+ * @param {string} query - The natural-language question to search for.
+ * @returns {Promise<{results: Array<{source: string, heading: string, relevance: number, text: string}>, resultCount: number}>}
+ */
+export function queryRagDocs(query) {
+  return post(`${API_BASE}/rag/query`, { query });
+}
+

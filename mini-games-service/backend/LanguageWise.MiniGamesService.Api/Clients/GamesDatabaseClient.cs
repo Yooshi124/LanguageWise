@@ -8,6 +8,9 @@ namespace LanguageWise.MiniGamesService.Api.Clients;
 public sealed class GamesDatabaseClient(HttpClient httpClient)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    // Retry a couple of times on transient failures (e.g. a database container mid-restart)
+    // before letting gameplay continue in-memory only.
+    private static readonly TimeSpan[] RetryDelays = [TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(500)];
 
     public async Task<DatabaseResponse<DatabaseHealthResponse>> GetHealthAsync(
         CancellationToken cancellationToken = default)
@@ -53,17 +56,18 @@ public sealed class GamesDatabaseClient(HttpClient httpClient)
         IReadOnlyList<string> words,
         string difficulty = "intermediate",
         string? expiresAt = null,
-        CancellationToken cancellationToken = default)
-    {
-        using var response = await httpClient.PostAsJsonAsync(
-            "api/games",
-            new { gameType, courseCode, solution, words, difficulty, expiresAt },
-            JsonOptions,
-            cancellationToken);
-        return response.IsSuccessStatusCode
-            ? await response.Content.ReadFromJsonAsync<GameResponse>(JsonOptions, cancellationToken)
-            : null;
-    }
+        CancellationToken cancellationToken = default) =>
+        await ExecuteWithRetryAsync(async () =>
+        {
+            using var response = await httpClient.PostAsJsonAsync(
+                "api/games",
+                new { gameType, courseCode, solution, words, difficulty, expiresAt },
+                JsonOptions,
+                cancellationToken);
+            return response.IsSuccessStatusCode
+                ? await response.Content.ReadFromJsonAsync<GameResponse>(JsonOptions, cancellationToken)
+                : null;
+        }, cancellationToken);
 
     public async Task<bool> DeleteGameAsync(int gameId, CancellationToken cancellationToken = default)
     {
@@ -87,17 +91,18 @@ public sealed class GamesDatabaseClient(HttpClient httpClient)
     public async Task<GameAttemptResponse?> CreateGameAttemptAsync(
         int gameId,
         int userId,
-        CancellationToken cancellationToken = default)
-    {
-        using var response = await httpClient.PostAsJsonAsync(
-            "api/game-attempts",
-            new { gameId, userId },
-            JsonOptions,
-            cancellationToken);
-        return response.IsSuccessStatusCode
-            ? await response.Content.ReadFromJsonAsync<GameAttemptResponse>(JsonOptions, cancellationToken)
-            : null;
-    }
+        CancellationToken cancellationToken = default) =>
+        await ExecuteWithRetryAsync(async () =>
+        {
+            using var response = await httpClient.PostAsJsonAsync(
+                "api/game-attempts",
+                new { gameId, userId },
+                JsonOptions,
+                cancellationToken);
+            return response.IsSuccessStatusCode
+                ? await response.Content.ReadFromJsonAsync<GameAttemptResponse>(JsonOptions, cancellationToken)
+                : null;
+        }, cancellationToken);
 
     public async Task<GameAttemptResponse?> UpdateGameAttemptAsync(
         int attemptId,
@@ -119,14 +124,17 @@ public sealed class GamesDatabaseClient(HttpClient httpClient)
             timeSpentSeconds
         };
 
-        using var response = await httpClient.PatchAsJsonAsync(
-            $"api/game-attempts/{attemptId}",
-            updateRequest,
-            JsonOptions,
-            cancellationToken);
-        return response.IsSuccessStatusCode
-            ? await response.Content.ReadFromJsonAsync<GameAttemptResponse>(JsonOptions, cancellationToken)
-            : null;
+        return await ExecuteWithRetryAsync(async () =>
+        {
+            using var response = await httpClient.PatchAsJsonAsync(
+                $"api/game-attempts/{attemptId}",
+                updateRequest,
+                JsonOptions,
+                cancellationToken);
+            return response.IsSuccessStatusCode
+                ? await response.Content.ReadFromJsonAsync<GameAttemptResponse>(JsonOptions, cancellationToken)
+                : null;
+        }, cancellationToken);
     }
 
     public async Task<bool> DeleteGameAttemptAsync(int attemptId, CancellationToken cancellationToken = default)
@@ -142,4 +150,23 @@ public sealed class GamesDatabaseClient(HttpClient httpClient)
             ? await response.Content.ReadFromJsonAsync<T>(JsonOptions, cancellationToken)
             : default(T);
     }
+
+    /// <summary>Retry a write on transient network failures; the caller logs and swallows the final exception.</summary>
+    private static async Task<T> ExecuteWithRetryAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return await action();
+            }
+            catch (Exception exception) when (attempt < RetryDelays.Length && IsTransient(exception))
+            {
+                await Task.Delay(RetryDelays[attempt], cancellationToken);
+            }
+        }
+    }
+
+    private static bool IsTransient(Exception exception) =>
+        exception is HttpRequestException or TaskCanceledException or TimeoutException;
 }

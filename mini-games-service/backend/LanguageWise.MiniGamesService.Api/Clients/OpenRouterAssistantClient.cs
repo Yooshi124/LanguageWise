@@ -13,16 +13,16 @@ public interface IAssistantCompletionClient
         CancellationToken cancellationToken);
 }
 
-public sealed class GarryCompletionClient(HttpClient client, IHttpContextAccessor contextAccessor) : IAssistantCompletionClient
+public sealed class GarryCompletionClient(
+    HttpClient client,
+    IHttpContextAccessor contextAccessor,
+    IMcpToolClient mcpTools) : IAssistantCompletionClient
 {
     public async Task<AssistantCompletionStream> StartCompletionAsync(
         IReadOnlyList<OpenRouterChatMessage> messages, CancellationToken cancellationToken)
     {
         var context = contextAccessor.HttpContext ?? throw new InvalidOperationException("No assistant request context.");
-        var authorization = context.Request.Headers.Authorization.ToString();
-        var token = authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
-            ? authorization["Bearer ".Length..].Trim()
-            : context.Request.Cookies["token"];
+        var token = UserTokenReader.Read(context.Request);
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/completions")
         {
             Content = JsonContent.Create(new
@@ -30,7 +30,8 @@ public sealed class GarryCompletionClient(HttpClient client, IHttpContextAccesso
                 message = messages[^1].Content,
                 history = messages.Skip(2).SkipLast(1),
                 domainRules = messages[0].Content,
-                canonicalContext = messages[1].Content
+                canonicalContext = messages[1].Content,
+                toolScope = mcpTools.Enabled ? McpToolClient.Scope : null
             })
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -64,13 +65,20 @@ public sealed class AssistantCompletionStream(
         if (fromGarry)
         {
             using var garryReader = new StreamReader(responseStream);
+            string? eventName = null;
             while (await garryReader.ReadLineAsync(cancellationToken) is { } garryLine)
             {
+                if (garryLine.StartsWith("event: ", StringComparison.Ordinal))
+                {
+                    eventName = garryLine[7..].Trim();
+                    continue;
+                }
                 if (!garryLine.StartsWith("data: ", StringComparison.Ordinal))
                 {
                     continue;
                 }
-                var streamEvent = ParseGarryEvent(garryLine[6..]);
+                var streamEvent = ParseGarryEvent(eventName, garryLine[6..]);
+                eventName = null;
                 yield return streamEvent;
                 if (streamEvent.Type == "done")
                 {
@@ -137,12 +145,26 @@ public sealed class AssistantCompletionStream(
         return ValueTask.CompletedTask;
     }
 
-    private static ProviderStreamEvent ParseGarryEvent(string json)
+    private static ProviderStreamEvent ParseGarryEvent(string? eventName, string json)
     {
         try
         {
             using var document = JsonDocument.Parse(json);
             var root = document.RootElement;
+            if (eventName == "tool")
+            {
+                if (root.ValueKind != JsonValueKind.Object ||
+                    !root.TryGetProperty("name", out var name) ||
+                    name.ValueKind != JsonValueKind.String)
+                {
+                    throw new AssistantProviderStreamException();
+                }
+                return ProviderStreamEvent.Tool(new AssistantToolEvent(
+                    name.GetString()!,
+                    root.TryGetProperty("arguments", out var arguments) ? arguments.Clone() : null,
+                    root.TryGetProperty("isError", out var isError) && isError.ValueKind == JsonValueKind.True,
+                    root.TryGetProperty("result", out var result) ? result.Clone() : null));
+            }
             if (root.TryGetProperty("content", out var content))
             {
                 return ProviderStreamEvent.Delta(content.GetString()!);
@@ -205,11 +227,13 @@ public sealed class AssistantCompletionStream(
     }
 }
 
-public sealed record ProviderStreamEvent(string Type, string? Content, string? Reason)
+public sealed record ProviderStreamEvent(string Type, string? Content, string? Reason, AssistantToolEvent? ToolEvent = null)
 {
     public static ProviderStreamEvent Delta(string content) => new("delta", content, null);
 
     public static ProviderStreamEvent Done(string reason = "stop") => new("done", null, reason);
+
+    public static ProviderStreamEvent Tool(AssistantToolEvent toolEvent) => new("tool", null, null, toolEvent);
 }
 
 public sealed class AssistantProviderException(string message, System.Net.HttpStatusCode statusCode)

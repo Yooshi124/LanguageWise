@@ -84,6 +84,17 @@ public sealed class GameRepository(string connectionString)
         return command.ExecuteNonQuery() > 0;
     }
 
+    /// <summary>Purge games past their expiry; GameAttempts cascade-delete with them.</summary>
+    public int DeleteExpired(DateTime utcNow)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM Games WHERE ExpiresAt IS NOT NULL AND ExpiresAt < $now;";
+        command.Parameters.AddWithValue("$now", utcNow.ToString("O"));
+
+        return command.ExecuteNonQuery();
+    }
+
     /// <summary>Cheap query used by the health endpoint to prove the database is reachable.</summary>
     public long Count()
     {

@@ -1,7 +1,7 @@
 """HUMAN REVIEW stage: turn a free-text reply into accepted finding indices.
 
 Local parsing handles the common shapes ("1 and 2", "1,3", "1-3", "all", "none")
-without an API call. Anything else falls back to a small structured Gemini call so
+without an API call. Anything else falls back to a small structured model call so
 the human can answer however feels natural.
 """
 
@@ -11,8 +11,8 @@ import logging
 import re
 from dataclasses import dataclass
 
-from core.gemini_client import GeminiClient, GeminiError, ModelResponse, dump_json
 from core.models import Decision, Finding
+from core.openrouter_client import ModelResponse, OpenRouterClient, OpenRouterError, dump_json
 from core.prompt_registry import PromptRegistry
 
 logger = logging.getLogger(__name__)
@@ -127,7 +127,7 @@ def parse_decision(
     reply: str,
     findings: list[Finding],
     prompts: PromptRegistry,
-    client: GeminiClient | None,
+    client: OpenRouterClient | None,
 ) -> DecisionResult:
     total = len(findings)
     local = parse_locally(reply, total)
@@ -158,7 +158,7 @@ def parse_decision(
             schema=Decision,
             system_instruction=prompts.render("decision", "system", max_index=total),
         )
-    except GeminiError as exc:
+    except OpenRouterError as exc:
         logger.warning("Decision interpretation failed: %s", exc)
         return DecisionResult(
             accepted=[],

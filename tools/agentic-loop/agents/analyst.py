@@ -11,8 +11,8 @@ from dataclasses import dataclass
 from collectors.file_reader import CodeBundle
 from collectors.repo_observer import Observation
 from config.settings import Settings
-from core.gemini_client import GeminiClient, ModelResponse
 from core.models import FindingSet
+from core.openrouter_client import ModelResponse, OpenRouterClient
 from core.prompt_registry import PromptRegistry
 
 MAX_FINDINGS = 10
@@ -32,7 +32,7 @@ def analyse(
     observation: Observation,
     settings: Settings,
     prompts: PromptRegistry,
-    client: GeminiClient,
+    client: OpenRouterClient,
     max_findings: int = MAX_FINDINGS,
 ) -> AnalysisResult:
     context = prompts.render(

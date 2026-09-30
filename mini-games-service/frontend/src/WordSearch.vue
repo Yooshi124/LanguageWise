@@ -42,15 +42,17 @@
 						class="grid-letter"
 						:data-index="index"
 						:class="cellClass(index)"
-						:aria-label="`Letter ${letter}, position ${index + 1}`"
+						:aria-pressed="selectedIndexes.includes(index)"
+						:aria-label="`Letter ${letter}, position ${index + 1}${selectedIndexes.includes(index) ? ', selected' : ''}`"
 						@pointerdown="startSelection(index, $event)"
 						@pointerenter="continueSelection(index)"
+						@keydown="handleGridKeydown(index, $event)"
 					>
 						{{ letter }}
 					</button>
 				</div>
 				<p v-if="selection.length" class="current-word" aria-live="polite">{{ selection }}</p>
-				<p v-if="message" class="game-message" :class="{ 'is-error': error }" role="status">{{ message }}</p>
+				<p v-if="message" class="game-message" :class="{ 'is-error': error, 'is-success': gameComplete && !isGivenUp }" role="status">{{ message }}</p>
 				<div class="game-actions">
 					<button type="button" :disabled="gameComplete || (!hintWord && hintsUsed >= maximumHints) || hintBusy" @click="useHint">
 						{{ hintWord ? 'Show order' : `Hint (${maximumHints - hintsUsed} left)` }}
@@ -60,6 +62,16 @@
 					<button v-if="gameComplete" type="button" :disabled="starting" @click="resetGameHandler">Play again</button>
 				</div>
 				<WordDefinitions :definitions="definitions" :visible="showDefinitions" @close="showDefinitions = false" />
+				<GameSummary
+					:visible="showSummary"
+					:won="!isGivenUp"
+					game-name="Word Search"
+					:elapsed-seconds="elapsedSeconds"
+					:stats="summaryStats"
+					:share-text="shareText"
+					@close="showSummary = false"
+					@play-again="resetGameHandler"
+				/>
 			</section>
 
 			<aside class="hint-box">
@@ -74,11 +86,12 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { initializeGame, submitWordSearchWord, useWordSearchHint, giveUpWordSearch, resetGame, isNoVocabularyError, isAiUnavailableError, NO_VOCABULARY_MESSAGE, AI_UNAVAILABLE_MESSAGE } from './api.js';
 import AppIcon from './components/AppIcon.vue';
 import GameHelp from './components/GameHelp.vue';
 import WordDefinitions from './components/WordDefinitions.vue';
+import GameSummary from './components/GameSummary.vue';
 import GeneratingState from './components/GeneratingState.vue';
 
 // App base path ('/mini-games/' through the gateway, '/' in local dev).
@@ -87,13 +100,21 @@ const gameHome = { name: 'mini-games-home' };
 const howToPlay = [
 	'Words from your course vocabulary are hidden as a chain of connected letters in the grid.',
 	'Press and drag from letter to letter to trace a word, then release to submit it.',
+	'Keyboard: move between letters with the arrow keys, press Enter or Space to add a letter, then press Enter again on the last letter to submit (Escape cancels).',
 	'Found words stay highlighted on the board and are ticked off in the list.',
 	'Stuck? Spend a hint to reveal the start of a word — you only get a few.'
 ];
 
+// Initial board dimensions and hint allowance before the server-generated state loads.
+const DEFAULT_ROWS = 8;
+const DEFAULT_COLUMNS = 6;
+const DEFAULT_MAXIMUM_HINTS = 3;
+const HINT_ANIMATION_DELAY_MS = 180;
+const MINIMUM_SELECTION_LENGTH = 3;
+
 const board = ref([]);
-const rows = ref(8);
-const columns = ref(6);
+const rows = ref(DEFAULT_ROWS);
+const columns = ref(DEFAULT_COLUMNS);
 const totalWords = ref(0);
 const themeHint = ref('');
 const wordPaths = ref({});
@@ -101,7 +122,7 @@ const featuredWord = ref('');
 const hintWord = ref('');
 const hintPath = ref([]);
 const hintsUsed = ref(0);
-const maximumHints = ref(3);
+const maximumHints = ref(DEFAULT_MAXIMUM_HINTS);
 const foundWords = ref([]);
 const revealedWords = ref([]);
 const isGivenUp = ref(false);
@@ -118,6 +139,24 @@ const noVocabulary = ref(false);
 const aiUnavailable = ref(false);
 const definitions = ref(null);
 const showDefinitions = ref(false);
+const showSummary = ref(false);
+const elapsedSeconds = ref(null);
+
+// Open the results panel automatically the moment a round ends.
+watch(gameComplete, (complete) => {
+	if (complete) showSummary.value = true;
+});
+
+const summaryStats = computed(() => [
+	{ label: 'Words found', value: `${foundWords.value.length} / ${totalWords.value}` },
+	{ label: 'Hints used', value: `${hintsUsed.value} / ${maximumHints.value}` }
+]);
+
+const shareText = computed(() => {
+	if (!gameComplete.value) return '';
+	const status = isGivenUp.value ? 'gave up after' : 'found';
+	return `Word Search: ${status} ${foundWords.value.length}/${totalWords.value} words using ${hintsUsed.value} hint${hintsUsed.value === 1 ? '' : 's'}.`;
+});
 
 const selection = computed(() => selectedIndexes.value.map((index) => board.value[index]).join(''));
 const foundIndexes = computed(() => foundWords.value.flatMap((word) => wordPaths.value[word] ?? []));
@@ -158,6 +197,7 @@ const applyState = (state) => {
 	revealedWords.value = state.revealedWords;
 	isGivenUp.value = state.isGivenUp;
 	gameComplete.value = state.isComplete;
+	elapsedSeconds.value = state.elapsedSeconds ?? null;
 	if (state.definitions) {
 		definitions.value = state.definitions;
 	}
@@ -166,6 +206,7 @@ const applyState = (state) => {
 const loadGame = async () => {
 	starting.value = true;
 	showDefinitions.value = false;
+	showSummary.value = false;
 	try {
 		const state = await initializeGame('word-search');
 		applyState(state);
@@ -195,13 +236,58 @@ const handlePointerMove = (event) => {
 	continueSelection(index === undefined ? undefined : Number(index));
 };
 
+// Move focus to the adjacent cell in the given direction, clamped to the board edges.
+const focusCell = (index) => {
+	document.querySelector(`.grid-letter[data-index="${index}"]`)?.focus();
+};
+
+const handleGridKeydown = (index, event) => {
+	if (gameComplete.value || loading.value || hintBusy.value) return;
+
+	const directions = { ArrowRight: [0, 1], ArrowLeft: [0, -1], ArrowDown: [1, 0], ArrowUp: [-1, 0] };
+	if (directions[event.key]) {
+		event.preventDefault();
+		const [rowDelta, columnDelta] = directions[event.key];
+		const row = Math.floor(index / columns.value);
+		const column = index % columns.value;
+		const targetRow = Math.min(Math.max(row + rowDelta, 0), rows.value - 1);
+		const targetColumn = Math.min(Math.max(column + columnDelta, 0), columns.value - 1);
+		focusCell(targetRow * columns.value + targetColumn);
+		return;
+	}
+
+	if (event.key === 'Enter' || event.key === ' ') {
+		event.preventDefault();
+		if (!selecting.value) {
+			selecting.value = true;
+			selectedIndexes.value = [index];
+			message.value = '';
+			error.value = false;
+			return;
+		}
+		const isLastSelected = selectedIndexes.value[selectedIndexes.value.length - 1] === index;
+		if (isLastSelected && selectedIndexes.value.length >= MINIMUM_SELECTION_LENGTH) {
+			finishSelection();
+			return;
+		}
+		continueSelection(index);
+		return;
+	}
+
+	if (event.key === 'Escape') {
+		event.preventDefault();
+		selecting.value = false;
+		selectedIndexes.value = [];
+	}
+};
+
 const finishSelection = async () => {
 	if (!selecting.value) return;
 	selecting.value = false;
 	const word = selection.value;
 	const indices = [...selectedIndexes.value];
 	selectedIndexes.value = [];
-	if (word.length < 3) return;
+	if (word.length < MINIMUM_SELECTION_LENGTH) return;
 	loading.value = true;
 	try {
 		const result = await submitWordSearchWord(word, indices);
@@ -217,7 +303,7 @@ const finishSelection = async () => {
 const animateHint = async () => {
 	for (const index of hintPath.value) {
 		hintPulseIndexes.value = [index];
-		await new Promise((resolve) => window.setTimeout(resolve, 180));
+		await new Promise((resolve) => window.setTimeout(resolve, HINT_ANIMATION_DELAY_MS));
 	}
 	hintPulseIndexes.value = [];
 };

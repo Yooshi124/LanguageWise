@@ -22,7 +22,7 @@ version keeps the discipline and moves every variable part into configuration:
 | Prompts embedded in Python strings | Markdown templates in `prompts/` |
 | A fixed list of two files | Scope scan plus model-driven file selection |
 | One application's domain rules | Whatever the reviewed repository actually contains |
-| Ollama with two local models | Google Gemini, model set in `.env` |
+| Ollama with two local models | OpenRouter chat completions, model set in `.env` |
 | A 1 / 2 / 3 accept menu | Per-finding acceptance in plain English |
 | One shared `evidence_log.md` | One `AgenticLoopSession{GUID}.md` per session |
 | No actionable output | `AgenticLoopPlan{GUID}.md` per accepted set |
@@ -36,7 +36,7 @@ version keeps the discipline and moves every variable part into configuration:
 | **1. PLAN** | `core/orchestrator.py` | Your prompt is captured verbatim and written to the log. Nothing is inferred or rewritten. |
 | **2. ACT** | `collectors/repo_scanner.py`, `agents/file_selector.py`, `collectors/file_reader.py` | The scope is walked, a manifest is built, the model picks the relevant files, and those files are read within budget. |
 | **3. OBSERVE** | `collectors/repo_observer.py` | Deterministic facts are computed locally: file and line counts, file types, test files, git branch and commit, and every skip or truncation warning. No model involved. |
-| **4. AGENT** | `agents/analyst.py`, `agents/critic.py` | The implementation agent (Gemini) proposes findings; the review agent (local Gemma via Ollama, mandatory) challenges them. Only survivors are shown. |
+| **4. AGENT** | `agents/analyst.py`, `agents/critic.py` | The implementation agent (via OpenRouter) proposes findings; the review agent (local Gemma via Ollama, mandatory) challenges them. Only survivors are shown. |
 | **5. HUMAN REVIEW** | `agents/decision_parser.py` | Your free-text reply is turned into accepted indices. Your exact words are recorded. |
 | **6. ADAPT** | `agents/planner.py`, `output/plan_writer.py` | Accepted findings become a detailed implementation plan on disk; the decision and outcome are logged. |
 
@@ -58,8 +58,8 @@ main.py                     CLI entry point, REPL, slash commands
 ├── core/
 │   ├── stages.py           the six canonical stages (single source of truth)
 │   ├── orchestrator.py     runs a round: stage banners + log headings, error handling
-│   ├── models.py           pydantic schemas, doubling as the model's JSON schemas
-│   ├── gemini_client.py    google-genai wrapper: structured output, retries, usage
+│   ├── models.py           pydantic schemas, doubling as the model's JSON contracts
+│   ├── openrouter_client.py OpenRouter wrapper: structured output, retries, usage
 │   ├── ollama_client.py    local Ollama wrapper for the mandatory Review Agent
 │   ├── prompt_registry.py  loads prompts/*.md, strict {{PLACEHOLDER}} rendering
 │   ├── session.py          session and round identity, timing, running totals
@@ -68,7 +68,10 @@ main.py                     CLI entry point, REPL, slash commands
 ├── collectors/
 │   ├── repo_scanner.py     scope walk, ignore rules, secret and binary filtering
 │   ├── file_reader.py      capped reads with explicit truncation markers
-│   └── repo_observer.py    deterministic OBSERVE-stage evidence
+│   ├── repo_observer.py    deterministic OBSERVE-stage evidence
+│   ├── github_actions.py   failed CI runs and job-log excerpts via the GitHub API
+│   ├── rag_observer.py     retrieved documentation passages via the local RAG server
+│   └── mcp_observer.py     live initialize/tools/list/tools/call evidence via the local MCP server
 │
 ├── agents/
 │   ├── file_selector.py    manifest -> relevant files (with keyword fallback)
@@ -117,13 +120,20 @@ A single model asked to review code will pad its answer. The critic pass exists
 to shorten the list, not lengthen it — and it runs on a genuinely different,
 locally-hosted model so it cannot simply agree with itself:
 
-- **Implementation agent** (`GEMINI_MODEL`, Google Gemini) reads the code and the
+- **Implementation agent** (`OPENROUTER_MODEL`, via OpenRouter) reads the code and the
   observations and proposes findings, each with a problem, a specific fix, a
   severity, file paths and the evidence that supports it.
 - **Review agent** (`OLLAMA_REVIEW_MODEL`, a local Gemma model served by Ollama)
-  sees the same code plus those findings and must drop anything unsupported,
-  amend anything vague, and keep only what is actionable. It returns a verdict
-  for every original finding.
+  sees the same code plus those findings and critiques them with a keep-first
+  bias: keep the sound, amend the vague, and drop only what the supplied code
+  actively contradicts. It returns a verdict for every original finding.
+
+The critic's bias is deliberate. Small local models over-fire on scepticism, so
+the prompts make KEEP the default verdict, require every drop to cite the
+contradicting code, and treat "the code does not prove this" as insufficient
+grounds for dropping. As a backstop, a critique that drops every finding from a
+non-empty list triggers one mandatory re-check pass with the keep-first bias
+restated before the empty list is believed.
 
 Both the original findings and the critic's verdicts are recorded, so the log
 shows what was filtered and why. **The review pass is mandatory and cannot be
@@ -138,18 +148,21 @@ reaches a human without a second, independent model having checked it first.
 
 Every model call returns JSON validated against a pydantic schema from
 `core/models.py` — `FileSelection`, `FindingSet`, `CritiqueResult`,
-`ImplementationPlan`, `Decision`. The schema is sent with the request. Gemini
-calls (`core/gemini_client.py`) use the Gen AI SDK's `response_format`:
+`ImplementationPlan`, `Decision`. OpenRouter calls (`core/openrouter_client.py`)
+use the OpenAI-compatible chat-completions endpoint — the same pattern as the
+mini-games service's `OpenRouterVocabularyClient` — and the prompts themselves
+instruct the model to answer with only the JSON object:
 
 ```python
-response_format={
-    "type": "text",
-    "mime_type": "application/json",
-    "schema": inline_schema_refs(FindingSet.model_json_schema()),
-}
+body = {"model": model, "messages": messages, "stream": False, "max_tokens": ...}
+# POST {OPENROUTER_BASE_URL}/chat/completions, Authorization: Bearer <key>
 ```
 
-The Review Agent (`core/ollama_client.py`) uses the identical schema through
+If the reply is not valid JSON for the schema, the model gets one repair round
+("That was not valid JSON. Reply with only the JSON object...") before the call
+is declared failed — again mirroring the mini-games vocabulary provider.
+
+The Review Agent (`core/ollama_client.py`) enforces the identical schema through
 Ollama's own structured-output support instead — a `format` field on the
 `/api/chat` request carrying the same `inline_schema_refs`-flattened JSON
 schema. Both clients hand their raw JSON reply to the same pydantic model for
@@ -159,22 +172,74 @@ Nothing is scraped out of prose, so a formatting wobble cannot corrupt a finding
 `inline_schema_refs` flattens pydantic's `$defs`/`$ref` into a self-contained
 schema for portability, and pins `propertyOrdering` on every object.
 
-Field order matters more than it looks. Gemini emits JSON keys in whatever order
-it likes unless told otherwise, and if a long free-text field such as `summary`
+Field order matters more than it looks. Models emit JSON keys in whatever order
+they like unless told otherwise, and if a long free-text field such as `summary`
 comes first the model treats it as a scratchpad: it reasons there until the
 output budget is gone, then closes the response with an empty `findings` array.
-Pinning the order (arrays first, prose last) and capping the prose fields with
-`maxLength` in the schema keeps the model's budget where it belongs. The caps are
+The Ollama schema pins the order (arrays first, prose last) and the prose fields
+are capped with `maxLength` in the schema to keep the model's budget where it
+belongs. The caps are
 schema-only hints via `json_schema_extra`, so an over-long reply still validates
 locally rather than failing the round.
 
-`MAX_OUTPUT_TOKENS` and `THINKING_LEVEL` are sent as `generation_config` on every
-**Gemini** call (selection, analysis, planning). That budget covers the model's
+`MAX_OUTPUT_TOKENS` is sent as `max_tokens` on every OpenRouter call (selection,
+analysis, planning), and `THINKING_LEVEL` maps to OpenRouter's unified
+`reasoning.effort` parameter. That budget covers the model's
 internal thinking as well as the reply, so setting it too low produces truncated
 JSON; the client detects that case and says so explicitly instead of reporting a
 schema mismatch. The local Ollama review agent has its own timeout
 (`OLLAMA_REQUEST_TIMEOUT_SECONDS`) instead, since it runs on your hardware rather
 than a metered API.
+
+---
+
+## CI-failures mode
+
+`python main.py --ci-failures [workflow]` (or `/ci-failures` in the REPL) runs a
+normal round whose evidence comes from GitHub Actions instead of a hand-written
+prompt:
+
+1. `collectors/github_actions.py` resolves the repository (`GITHUB_REPO`, else
+   the `origin` remote), finds the most recent failed workflow run (optionally
+   filtered to one workflow), and lists its failed jobs.
+2. For each failed job (up to five) it downloads the job log and extracts the
+   failure lines — xUnit `[FAIL]` blocks, compiler errors (`error CS...`),
+   vitest failures, exceptions — with a little surrounding context.
+3. The resulting report is injected into the OBSERVE stage as an extra section,
+   so both agents see it next to the deterministic observations, and the round's
+   prompt asks for a root-cause diagnosis with concrete fixes.
+
+Everything else is identical to a normal round: the same six stages, the same
+evidence log, the same human review. `GITHUB_TOKEN` is sent only to
+`api.github.com` and is redacted from all output like the OpenRouter key.
+
+---
+
+## RAG and MCP validation modes
+
+`--rag-validate [topic]` and `--mcp-validate [tool]` (plus the `/rag-validate`,
+`/rag`, `/mcp-validate` and `/mcp` REPL commands) follow the same pattern as
+CI-failures mode: a collector gathers live evidence from a local,
+non-containerised server, the report is injected into the OBSERVE stage as an
+extra section, and a normal round reviews the code in scope against it.
+
+- **RAG** (`core/rag_client.py`, `collectors/rag_observer.py`): queries the RAG
+  server's plain `POST /query` REST endpoint (`rag-server/`, default
+  `http://localhost:8100`) for passages about a topic; the round flags code that
+  contradicts or drifts from the documented behaviour.
+- **MCP** (`core/mcp_client.py`, `collectors/mcp_observer.py`): speaks JSON-RPC
+  2.0 over streamable HTTP to the shared MCP server (`mcp-server/`, default
+  `http://localhost:8200/mcp`) with the same `X-LanguageWise-Mcp-Key` /
+  `-Tool-Scope` / `-User-Token` headers the feature backends send. It runs
+  `initialize`, `tools/list` for the configured scope, and one real `tools/call`
+  probe (a named tool, or the first one needing no arguments); the round
+  validates the server code against the observed contract — scope filtering,
+  read-only results, safe `isError` payloads.
+
+Both servers are optional and independent: the modes fail fast with a clear
+error when the server is not running, and neither server is ever started,
+stopped or containerised by the loop. The MCP API key and user token are
+registered for redaction exactly like the OpenRouter key.
 
 ---
 
@@ -242,21 +307,21 @@ Run `/config` in the REPL to see which templates were found on disk.
 
 ## Cost and tokens
 
-A full round makes up to four model calls — three billed against your Gemini
-quota, one free and local:
+A full round makes up to four model calls — three billed against your OpenRouter
+credits, one free and local:
 
 | Call | When it happens | Model |
 | --- | --- | --- |
-| File selection | Only when the scope exceeds `MAX_FILES_IN_CONTEXT` | `GEMINI_SELECTION_MODEL` (Gemini, metered) |
-| Analysis | Always | `GEMINI_MODEL` (Gemini, metered) |
+| File selection | Only when the scope exceeds `MAX_FILES_IN_CONTEXT` | `OPENROUTER_SELECTION_MODEL` (OpenRouter, metered) |
+| Analysis | Always | `OPENROUTER_MODEL` (OpenRouter, metered) |
 | Critique | Always, when findings exist — mandatory, cannot be disabled | `OLLAMA_REVIEW_MODEL` (local via Ollama, free) |
-| Planning | Only when you accept at least one finding | `GEMINI_MODEL` (Gemini, metered) |
+| Planning | Only when you accept at least one finding | `OPENROUTER_MODEL` (OpenRouter, metered) |
 
 Interpreting your acceptance reply normally costs nothing — common phrasings are
 parsed locally, and the model is consulted only for genuinely unusual wording.
 
 Levers, cheapest first: narrow the scope, lower `MAX_FILES_IN_CONTEXT`, point
-`GEMINI_SELECTION_MODEL` at a lighter model. The critique pass is local and free,
+`OPENROUTER_SELECTION_MODEL` at a lighter model. The critique pass is local and free,
 so there is no reason to skip it — and no setting to do so.
 
 Token usage for every call is recorded in the evidence log and totalled in the
@@ -278,8 +343,9 @@ Ollama) is recorded the same way, even though it costs nothing.
 - **Key redaction.** The API key is masked in every log line, error and `/config` view.
 - **Symlinks skipped.** The scanner does not follow them, so it cannot escape the scope.
 
-**Privacy note:** the contents of selected files are sent to Google's Gemini API
-for selection, analysis and planning. Only point the tool at code you are
+**Privacy note:** the contents of selected files are sent to OpenRouter (which
+routes them to the provider hosting the configured model) for selection, analysis
+and planning. Only point the tool at code you are
 permitted to share. The Review Agent's pass (source code + findings) stays on
 your machine via the local Ollama daemon.
 
@@ -296,7 +362,7 @@ your machine via the local Ollama daemon.
 | Planning call fails | Round stops in ADAPT; the accepted findings are preserved in the log. |
 | Ctrl+C mid-round | Remaining stages are marked interrupted; the log is complete up to that point; the REPL survives. |
 | Input closed (Ctrl+Z, or piped stdin ending) at a question | Same as Ctrl+C: the round ends, every stage heading is still recorded. |
-| Transient Gemini API error (429, 5xx, timeout) | Retried up to `MAX_RETRIES` with exponential backoff before surfacing. Ollama calls (the Review Agent) are not retried — a connection failure there is reported immediately with setup instructions instead. |
+| Transient OpenRouter error (429, 5xx, timeout) | 429s honour the `Retry-After` header (capped at 8s); other transient errors are retried up to `MAX_RETRIES` with exponential backoff before surfacing. Ollama calls (the Review Agent) are not retried — a connection failure there is reported immediately with setup instructions instead. |
 
 ---
 

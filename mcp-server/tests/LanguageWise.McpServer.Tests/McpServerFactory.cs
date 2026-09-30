@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using LanguageWise.McpServer.Security;
+using LanguageWise.McpServer.Tools.MiniGames;
 using LanguageWise.McpServer.Tools.QuizzesCourses;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -31,9 +32,14 @@ public sealed class McpServerFactory : WebApplicationFactory<Program>
 		builder.UseSetting("Mcp:ApiKey", ApiKey);
 		builder.UseSetting("Auth:VerificationKeyPath", publicKeyPath);
 		builder.UseSetting("Services:QuizzesCourses", "http://quizzes.test");
+		builder.UseSetting("Services:MiniGames", "http://mini-games.test");
 		builder.ConfigureServices(services =>
+		{
 			services.AddHttpClient(QuizzesCoursesTools.ServiceName)
-				.ConfigurePrimaryHttpMessageHandler(() => Downstream));
+				.ConfigurePrimaryHttpMessageHandler(() => Downstream);
+			services.AddHttpClient(MiniGamesTools.ServiceName)
+				.ConfigurePrimaryHttpMessageHandler(() => Downstream);
+		});
 	}
 
 	public string CreateUserToken(TimeSpan? lifetime = null, RSA? key = null)

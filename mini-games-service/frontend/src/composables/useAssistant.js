@@ -1,18 +1,33 @@
 import { readonly, ref } from 'vue';
-import { streamAssistantMessage } from '../api/assistant.js';
+import {
+  AssistantToolsUnavailableError,
+  callAssistantTool,
+  listAssistantTools,
+  streamAssistantMessage
+} from '../api/assistant.js';
 
 const maximumStoredMessages = 12;
 const maximumConversationCharacters = 12000;
 const maximumHistoryMessageCharacters = 12000;
+const maximumStoredToolResultCharacters = 20000;
 const messages = ref([]);
 const expanded = ref(false);
 const streaming = ref(false);
 const error = ref(null);
+const toolsEnabled = ref(false);
+const tools = ref([]);
+const toolsLoading = ref(false);
+const toolsError = ref(null);
+const toolRunning = ref(null);
 let activeUserId = null;
 let controller = null;
 
 function storageKey(userId) {
   return `languagewise:assistant:v1:user:${userId}`;
+}
+
+function toolsStorageKey(userId) {
+  return `${storageKey(userId)}:tools`;
 }
 
 function initialize(userId) {
@@ -22,6 +37,11 @@ function initialize(userId) {
   streaming.value = false;
   error.value = null;
   messages.value = loadMessages(userId);
+  tools.value = [];
+  toolsError.value = null;
+  toolRunning.value = null;
+  toolsEnabled.value = sessionStorage.getItem(toolsStorageKey(userId)) === 'on';
+  if (toolsEnabled.value) void loadTools();
 }
 
 async function send(content, context) {
@@ -57,6 +77,12 @@ async function send(content, context) {
             };
           }
         },
+        onTool: (result) => {
+          updateMessage(assistantMessage.id, (current) => ({
+            ...current,
+            toolResults: [...(current.toolResults ?? []), result]
+          }));
+        },
         onDone: () => {
           persist();
         }
@@ -85,6 +111,66 @@ async function retry(context) {
   await send(last.content, context);
 }
 
+function updateMessage(id, update) {
+  const index = messages.value.findIndex((message) => message.id === id);
+  const current = messages.value[index];
+  if (index >= 0 && current) {
+    messages.value[index] = update(current);
+  }
+}
+
+async function setToolsEnabled(enabled) {
+  toolsEnabled.value = enabled;
+  if (activeUserId !== null) {
+    sessionStorage.setItem(toolsStorageKey(activeUserId), enabled ? 'on' : 'off');
+  }
+  if (enabled && tools.value.length === 0) {
+    await loadTools();
+  }
+}
+
+async function loadTools() {
+  if (toolsLoading.value) return;
+  toolsLoading.value = true;
+  toolsError.value = null;
+  try {
+    tools.value = await listAssistantTools();
+  } catch (cause) {
+    tools.value = [];
+    toolsError.value =
+      cause instanceof AssistantToolsUnavailableError && cause.disabled
+        ? "Garry's tools are turned off on this server."
+        : cause instanceof Error
+          ? cause.message
+          : "Garry's tools are unavailable right now.";
+  } finally {
+    toolsLoading.value = false;
+  }
+}
+
+async function runTool(tool, args) {
+  if (streaming.value || toolRunning.value || activeUserId === null) return;
+  error.value = null;
+  toolRunning.value = tool.name;
+  try {
+    const result = await callAssistantTool(tool.name, args);
+    messages.value.push({
+      ...createMessage(
+        'assistant',
+        result.isError
+          ? `I couldn't use **${tool.title}** just now.`
+          : `Here's what I found with **${tool.title}**.`
+      ),
+      toolResults: [result]
+    });
+    persist();
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Garry could not use that tool.';
+  } finally {
+    toolRunning.value = null;
+  }
+}
+
 function cancel() {
   controller?.abort();
 }
@@ -102,7 +188,7 @@ function persist() {
   messages.value = completeMessages.slice(-maximumStoredMessages);
   const storedMessages = boundedMessages(
     messages.value.map(normalizeHistoryMessage)
-  );
+  ).map(storableMessage);
   sessionStorage.setItem(storageKey(activeUserId), JSON.stringify(storedMessages));
 }
 
@@ -171,6 +257,13 @@ function createMessage(role, content) {
   };
 }
 
+function storableMessage(message) {
+  if (!message.toolResults?.length) return message;
+  return JSON.stringify(message.toolResults).length <= maximumStoredToolResultCharacters
+    ? message
+    : { id: message.id, role: message.role, content: message.content };
+}
+
 export function useAssistant(userId) {
   initialize(userId);
   return {
@@ -181,6 +274,14 @@ export function useAssistant(userId) {
     send,
     retry,
     cancel,
-    clear
+    clear,
+    tools: readonly(tools),
+    toolsEnabled: readonly(toolsEnabled),
+    toolsLoading: readonly(toolsLoading),
+    toolsError: readonly(toolsError),
+    toolRunning: readonly(toolRunning),
+    setToolsEnabled,
+    loadTools,
+    runTool
   };
 }

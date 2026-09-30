@@ -13,8 +13,8 @@ from dataclasses import dataclass, field
 
 from collectors.repo_scanner import ManifestEntry, ScanResult
 from config.settings import Settings
-from core.gemini_client import GeminiClient, GeminiError, ModelResponse
 from core.models import FileSelection
+from core.openrouter_client import ModelResponse, OpenRouterClient, OpenRouterError
 from core.prompt_registry import PromptRegistry
 
 logger = logging.getLogger(__name__)
@@ -96,9 +96,9 @@ def select_files(
     user_prompt: str,
     settings: Settings,
     prompts: PromptRegistry,
-    client: GeminiClient,
+    client: OpenRouterClient,
 ) -> SelectionResult:
-    """Ask Gemini which files matter, then validate its answer against the manifest."""
+    """Ask the model which files matter, then validate its answer against the manifest."""
     if not scan.entries:
         return SelectionResult(entries=[], reasons={}, rationale="No files in scope.")
 
@@ -134,7 +134,7 @@ def select_files(
             system_instruction=system,
             model=settings.selection_model,
         )
-    except GeminiError as exc:
+    except OpenRouterError as exc:
         logger.warning("File selection call failed, using keyword fallback: %s", exc)
         entries = heuristic_selection(scan, user_prompt, limit)
         return SelectionResult(
