@@ -1,25 +1,5 @@
-import type { Component } from 'vue'
+import { shallowReactive } from 'vue'
 import type { RouteLocationNormalizedLoaded } from 'vue-router'
-
-export interface AuthenticatedUser {
-  id: number
-  name: string
-}
-
-export interface FeatureHostContext {
-  user: AuthenticatedUser | null
-  navigate: (path: string) => Promise<void>
-  signIn: (returnUrl?: string) => void
-  signOut: () => Promise<void>
-}
-
-export interface FeatureRouteDefinition {
-  path: string
-  name: string
-  component: Component
-  props?: Record<string, unknown>
-  meta?: Record<string, unknown>
-}
 
 export interface AssistantToolResult {
   tool: string
@@ -37,10 +17,12 @@ export interface FeatureAssistantTool {
   tool: string
   label: string
   arguments: (route: RouteLocationNormalizedLoaded) => Record<string, unknown>
+  /** Why the tool cannot run on this page, or null when it can. */
   unavailable?: (route: RouteLocationNormalizedLoaded) => string | null
 }
 
 export interface FeatureAssistant {
+  /** Prefix of the feature's `/assistant/*` endpoints, e.g. `/quizzes-and-courses/api`. */
   apiBase: string
   welcome: string
   placeholder: string
@@ -52,15 +34,4 @@ export interface FeatureAssistant {
   }
 }
 
-export interface FederatedFeatureModule {
-  QuizzesCoursesComponent: Component
-  metadata: {
-    key: string
-    displayName: string
-    icon: string
-    basePath: string
-    requiresAuth: boolean
-  }
-  routes: readonly FeatureRouteDefinition[]
-  assistant?: FeatureAssistant
-}
+export const featureAssistants = shallowReactive(new Map<string, FeatureAssistant>())

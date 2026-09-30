@@ -7,6 +7,7 @@ import PostCreateView from '../views/PostCreateView.vue';
 import PostEditView from '../views/PostEditView.vue';
 
 export { ChatDiscussionComponent };
+export { assistant } from './assistant.js';
 
 export const metadata = {
     key: 'chat-discussion',

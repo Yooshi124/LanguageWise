@@ -3,6 +3,7 @@ import type { Component } from 'vue'
 import type { Router, RouteRecordRaw } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 import RemoteUnavailableView from '../views/RemoteUnavailableView.vue'
+import { featureAssistants, type FeatureAssistant } from './featureAssistants'
 
 interface FeatureRouteDefinition {
   path: string
@@ -19,6 +20,7 @@ interface FederatedFeatureModule {
     requiresAuth: boolean
   }
   routes: readonly FeatureRouteDefinition[]
+  assistant?: FeatureAssistant
   [exportName: string]: unknown
 }
 
@@ -114,6 +116,7 @@ export function createRemoteRegistration(
         removeFallback?.()
         removeFallback = undefined
         fallbackRegistered = false
+        if (remote.assistant) featureAssistants.set(remote.metadata.key, remote.assistant)
         router.addRoute({
           path: remote.metadata.basePath,
           name: config.routeName,

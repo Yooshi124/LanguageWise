@@ -1,16 +1,21 @@
-import { handleUnauthorized } from '../federation/featureHost'
-import type {
-  AssistantMessageRequest,
-  AssistantTool,
-  AssistantToolResult,
-} from '../models/api'
+import type { AssistantToolResult } from '../federation/featureAssistants'
 
-const apiBase = '/quizzes-and-courses/api'
+export interface AssistantTool {
+  name: string
+  title: string
+  description: string
+}
+
+export interface AssistantMessageRequest {
+  message: string
+  history: { role: 'user' | 'assistant'; content: string }[]
+  context: Record<string, unknown>
+}
 
 interface AssistantStreamHandlers {
   onDelta: (content: string) => void
-  onDone: () => void
-  onTool?: (result: AssistantToolResult) => void
+  onTool: (result: AssistantToolResult) => void
+  onDone: (reason: string) => void
 }
 
 interface ProblemDetails {
@@ -20,16 +25,19 @@ interface ProblemDetails {
   errors?: Record<string, string[]>
 }
 
-export class AssistantToolsUnavailableError extends Error {
-  constructor(message: string, public readonly disabled: boolean) {
+export class GarryApiError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+    public readonly toolsDisabled = false,
+  ) {
     super(message)
-    this.name = 'AssistantToolsUnavailableError'
+    this.name = 'GarryApiError'
   }
 }
 
-export async function listAssistantTools(signal?: AbortSignal) {
+export async function listAssistantTools(apiBase: string) {
   const response = await fetch(`${apiBase}/assistant/tools`, {
-    signal,
     credentials: 'same-origin',
     headers: { Accept: 'application/json' },
   })
@@ -39,29 +47,18 @@ export async function listAssistantTools(signal?: AbortSignal) {
 }
 
 export async function callAssistantTool(
+  apiBase: string,
   name: string,
   args: Record<string, unknown>,
-  signal?: AbortSignal,
 ): Promise<AssistantToolResult> {
-  const response = await fetch(
-    `${apiBase}/assistant/tools/${encodeURIComponent(name)}`,
-    {
-      method: 'POST',
-      signal,
-      credentials: 'same-origin',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(args),
-    },
-  )
+  const response = await fetch(`${apiBase}/assistant/tools/${encodeURIComponent(name)}`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(args),
+  })
   await ensureToolResponse(response)
-  const body = (await response.json()) as {
-    tool?: string
-    isError?: boolean
-    result?: unknown
-  }
+  const body = (await response.json()) as { tool?: string; isError?: boolean; result?: unknown }
   return {
     tool: body.tool ?? name,
     arguments: args,
@@ -71,49 +68,43 @@ export async function callAssistantTool(
 }
 
 async function ensureToolResponse(response: Response) {
-  if (response.status === 401) {
-    handleUnauthorized()
-  }
   if (response.ok) return
-  if (response.status === 503 || response.status === 502) {
-    let problem: ProblemDetails | undefined
-    try {
-      problem = (await response.clone().json()) as ProblemDetails
-    } catch {
-      problem = undefined
-    }
-    throw new AssistantToolsUnavailableError(
+  if (response.status === 502 || response.status === 503) {
+    const problem = await readProblem(response)
+    throw new GarryApiError(
+      response.status,
       problem?.detail || 'Garry’s tools are unavailable right now.',
       problem?.code === 'mcp_disabled',
     )
   }
-  throw new Error(await responseError(response))
+  throw new GarryApiError(response.status, await responseError(response))
 }
 
 export async function streamAssistantMessage(
+  apiBase: string,
   request: AssistantMessageRequest,
   handlers: AssistantStreamHandlers,
   signal: AbortSignal,
 ) {
-  const response = await fetch(`${apiBase}/assistant/messages`, {
-    method: 'POST',
-    signal,
-    credentials: 'same-origin',
-    headers: {
-      Accept: 'text/event-stream',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(request),
-  })
-
-  if (response.status === 401) {
-    handleUnauthorized()
+  let response: Response
+  try {
+    response = await fetch(`${apiBase}/assistant/messages`, {
+      method: 'POST',
+      signal,
+      credentials: 'same-origin',
+      headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    })
+  } catch (cause) {
+    if (cause instanceof DOMException && cause.name === 'AbortError') throw cause
+    throw new GarryApiError(0, 'Garry is unavailable. Please try again.')
   }
+
   if (!response.ok) {
-    throw new Error(await responseError(response))
+    throw new GarryApiError(response.status, await responseError(response))
   }
   if (!response.body) {
-    throw new Error('Garry could not start a response. Please try again.')
+    throw new GarryApiError(response.status, 'Garry could not start a response. Please try again.')
   }
 
   const reader = response.body.getReader()
@@ -127,18 +118,15 @@ export async function streamAssistantMessage(
 
     let boundary = buffer.indexOf('\n\n')
     while (boundary >= 0) {
-      const frame = buffer.slice(0, boundary)
+      completed = handleFrame(buffer.slice(0, boundary), handlers) || completed
       buffer = buffer.slice(boundary + 2)
-      completed = handleFrame(frame, handlers) || completed
       boundary = buffer.indexOf('\n\n')
     }
 
     if (done) break
   }
 
-  if (buffer.trim()) {
-    completed = handleFrame(buffer, handlers) || completed
-  }
+  if (buffer.trim()) completed = handleFrame(buffer, handlers) || completed
   if (!completed) {
     throw new Error('Garry’s response ended unexpectedly. Please try again.')
   }
@@ -149,11 +137,8 @@ function handleFrame(frame: string, handlers: AssistantStreamHandlers) {
   const dataLines: string[] = []
 
   for (const line of frame.split('\n')) {
-    if (line.startsWith('event:')) {
-      eventName = line.slice(6).trim()
-    } else if (line.startsWith('data:')) {
-      dataLines.push(line.slice(5).trimStart())
-    }
+    if (line.startsWith('event:')) eventName = line.slice(6).trim()
+    else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart())
   }
 
   if (dataLines.length === 0) return false
@@ -170,13 +155,9 @@ function handleFrame(frame: string, handlers: AssistantStreamHandlers) {
     if (content) handlers.onDelta(content)
     return false
   }
-  if (eventName === 'done') {
-    handlers.onDone()
-    return true
-  }
   if (eventName === 'tool') {
     const tool = readString(payload, 'name')
-    if (tool && handlers.onTool) {
+    if (tool) {
       const record = payload as Record<string, unknown>
       handlers.onTool({
         tool,
@@ -187,11 +168,12 @@ function handleFrame(frame: string, handlers: AssistantStreamHandlers) {
     }
     return false
   }
+  if (eventName === 'done') {
+    handlers.onDone(readString(payload, 'reason') ?? 'stop')
+    return true
+  }
   if (eventName === 'error') {
-    throw new Error(
-      readString(payload, 'message') ||
-        'Garry’s response was interrupted. Please try again.',
-    )
+    throw new Error(readString(payload, 'message') || 'Garry’s response was interrupted. Please try again.')
   }
 
   return false
@@ -202,26 +184,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function readString(value: unknown, key: string) {
-  if (typeof value !== 'object' || value === null || !(key in value)) return null
-  const property = (value as Record<string, unknown>)[key]
+  if (!isRecord(value)) return null
+  const property = value[key]
   return typeof property === 'string' ? property : null
 }
 
-async function responseError(response: Response) {
-  let problem: ProblemDetails | undefined
+async function readProblem(response: Response) {
   try {
-    problem = (await response.json()) as ProblemDetails
+    return (await response.json()) as ProblemDetails
   } catch {
-    return `Garry is unavailable (${response.status} ${response.statusText}).`
+    return undefined
   }
+}
 
-  const validationError = problem.errors
+async function responseError(response: Response) {
+  if (response.status === 401) return 'Please sign in again to talk to Garry.'
+  const problem = await readProblem(response)
+  const validationError = problem?.errors
     ? Object.values(problem.errors).flat().find(Boolean)
     : undefined
   return (
     validationError ||
-    problem.detail ||
-    problem.title ||
+    problem?.detail ||
+    problem?.title ||
     `Garry is unavailable (${response.status} ${response.statusText}).`
   )
 }
