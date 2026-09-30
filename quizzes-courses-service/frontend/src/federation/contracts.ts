@@ -46,7 +46,6 @@ export interface FeatureAssistant {
   placeholder: string
   suggestions: (route: RouteLocationNormalizedLoaded) => readonly string[]
   context: (route: RouteLocationNormalizedLoaded) => Record<string, unknown>
-  docsSearch?: boolean
   tools?: {
     chips: readonly FeatureAssistantTool[]
     view: (result: AssistantToolResult) => AssistantToolView

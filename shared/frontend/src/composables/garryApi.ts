@@ -19,8 +19,8 @@ export interface DocsSearchResult {
   text: string
 }
 
-export async function searchDocs(apiBase: string, query: string) {
-  const response = await fetch(`${apiBase}/rag/query`, {
+export async function searchDocs(query: string) {
+  const response = await fetch('/api/rag/query', {
     method: 'POST',
     credentials: 'same-origin',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },

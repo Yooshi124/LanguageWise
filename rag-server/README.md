@@ -60,7 +60,7 @@ Compose network reach it at `http://host.docker.internal:8100/mcp`.
 
 | Endpoint | Returns | Used by | Auth |
 | --- | --- | --- | --- |
-| `POST /query` | General passages only | Feature backends, for Garry's "Ask the docs" button | None |
+| `POST /query` | General passages only | The shared backend (`POST /api/rag/query`), for Garry's "Ask the docs" button on every feature | None |
 | `POST /query/technical` | General and `TECHNICAL-` passages (each result has `"technical": true/false`) | The internal agentic loop | `X-LanguageWise-Rag-Key` header |
 
 Both take `{ "query": "...", "n_results": 5 }` (1-20) and return

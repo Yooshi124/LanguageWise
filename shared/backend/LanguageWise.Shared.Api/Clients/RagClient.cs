@@ -2,15 +2,15 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace LanguageWise.MiniGamesService.Api.Clients;
+namespace LanguageWise.Shared.Api.Clients;
 
 public sealed record RagResult(string Source, string Heading, double Relevance, string Text);
 
 public sealed record RagQueryResponse(IReadOnlyList<RagResult> Results, int ResultCount);
 
 /// <summary>
-/// Client for the local, non-containerised RAG server's plain REST endpoint
-/// (<c>POST /query</c>), which retrieves documentation passages relevant to a question.
+/// Client for the host RAG server's general endpoint (<c>POST /query</c>), which never returns
+/// TECHNICAL- (internal) passages.
 /// </summary>
 public sealed class RagClient(HttpClient httpClient)
 {

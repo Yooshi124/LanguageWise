@@ -4,7 +4,7 @@ import MarkdownIt from 'markdown-it'
 import { nextTick, ref, watch } from 'vue'
 import { searchDocs, type DocsSearchResult } from '../composables/garryApi'
 
-const props = defineProps<{ visible: boolean; apiBase: string }>()
+const props = defineProps<{ visible: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 
 const cardRef = ref<HTMLElement | null>(null)
@@ -78,7 +78,7 @@ async function submit() {
   loading.value = true
   error.value = ''
   try {
-    results.value = await searchDocs(props.apiBase, trimmed)
+    results.value = await searchDocs(trimmed)
   } catch (caught) {
     results.value = []
     error.value = caught instanceof Error ? caught.message : 'Could not search the docs right now.'

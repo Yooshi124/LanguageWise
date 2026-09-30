@@ -65,7 +65,6 @@ export interface FeatureAssistant {
   placeholder: string
   suggestions: (route: RouteLocationNormalizedLoaded) => readonly string[]
   context: (route: RouteLocationNormalizedLoaded) => Record<string, unknown>
-  docsSearch?: boolean
   tools?: {
     chips: readonly {
       tool: string
@@ -112,14 +111,14 @@ set `meta.hideAssistant`. The feature supplies only domain configuration:
   `tools` is set, `/assistant/tools` and `/assistant/tools/{name}` endpoints;
 - `context(route)`: the route context its backend validates;
 - `welcome`, `placeholder`, and `suggestions(route)`;
-- optional `docsSearch`: shows an "Ask the docs" icon that opens a documentation
-  search modal backed by the feature's `POST {apiBase}/rag/query` endpoint;
 - optional `tools`: MCP tool chips (with route-derived arguments and
   availability) and a `view` that formats each tool result as summary/rows.
   Features without `tools` get no Tools toggle.
 
 The host owns the UI, streaming, transcripts (per feature and user in
-`sessionStorage`), and styling.
+`sessionStorage`), and styling. Every feature's Garry also has an "Ask the docs"
+icon that searches the general (non-`TECHNICAL-`) RAG corpus through the shared
+backend's `POST /api/rag/query`.
 
 The production reference implementation is
 `quizzes-courses-service/frontend/src/federation/feature.ts`; its contract types

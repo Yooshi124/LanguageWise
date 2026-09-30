@@ -120,7 +120,6 @@ watch(
             <span>Hi, I’m Garry and I’m here to help you learn!</span>
           </div>
           <v-btn
-            v-if="assistant.docsSearch"
             :icon="mdiBookSearchOutline"
             variant="text"
             size="small"
@@ -291,11 +290,6 @@ watch(
       <span>Ask Garry</span>
     </button>
 
-    <GarryDocsSearch
-      v-if="assistant.docsSearch"
-      :visible="docsSearchVisible"
-      :api-base="assistant.apiBase"
-      @close="docsSearchVisible = false"
-    />
+    <GarryDocsSearch :visible="docsSearchVisible" @close="docsSearchVisible = false" />
   </aside>
 </template>
