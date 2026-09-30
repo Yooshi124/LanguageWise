@@ -32,6 +32,14 @@ public sealed class AssistantSseResult(
                             new AssistantDeltaEvent(streamEvent.Content!),
                             httpContext.RequestAborted);
                     }
+                    else if (streamEvent.Type == "tool")
+                    {
+                        await WriteEventAsync(
+                            httpContext.Response,
+                            "tool",
+                            streamEvent.ToolEvent!,
+                            httpContext.RequestAborted);
+                    }
                     else if (!doneSent)
                     {
                         await WriteEventAsync(

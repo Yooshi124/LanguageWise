@@ -1,7 +1,8 @@
-"""Thin HTTP client for the local RAG server's plain REST endpoint.
+"""Thin HTTP client for the local RAG server's technical REST endpoint.
 
-The RAG server (`rag-server/`) runs locally and non-containerised, exposing a
-`POST /query` endpoint. This client talks to that REST endpoint only.
+The RAG server (`rag-server/`) runs locally and non-containerised. The loop uses
+`POST /query/technical`, which also returns TECHNICAL- (service internals)
+passages and requires the shared technical key.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ class RagResult:
     heading: str
     relevance: float
     text: str
+    technical: bool = False
 
 
 @dataclass(frozen=True)
@@ -32,19 +34,27 @@ class RagQueryResult:
 
 
 class RagClient:
-    """Calls the RAG server's `POST /query` endpoint."""
+    """Calls the RAG server's `POST /query/technical` endpoint."""
 
     def __init__(self, settings: Settings, session: "requests.Session | None" = None) -> None:
         self._settings = settings
         self._session = session or requests.Session()
 
     def query(self, text: str, n_results: int | None = None) -> RagQueryResult:
-        url = f"{self._settings.rag_base_url.rstrip('/')}/query"
+        if not self._settings.rag_technical_key:
+            raise RagError(
+                "No technical RAG key found. Start the RAG server once to generate "
+                "rag-server/.rag-technical-key, or set RAG_TECHNICAL_KEY."
+            )
+        url = f"{self._settings.rag_base_url.rstrip('/')}/query/technical"
         body = {"query": text, "n_results": n_results or self._settings.rag_default_n_results}
 
         try:
             resp = self._session.post(
-                url, json=body, timeout=self._settings.rag_request_timeout_seconds
+                url,
+                json=body,
+                headers={"X-LanguageWise-Rag-Key": self._settings.rag_technical_key},
+                timeout=self._settings.rag_request_timeout_seconds,
             )
         except requests.exceptions.ConnectionError as exc:
             raise RagError(
@@ -60,6 +70,11 @@ class RagClient:
         except requests.exceptions.RequestException as exc:
             raise RagError(f"RAG server request failed: {exc}") from exc
 
+        if resp.status_code == 401:
+            raise RagError(
+                "The RAG server rejected the technical key. Make sure RAG_TECHNICAL_KEY "
+                "or RAG_TECHNICAL_KEY_PATH matches rag-server/.rag-technical-key."
+            )
         if not resp.ok:
             detail = resp.text[:500]
             raise RagError(f"RAG server request failed with HTTP {resp.status_code}: {detail}")
@@ -75,6 +90,7 @@ class RagClient:
                 heading=str(item.get("heading", "")),
                 relevance=float(item.get("relevance", 0.0)),
                 text=str(item.get("text", "")),
+                technical=item.get("technical") is True,
             )
             for item in payload.get("results", [])
         ]

@@ -1,4 +1,5 @@
 .env
+.rag-technical-key
 .chroma/
 __pycache__/
 *.pyc

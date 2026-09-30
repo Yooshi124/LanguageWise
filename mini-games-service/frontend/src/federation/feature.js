@@ -5,6 +5,7 @@ import WordSearch from '../WordSearch.vue';
 import MiniGamesComponent from './MiniGamesComponent.vue';
 
 export { MiniGamesComponent };
+export { assistant } from './assistant.js';
 
 export const metadata = {
 	key: 'mini-games',

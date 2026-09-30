@@ -309,12 +309,3 @@ export function resetGame(gameType, userId) {
   return post(`${API_BASE}/${gameType}/reset`);
 }
 
-/**
- * Search the platform's documentation corpus via the RAG-backed docs search.
- * @param {string} query - The natural-language question to search for.
- * @returns {Promise<{results: Array<{source: string, heading: string, relevance: number, text: string}>, resultCount: number}>}
- */
-export function queryRagDocs(query) {
-  return post(`${API_BASE}/rag/query`, { query });
-}
-

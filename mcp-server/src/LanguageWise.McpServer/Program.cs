@@ -1,6 +1,8 @@
 using LanguageWise.McpServer.Security;
 using LanguageWise.McpServer.Tools;
+using LanguageWise.McpServer.Tools.Docs;
 using LanguageWise.McpServer.Tools.MiniGames;
+using LanguageWise.McpServer.Tools.QuestsAchievements;
 using LanguageWise.McpServer.Tools.QuizzesCourses;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -22,6 +24,16 @@ builder.Services.AddHttpClient(QuizzesCoursesTools.ServiceName, client =>
 builder.Services.AddHttpClient(MiniGamesTools.ServiceName, client =>
 {
 	client.BaseAddress = new Uri((builder.Configuration["Services:MiniGames"] ?? "http://localhost:5001").TrimEnd('/') + "/");
+	client.Timeout = downstreamTimeout;
+});
+builder.Services.AddHttpClient(QuestsAchievementsTools.ServiceName, client =>
+{
+	client.BaseAddress = new Uri((builder.Configuration["Services:QuestsAchievements"] ?? "http://localhost:5004").TrimEnd('/') + "/");
+	client.Timeout = downstreamTimeout;
+});
+builder.Services.AddHttpClient(DocsTools.ServiceName, client =>
+{
+	client.BaseAddress = new Uri((builder.Configuration["Services:Rag"] ?? "http://localhost:8100").TrimEnd('/') + "/");
 	client.Timeout = downstreamTimeout;
 });
 

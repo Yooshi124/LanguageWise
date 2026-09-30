@@ -2,7 +2,9 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using LanguageWise.McpServer.Security;
+using LanguageWise.McpServer.Tools.Docs;
 using LanguageWise.McpServer.Tools.MiniGames;
+using LanguageWise.McpServer.Tools.QuestsAchievements;
 using LanguageWise.McpServer.Tools.QuizzesCourses;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -33,11 +35,17 @@ public sealed class McpServerFactory : WebApplicationFactory<Program>
 		builder.UseSetting("Auth:VerificationKeyPath", publicKeyPath);
 		builder.UseSetting("Services:QuizzesCourses", "http://quizzes.test");
 		builder.UseSetting("Services:MiniGames", "http://mini-games.test");
+		builder.UseSetting("Services:QuestsAchievements", "http://quests.test");
+		builder.UseSetting("Services:Rag", "http://rag.test");
 		builder.ConfigureServices(services =>
 		{
 			services.AddHttpClient(QuizzesCoursesTools.ServiceName)
 				.ConfigurePrimaryHttpMessageHandler(() => Downstream);
 			services.AddHttpClient(MiniGamesTools.ServiceName)
+				.ConfigurePrimaryHttpMessageHandler(() => Downstream);
+			services.AddHttpClient(QuestsAchievementsTools.ServiceName)
+				.ConfigurePrimaryHttpMessageHandler(() => Downstream);
+			services.AddHttpClient(DocsTools.ServiceName)
 				.ConfigurePrimaryHttpMessageHandler(() => Downstream);
 		});
 	}
@@ -95,6 +103,7 @@ public sealed class McpServerFactory : WebApplicationFactory<Program>
 public sealed class StubHttpMessageHandler : HttpMessageHandler
 {
 	public List<HttpRequestMessage> Requests { get; } = [];
+	public List<string?> RequestBodies { get; } = [];
 	public HttpStatusCode StatusCode { get; set; } = HttpStatusCode.OK;
 	public string Body { get; set; } = "[]";
 	public Dictionary<string, string> BodiesByPath { get; } = [];
@@ -105,6 +114,7 @@ public sealed class StubHttpMessageHandler : HttpMessageHandler
 		lock (Requests)
 		{
 			Requests.Clear();
+			RequestBodies.Clear();
 		}
 		StatusCode = HttpStatusCode.OK;
 		Body = "[]";
@@ -112,20 +122,23 @@ public sealed class StubHttpMessageHandler : HttpMessageHandler
 		Throw = false;
 	}
 
-	protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+	protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
 	{
+		// Read now: the caller disposes the request (and its content) once the call completes.
+		var requestBody = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
 		lock (Requests)
 		{
 			Requests.Add(request);
+			RequestBodies.Add(requestBody);
 		}
 		if (Throw)
 		{
 			throw new HttpRequestException("connection refused");
 		}
 		var body = BodiesByPath.TryGetValue(request.RequestUri!.PathAndQuery, out var routed) ? routed : Body;
-		return Task.FromResult(new HttpResponseMessage(StatusCode)
+		return new HttpResponseMessage(StatusCode)
 		{
 			Content = new StringContent(body, Encoding.UTF8, "application/json")
-		});
+		};
 	}
 }

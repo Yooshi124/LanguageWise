@@ -1,11 +1,14 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Threading.RateLimiting;
 using LanguageWise.Shared.Api;
 using LanguageWise.Shared.Api.Clients;
 using Microsoft.IdentityModel.Tokens;
 
 const string ServiceName = "shared-backend";
+const string DocsSearchRateLimiterPolicy = "docs-search";
+const int MaxDocsQueryLength = 500;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,6 +26,14 @@ builder.Services.AddHttpClient<AchievementsClient>(client =>
 {
     client.BaseAddress = new Uri($"{achievementsServiceUrl}/");
     client.Timeout = TimeSpan.FromSeconds(20);
+});
+
+// The RAG server runs on the host, not in Compose (reached via host.docker.internal).
+var ragServiceUrl = builder.Configuration["Services:Rag"] ?? "http://localhost:8100";
+builder.Services.AddHttpClient<RagClient>(client =>
+{
+    client.BaseAddress = new Uri(ragServiceUrl.TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromSeconds(15);
 });
 
 // Load Signing Key
@@ -92,7 +103,24 @@ void IssueSessionCookie(HttpContext ctx, int userId, string username)
     });
 }
 
+// Each docs search runs a local embedding model, so limit how often one session can search.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy(DocsSearchRateLimiterPolicy, context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: ReadSessionUser(context)?.Id.ToString() ?? "anonymous",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 20,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+});
+
 var app = builder.Build();
+
+app.UseRateLimiter();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = ServiceName }));
 
@@ -158,6 +186,46 @@ app.MapPost("/api/logout", (HttpContext ctx) =>
     ctx.Response.Cookies.Delete("token");
     return Results.Ok();
 });
+
+// "Ask the docs" search for Garry on every feature. Proxies the RAG server's general endpoint,
+// which never returns TECHNICAL- (internal) passages.
+app.MapPost("/api/rag/query", async (
+    HttpContext ctx,
+    RagQueryApiRequest? request,
+    RagClient ragClient,
+    CancellationToken cancellationToken) =>
+{
+    if (ReadSessionUser(ctx) is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    var query = request?.Query?.Trim();
+    if (string.IsNullOrEmpty(query) || query.Length > MaxDocsQueryLength)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["query"] = [$"Enter a question of 1 to {MaxDocsQueryLength} characters."]
+        });
+    }
+
+    try
+    {
+        return Results.Ok(await ragClient.QueryAsync(query, request!.NResults, cancellationToken));
+    }
+    catch (Exception exception) when (
+        exception is HttpRequestException or System.Text.Json.JsonException
+        || (exception is TaskCanceledException && !cancellationToken.IsCancellationRequested))
+    {
+        app.Logger.LogWarning(
+            "RAG server request failed with error type {ErrorType}.",
+            exception.GetType().Name);
+        return Results.Problem(
+            title: "The documentation search service is unavailable.",
+            detail: "Please try again.",
+            statusCode: StatusCodes.Status502BadGateway);
+    }
+}).RequireRateLimiting(DocsSearchRateLimiterPolicy);
 
 app.MapPost("/api/users", async (
     CreateAccountRequest body,
@@ -365,6 +433,8 @@ static async Task<bool> LooksLikeDeclaredFormatAsync(IFormFile file, Cancellatio
 }
 
 internal sealed record LoginRequest(string Username, string Password);
+
+internal sealed record RagQueryApiRequest(string? Query, int? NResults);
 
 internal sealed record CreateAccountRequest(string? Username, string? Password);
 
