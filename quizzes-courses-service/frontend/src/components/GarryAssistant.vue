@@ -9,7 +9,15 @@ import {
   mdiRefresh,
   mdiSend,
   mdiStopCircleOutline,
+  mdiToolboxOutline,
 } from '@mdi/js'
+import ToolResultCard from './ToolResultCard.vue'
+import {
+  assistantToolChips,
+  missingRequirement,
+  type AssistantToolChip,
+  type AssistantToolContext,
+} from '../config/assistantTools'
 import { useGarryAssistant } from '../composables/useGarryAssistant'
 import type { AssistantRouteContext } from '../models/api'
 
@@ -31,6 +39,31 @@ const context = computed<AssistantRouteContext>(() => ({
     ? { lessonSlug: route.params.lessonSlug }
     : {}),
 }))
+
+const toolContext = computed<AssistantToolContext>(() => ({
+  courseCode: context.value.courseCode?.toLowerCase(),
+  lessonSlug: context.value.lessonSlug,
+}))
+
+const toolChips = computed(() =>
+  assistantToolChips
+    .map((chip) => ({
+      chip,
+      tool: assistant.tools.value.find((tool) => tool.name === chip.tool),
+      unavailable: missingRequirement(chip, toolContext.value),
+    }))
+    .filter((entry) => entry.tool !== undefined),
+)
+
+const toolsBusy = computed(
+  () => assistant.streaming.value || assistant.toolRunning.value !== null,
+)
+
+async function runTool(chip: AssistantToolChip) {
+  const tool = assistant.tools.value.find((item) => item.name === chip.tool)
+  if (!tool || missingRequirement(chip, toolContext.value)) return
+  await assistant.runTool(tool, chip.arguments(toolContext.value))
+}
 
 const suggestions = computed(() => {
   if (route.name === 'lesson') {
@@ -78,7 +111,10 @@ function minimize() {
 }
 
 watch(
-  () => assistant.messages.value.map((message) => message.content).join('\u0000'),
+  () =>
+    assistant.messages.value
+      .map((message) => `${message.content}\u0001${message.toolResults?.length ?? 0}`)
+      .join('\u0000'),
   async () => {
     await nextTick()
     if (messageList.value) {
@@ -108,6 +144,15 @@ watch(
             <span>Hi, I’m Garry and I’m here to help you learn!</span>
           </div>
           <v-btn
+            :icon="mdiToolboxOutline"
+            :variant="assistant.toolsEnabled.value ? 'tonal' : 'text'"
+            size="small"
+            :aria-pressed="assistant.toolsEnabled.value"
+            :aria-label="assistant.toolsEnabled.value ? 'Hide Garry’s tools' : 'Show Garry’s tools'"
+            :title="assistant.toolsEnabled.value ? 'Hide tools' : 'Show tools'"
+            @click="assistant.setToolsEnabled(!assistant.toolsEnabled.value)"
+          />
+          <v-btn
             :icon="mdiDeleteOutline"
             variant="text"
             size="small"
@@ -123,6 +168,31 @@ watch(
             @click="minimize"
           />
         </header>
+
+        <div class="garry-tools">
+          <template v-if="assistant.toolsEnabled.value">
+            <p v-if="assistant.toolsLoading.value" class="garry-tools-status">
+              Loading tools…
+            </p>
+            <p v-else-if="assistant.toolsError.value" class="garry-tools-status">
+              {{ assistant.toolsError.value }}
+              <button type="button" @click="assistant.loadTools()">Retry</button>
+            </p>
+            <div v-else class="garry-tool-chips" role="group" aria-label="Garry’s tools">
+              <button
+                v-for="entry in toolChips"
+                :key="entry.chip.tool"
+                type="button"
+                :disabled="toolsBusy || entry.unavailable !== null"
+                :title="entry.unavailable ?? entry.tool?.description"
+                :aria-busy="assistant.toolRunning.value === entry.chip.tool"
+                @click="runTool(entry.chip)"
+              >
+                {{ entry.chip.label }}
+              </button>
+            </div>
+          </template>
+        </div>
 
         <div ref="messageList" class="garry-messages">
           <div v-if="assistant.messages.value.length === 0" class="garry-welcome">
@@ -153,6 +223,11 @@ watch(
             <span class="sr-only">
               {{ message.role === 'assistant' ? 'Garry' : 'You' }}:
             </span>
+            <ToolResultCard
+              v-for="(toolResult, index) in message.toolResults ?? []"
+              :key="`${message.id}-tool-${index}`"
+              :result="toolResult"
+            />
             <div
               v-if="message.content"
               class="garry-message-content"

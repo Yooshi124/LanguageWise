@@ -1,17 +1,93 @@
 import { handleUnauthorized } from '../federation/featureHost'
-import type { AssistantMessageRequest } from '../models/api'
+import type {
+  AssistantMessageRequest,
+  AssistantTool,
+  AssistantToolResult,
+} from '../models/api'
 
 const apiBase = '/quizzes-and-courses/api'
 
 interface AssistantStreamHandlers {
   onDelta: (content: string) => void
   onDone: () => void
+  onTool?: (result: AssistantToolResult) => void
 }
 
 interface ProblemDetails {
   title?: string
   detail?: string
+  code?: string
   errors?: Record<string, string[]>
+}
+
+export class AssistantToolsUnavailableError extends Error {
+  constructor(message: string, public readonly disabled: boolean) {
+    super(message)
+    this.name = 'AssistantToolsUnavailableError'
+  }
+}
+
+export async function listAssistantTools(signal?: AbortSignal) {
+  const response = await fetch(`${apiBase}/assistant/tools`, {
+    signal,
+    credentials: 'same-origin',
+    headers: { Accept: 'application/json' },
+  })
+  await ensureToolResponse(response)
+  const body = (await response.json()) as { tools?: AssistantTool[] }
+  return Array.isArray(body.tools) ? body.tools : []
+}
+
+export async function callAssistantTool(
+  name: string,
+  args: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<AssistantToolResult> {
+  const response = await fetch(
+    `${apiBase}/assistant/tools/${encodeURIComponent(name)}`,
+    {
+      method: 'POST',
+      signal,
+      credentials: 'same-origin',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(args),
+    },
+  )
+  await ensureToolResponse(response)
+  const body = (await response.json()) as {
+    tool?: string
+    isError?: boolean
+    result?: unknown
+  }
+  return {
+    tool: body.tool ?? name,
+    arguments: args,
+    isError: body.isError === true,
+    result: body.result ?? null,
+  }
+}
+
+async function ensureToolResponse(response: Response) {
+  if (response.status === 401) {
+    handleUnauthorized()
+  }
+  if (response.ok) return
+  if (response.status === 503 || response.status === 502) {
+    let problem: ProblemDetails | undefined
+    try {
+      problem = (await response.clone().json()) as ProblemDetails
+    } catch {
+      problem = undefined
+    }
+    throw new AssistantToolsUnavailableError(
+      problem?.detail || 'Garry’s tools are unavailable right now.',
+      problem?.code === 'mcp_disabled',
+    )
+  }
+  throw new Error(await responseError(response))
 }
 
 export async function streamAssistantMessage(
@@ -98,6 +174,19 @@ function handleFrame(frame: string, handlers: AssistantStreamHandlers) {
     handlers.onDone()
     return true
   }
+  if (eventName === 'tool') {
+    const tool = readString(payload, 'name')
+    if (tool && handlers.onTool) {
+      const record = payload as Record<string, unknown>
+      handlers.onTool({
+        tool,
+        arguments: isRecord(record.arguments) ? record.arguments : undefined,
+        isError: record.isError === true,
+        result: record.result ?? null,
+      })
+    }
+    return false
+  }
   if (eventName === 'error') {
     throw new Error(
       readString(payload, 'message') ||
@@ -106,6 +195,10 @@ function handleFrame(frame: string, handlers: AssistantStreamHandlers) {
   }
 
   return false
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function readString(value: unknown, key: string) {

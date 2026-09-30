@@ -19,7 +19,13 @@ builder.Services.AddHttpClient("ollama", client =>
     client.BaseAddress = new Uri((builder.Configuration["Services:Ollama"] ?? "http://localhost:11434").TrimEnd('/') + "/");
     client.Timeout = Timeout.InfiniteTimeSpan;
 });
+builder.Services.AddHttpClient(McpToolHost.HttpClientName, client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(builder.Configuration.GetValue("Mcp:TimeoutSeconds", 15));
+});
 builder.Services.AddScoped<CompletionProviders>();
+builder.Services.AddSingleton<IMcpToolHost, McpToolHost>();
+builder.Services.AddScoped<GarryToolLoop>();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -63,13 +69,22 @@ app.UseRateLimiter();
 app.MapGet("/health", () => Results.Ok()).AllowAnonymous();
 app.MapPost("/api/completions", async (
     CompletionRequest? request,
+    HttpContext context,
     CompletionProviders providers,
+    GarryToolLoop toolLoop,
     ILoggerFactory loggerFactory,
     CancellationToken cancellationToken) =>
 {
     if (!CompletionRequest.IsValid(request))
     {
         return Results.BadRequest();
+    }
+
+    if (request!.ToolScope is not null && toolLoop.IsAvailable)
+    {
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var userToken = authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? authorization[7..].Trim() : null;
+        return new ToolCompletionResult(request, userToken, toolLoop, providers, loggerFactory);
     }
 
     ProviderStream completion;

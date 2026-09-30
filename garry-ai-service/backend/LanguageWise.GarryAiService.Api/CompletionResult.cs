@@ -8,9 +8,12 @@ public sealed class CompletionResult(ProviderStream stream, ILogger<CompletionRe
 
     public async Task ExecuteAsync(HttpContext context)
     {
-        context.Response.ContentType = "text/event-stream";
-        context.Response.Headers.CacheControl = "no-cache";
-        context.Response.Headers.Append("X-Accel-Buffering", "no");
+        if (!context.Response.HasStarted)
+        {
+            context.Response.ContentType = "text/event-stream";
+            context.Response.Headers.CacheControl = "no-cache";
+            context.Response.Headers.Append("X-Accel-Buffering", "no");
+        }
         await using (stream)
         {
             try

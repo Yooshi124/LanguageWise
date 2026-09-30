@@ -152,7 +152,7 @@
   .garry-launcher:hover { transform: translateY(-4px); box-shadow: 0 0 0 8px rgba(255, 127, 110, .14), 0 0 44px rgba(79, 70, 229, .38), 0 24px 58px rgba(15, 23, 42, .29); }
   .garry-launcher:focus-visible { outline: 3px solid #818cf8; outline-offset: 4px; }
   .garry-launcher img { width: 80px; height: 80px; object-fit: contain; }
-  .garry-panel { display: grid; width: min(410px, calc(100vw - 32px)); height: min(650px, calc(100dvh - 48px)); grid-template-rows: auto minmax(0, 1fr) auto auto auto; overflow: hidden; border: 1px solid rgba(79, 70, 229, .16); border-radius: 26px; background: white; box-shadow: var(--shadow-floating); transform-origin: bottom right; }
+  .garry-panel { display: grid; width: min(410px, calc(100vw - 32px)); height: min(650px, calc(100dvh - 48px)); grid-template-rows: auto auto minmax(0, 1fr) auto auto auto; overflow: hidden; border: 1px solid rgba(79, 70, 229, .16); border-radius: 26px; background: white; box-shadow: var(--shadow-floating); transform-origin: bottom right; }
   .garry-header { display: flex; min-height: 76px; padding: 10px 12px 10px 10px; align-items: center; gap: 8px; color: white; background: linear-gradient(135deg, #3730a3, #4f46e5); }
   .garry-header-image { width: 58px; height: 58px; flex: 0 0 58px; padding: 2px; object-fit: contain; border-radius: 18px; background: rgba(255, 255, 255, .94); }
   .garry-header > div { display: flex; min-width: 0; margin-right: auto; flex-direction: column; }
@@ -191,6 +191,29 @@
   .garry-disclaimer { margin: 7px 16px 10px; color: #98a2b3; font-size: .7rem; text-align: center; }
   .garry-panel-enter-active, .garry-panel-leave-active { transition: opacity .18s ease, transform .2s ease; }
   .garry-panel-enter-from, .garry-panel-leave-to { opacity: 0; transform: translateY(16px) scale(.96); }
+  .garry-tools:empty { padding: 0; border: 0; }
+  .garry-tools { padding: 10px 14px; border-bottom: 1px solid #e5e7ef; background: #f8f9ff; }
+  .garry-tool-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .garry-tool-chips button { padding: 5px 11px; border: 1px solid #c7d2fe; border-radius: 999px; color: #3730a3; background: white; font: inherit; font-size: .78rem; font-weight: 700; cursor: pointer; }
+  .garry-tool-chips button:hover:not(:disabled), .garry-tool-chips button:focus-visible { border-color: #818cf8; background: #eef2ff; outline: none; }
+  .garry-tool-chips button:disabled { color: #98a2b3; border-color: #e5e7ef; cursor: not-allowed; }
+  .garry-tool-chips button[aria-busy="true"] { color: #4f46e5; border-color: #818cf8; }
+  .garry-tools-status { margin: 0; color: #667085; font-size: .8rem; }
+  .garry-tools-status button { margin-left: 6px; padding: 0; border: 0; color: #4338ca; background: none; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+  .garry-message-assistant { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .garry-tool-card { width: 100%; padding: 11px 13px; border: 1px solid #c7d2fe; border-radius: 14px; background: #f5f6ff; font-size: .84rem; }
+  .garry-tool-card-error { border-color: #fecaca; background: #fef2f2; }
+  .garry-tool-card header { display: flex; margin-bottom: 6px; align-items: center; gap: 8px; color: #312e81; }
+  .garry-tool-card-badge { padding: 1px 7px; border-radius: 999px; color: white; background: #4f46e5; font-size: .66rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+  .garry-tool-card-error .garry-tool-card-badge { background: #dc2626; }
+  .garry-tool-card-summary { margin: 0 0 6px; color: #354052; font-weight: 650; }
+  .garry-tool-card-rows { display: flex; margin: 0; padding: 0; flex-direction: column; gap: 4px; list-style: none; }
+  .garry-tool-card-rows li { display: flex; flex-direction: column; padding: 5px 8px; border-radius: 9px; background: white; }
+  .garry-tool-card-rows small { color: #667085; }
+  .garry-tool-card-more { margin: 6px 0 0; color: #667085; font-size: .76rem; }
+  .garry-tool-card-raw { margin-top: 8px; }
+  .garry-tool-card-raw summary { color: #4338ca; font-size: .74rem; font-weight: 700; cursor: pointer; }
+  .garry-tool-card-raw pre { max-height: 180px; margin: 6px 0 0; padding: 8px; overflow: auto; border-radius: 9px; color: #e0e7ff; background: #1e1b4b; font-size: .72rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 
   @media (min-width: 801px) {
     .feature-language-page .feature-heading h1 { white-space: nowrap; }

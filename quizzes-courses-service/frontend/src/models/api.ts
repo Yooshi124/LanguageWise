@@ -121,6 +121,20 @@ export interface AssistantMessage {
   id: string
   role: AssistantRole
   content: string
+  toolResults?: AssistantToolResult[]
+}
+
+export interface AssistantTool {
+  name: string
+  title: string
+  description: string
+}
+
+export interface AssistantToolResult {
+  tool: string
+  arguments?: Record<string, unknown>
+  isError: boolean
+  result: unknown
 }
 
 export interface AssistantRouteContext {
