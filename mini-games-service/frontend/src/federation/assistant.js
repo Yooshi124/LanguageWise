@@ -63,6 +63,7 @@ export const assistant = {
 	welcome:
 		'Ask me how each mini game works, what the vocabulary modes mean, or how to improve your score.',
 	placeholder: 'Ask Garry about the mini games…',
+	docsSearch: true,
 	context: (route) => {
 		const courseCode = getCourseCode();
 		return {

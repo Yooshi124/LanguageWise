@@ -4,6 +4,7 @@ import MarkdownIt from 'markdown-it'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
+  mdiBookSearchOutline,
   mdiDeleteOutline,
   mdiMinus,
   mdiRefresh,
@@ -12,6 +13,7 @@ import {
   mdiToolboxOutline,
 } from '@mdi/js'
 import garryImage from '../assets/garry.png'
+import GarryDocsSearch from './GarryDocsSearch.vue'
 import GarryToolResultCard from './GarryToolResultCard.vue'
 import { useGarryAssistant } from '../composables/useGarryAssistant'
 import type { FeatureAssistant, FeatureAssistantTool } from '../federation/featureAssistants'
@@ -26,6 +28,7 @@ const route = useRoute()
 const router = useRouter()
 const garry = useGarryAssistant()
 const draft = ref('')
+const docsSearchVisible = ref(false)
 const messageList = ref<HTMLElement | null>(null)
 const composer = ref<HTMLTextAreaElement | null>(null)
 const markdown = new MarkdownIt({ html: false, linkify: true, typographer: true })
@@ -114,6 +117,15 @@ watch(
             <strong>Garry</strong>
             <span>Hi, I’m Garry and I’m here to help you learn!</span>
           </div>
+          <v-btn
+            v-if="assistant.docsSearch"
+            :icon="mdiBookSearchOutline"
+            variant="text"
+            size="small"
+            aria-label="Ask the docs"
+            title="Ask the docs"
+            @click="docsSearchVisible = true"
+          />
           <v-btn
             v-if="assistant.tools"
             :icon="mdiToolboxOutline"
@@ -276,5 +288,12 @@ watch(
       <img :src="garryImage" alt="" />
       <span>Ask Garry</span>
     </button>
+
+    <GarryDocsSearch
+      v-if="assistant.docsSearch"
+      :visible="docsSearchVisible"
+      :api-base="assistant.apiBase"
+      @close="docsSearchVisible = false"
+    />
   </aside>
 </template>

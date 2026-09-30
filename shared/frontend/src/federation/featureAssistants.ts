@@ -28,6 +28,8 @@ export interface FeatureAssistant {
   placeholder: string
   suggestions: (route: RouteLocationNormalizedLoaded) => readonly string[]
   context: (route: RouteLocationNormalizedLoaded) => Record<string, unknown>
+  /** The feature backend exposes `POST {apiBase}/rag/query` for the "Ask the docs" search. */
+  docsSearch?: boolean
   tools?: {
     chips: readonly FeatureAssistantTool[]
     view: (result: AssistantToolResult) => AssistantToolView

@@ -12,6 +12,34 @@ export interface AssistantMessageRequest {
   context: Record<string, unknown>
 }
 
+export interface DocsSearchResult {
+  source: string
+  heading: string
+  relevance: number
+  text: string
+}
+
+export async function searchDocs(apiBase: string, query: string) {
+  const response = await fetch(`${apiBase}/rag/query`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
+  })
+  if (!response.ok) {
+    const problem = await readProblem(response)
+    const validationError = problem?.errors
+      ? Object.values(problem.errors).flat().find(Boolean)
+      : undefined
+    throw new GarryApiError(
+      response.status,
+      validationError || problem?.title || 'Could not search the docs right now.',
+    )
+  }
+  const body = (await response.json()) as { results?: DocsSearchResult[] }
+  return Array.isArray(body.results) ? body.results : []
+}
+
 interface AssistantStreamHandlers {
   onDelta: (content: string) => void
   onTool: (result: AssistantToolResult) => void
