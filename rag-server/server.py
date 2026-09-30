@@ -5,12 +5,16 @@ it through host.docker.internal:RAG_PORT. Run from the rag-server directory:
 
     python server.py
 
-The MCP endpoint is served at http://<host>:<port>/mcp.
+The MCP endpoint is served at http://<host>:<port>/mcp. A plain REST endpoint at
+POST /query is also exposed for callers without an MCP client (the agentic loop,
+feature backends); it shares the same retrieval function as the MCP tool.
 """
 
 from __future__ import annotations
 
 from fastmcp import FastMCP
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from rag.config import load_settings
 from rag.store import query
@@ -53,6 +57,37 @@ def retrieve_context(query_text: str, n_results: int = 5) -> str:
             f"| relevance: {1 - chunk.distance:.3f}\n{chunk.text}"
         )
     return "\n\n---\n\n".join(blocks)
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health(_request: Request) -> JSONResponse:
+    return JSONResponse({"status": "ok"})
+
+
+@mcp.custom_route("/query", methods=["POST"])
+async def query_route(request: Request) -> JSONResponse:
+    """Plain HTTP/JSON equivalent of the retrieve_context tool, for callers with no MCP client."""
+    try:
+        body = await request.json()
+    except ValueError:
+        return JSONResponse({"error": "Request body must be JSON."}, status_code=400)
+
+    query_text = str(body.get("query") or "").strip()
+    if not query_text:
+        return JSONResponse({"error": "'query' is required."}, status_code=400)
+    n_results = int(body.get("n_results") or 5)
+
+    chunks = query(settings, query_text, n_results=n_results)
+    results = [
+        {
+            "source": chunk.source,
+            "heading": chunk.heading,
+            "relevance": round(1 - chunk.distance, 3),
+            "text": chunk.text,
+        }
+        for chunk in chunks
+    ]
+    return JSONResponse({"results": results, "resultCount": len(results)})
 
 
 if __name__ == "__main__":

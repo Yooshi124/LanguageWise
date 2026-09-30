@@ -2,7 +2,9 @@
 import {
 	mdiAccountCircleOutline,
 	mdiArrowLeft,
+	mdiBookSearchOutline,
 	mdiClose,
+	mdiContentCopy,
 	mdiControllerClassicOutline,
 	mdiForumOutline,
 	mdiChartBoxOutline,
@@ -11,6 +13,7 @@ import {
 	mdiHomeOutline,
 	mdiLogoutVariant,
 	mdiMenu,
+	mdiShareVariantOutline,
 	mdiTrophyOutline,
 } from '@mdi/js';
 
@@ -23,8 +26,10 @@ const icons = {
 	analytics: mdiChartBoxOutline,
 	'arrow-left': mdiArrowLeft,
 	close: mdiClose,
+	copy: mdiContentCopy,
 	courses: mdiBookOpenPageVariantOutline,
 	discussion: mdiForumOutline,
+	'docs-search': mdiBookSearchOutline,
 	games: mdiControllerClassicOutline,
 	help: mdiHelpCircleOutline,
 	home: mdiHomeOutline,
@@ -32,6 +37,7 @@ const icons = {
 	menu: mdiMenu,
 	profile: mdiAccountCircleOutline,
 	quests: mdiTrophyOutline,
+	share: mdiShareVariantOutline,
 };
 </script>
 

@@ -1,7 +1,7 @@
 """Pydantic schemas.
 
-These double as the JSON schemas handed to Gemini for structured output, so the
-model's replies are validated rather than parsed out of free text.
+These double as the JSON contracts the models are held to for structured output,
+so replies are validated rather than parsed out of free text.
 """
 
 from __future__ import annotations

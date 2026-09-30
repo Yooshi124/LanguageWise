@@ -1,9 +1,9 @@
 """Thin wrapper around a local Ollama model, used only by the Review Agent.
 
 The review agent is mandatory and runs on a separate, locally-hosted model
-(Ollama + Gemma) so that every finding from the implementation agent (Gemini)
-is checked by a genuinely independent second model before a human ever sees
-it. This mirrors `GeminiClient.generate_structured` exactly - same
+(Ollama + Gemma) so that every finding from the implementation agent (via
+OpenRouter) is checked by a genuinely independent second model before a human
+ever sees it. This mirrors `OpenRouterClient.generate_structured` exactly - same
 `ModelResponse`, same JSON-schema-enforced structured output - so
 `agents/critic.py` does not need to know which backend it is talking to.
 
@@ -21,7 +21,7 @@ import requests
 from pydantic import BaseModel, ValidationError
 
 from config.settings import Settings
-from core.gemini_client import ModelResponse, _strip_code_fence, inline_schema_refs
+from core.openrouter_client import ModelResponse, _strip_code_fence, inline_schema_refs
 
 TModel = TypeVar("TModel", bound=BaseModel)
 

@@ -19,7 +19,10 @@ public sealed record WordSearchState(
     bool IsGivenUp,
     int Score,
     bool IsComplete,
-    IReadOnlyDictionary<string, string>? Definitions = null);
+    IReadOnlyDictionary<string, string>? Definitions = null,
+    // Seconds since the round started; only populated once the round is complete, for the
+    // end-of-round summary panel.
+    int? ElapsedSeconds = null);
 
 public sealed record WordSearchMoveResult(
     string Word,

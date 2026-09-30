@@ -64,7 +64,6 @@ public sealed class McpEndpointTests
 		Assert.That(tools.All(t => t.ProtocolTool.Annotations?.ReadOnlyHint == true), Is.True);
 	}
 
-	[TestCase("games")]
 	[TestCase("unknown")]
 	[TestCase(null)]
 	public async Task ListTools_WithOtherOrMissingScope_HidesCoursesTools(string? scope)
@@ -75,11 +74,63 @@ public sealed class McpEndpointTests
 	}
 
 	[Test]
+	public async Task ListTools_WithGamesScope_ReturnsOnlyGamesTools()
+	{
+		await using var client = await factory.CreateMcpClientAsync("games");
+		var tools = await client.ListToolsAsync();
+		Assert.That(tools.Select(t => t.Name), Is.EquivalentTo(new[]
+		{
+			"games_get_completion_stats",
+			"games_list_game_languages"
+		}));
+		Assert.That(tools.All(t => t.ProtocolTool.Annotations?.ReadOnlyHint == true), Is.True);
+	}
+
+	[Test]
 	public async Task CallTool_OutOfScope_IsRejected()
 	{
 		await using var client = await factory.CreateMcpClientAsync("games", factory.CreateUserToken());
 		Assert.ThrowsAsync<McpProtocolException>(async () => await client.CallToolAsync("courses_list_courses"));
 		Assert.That(factory.Downstream.Requests, Is.Empty);
+	}
+
+	[Test]
+	public async Task GetCompletionStats_ForwardsUserTokenAndReturnsStructuredContent()
+	{
+		var token = factory.CreateUserToken();
+		factory.Downstream.Body = """{"courseCode":"it","guessTheWord":3,"wordSearch":1,"associations":0,"bestGuessTheWordSeconds":42,"bestWordSearchSeconds":null,"bestAssociationsSeconds":null,"currentStreak":2}""";
+		await using var client = await factory.CreateMcpClientAsync("games", token);
+
+		var result = await client.CallToolAsync("games_get_completion_stats", new Dictionary<string, object?> { ["courseCode"] = "it" });
+
+		Assert.That(result.IsError, Is.Not.True);
+		var request = factory.Downstream.Requests.Single();
+		Assert.Multiple(() =>
+		{
+			Assert.That(request.RequestUri!.AbsolutePath, Is.EqualTo("/api/stats/completions"));
+			Assert.That(request.RequestUri!.Query, Is.EqualTo("?courseCode=it"));
+			Assert.That(request.Headers.Authorization?.Scheme, Is.EqualTo("Bearer"));
+			Assert.That(request.Headers.Authorization?.Parameter, Is.EqualTo(token));
+			var content = result.StructuredContent!.Value;
+			Assert.That(content.GetProperty("guessTheWordCompletions").GetInt32(), Is.EqualTo(3));
+			Assert.That(content.GetProperty("currentStreak").GetInt32(), Is.EqualTo(2));
+		});
+	}
+
+	[Test]
+	public async Task ListGameLanguages_ForwardsUserTokenAndReturnsStructuredContent()
+	{
+		var token = factory.CreateUserToken();
+		factory.Downstream.Body = """[{"code":"it","title":"Italian"}]""";
+		await using var client = await factory.CreateMcpClientAsync("games", token);
+
+		var result = await client.CallToolAsync("games_list_game_languages");
+
+		Assert.That(result.IsError, Is.Not.True);
+		Assert.That(factory.Downstream.Requests.Single().RequestUri!.AbsolutePath, Is.EqualTo("/api/game-languages"));
+		var language = result.StructuredContent!.Value.GetProperty("languages")[0];
+		Assert.That(language.GetProperty("code").GetString(), Is.EqualTo("it"));
+		Assert.That(language.GetProperty("title").GetString(), Is.EqualTo("Italian"));
 	}
 
 	[Test]

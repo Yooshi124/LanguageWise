@@ -1,6 +1,8 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Security.Cryptography;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
 using LanguageWise.MiniGamesService.Api.Clients;
 using LanguageWise.MiniGamesService.Api.Feature.Associations;
@@ -17,13 +19,18 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.Extensions.Options;
 
 const string ServiceName = "mini-games-service-backend";
+const string AssistantToolNamePattern = "^games_[a-z_]{1,58}$";
+const int MaxAssistantToolArgumentBytes = 2048;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddMemoryCache();
 
 // Database and external service URLs
 var databaseServiceUrl = builder.Configuration["Services:Database"] ?? "http://localhost:6005";
 var courseServiceUrl = builder.Configuration["Services:Courses"] ?? "http://localhost:6003";
 var achievementsServiceUrl = builder.Configuration["Services:Achievements"] ?? "http://localhost:5004";
+var ragServiceUrl = builder.Configuration["Services:Rag"] ?? "http://localhost:8100";
 
 // Register HTTP clients for external services
 builder.Services.AddHttpClient<GamesDatabaseClient>(client =>
@@ -42,6 +49,13 @@ builder.Services.AddHttpClient<AchievementEventsClient>(client =>
 {
     client.BaseAddress = new Uri($"{achievementsServiceUrl}/");
     client.Timeout = TimeSpan.FromSeconds(20);
+});
+
+// RAG server: runs locally, not containerised (reachable from containers via host.docker.internal).
+builder.Services.AddHttpClient<RagClient>(client =>
+{
+    client.BaseAddress = new Uri(ragServiceUrl.TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromSeconds(15);
 });
 
 // OpenRouter vocabulary generation (AI game mode), modelled on the quizzes-courses assistant setup.
@@ -69,6 +83,9 @@ builder.Services.AddSingleton<IAiVocabularyProvider, OpenRouterVocabularyProvide
 
 // Mini games assistant (streaming chat), modelled on the quizzes-courses assistant setup.
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient(McpToolClient.HttpClientName, client =>
+    client.Timeout = TimeSpan.FromSeconds(builder.Configuration.GetValue("Mcp:TimeoutSeconds", 15)));
+builder.Services.AddSingleton<IMcpToolClient, McpToolClient>();
 builder.Services.AddHttpClient<IAssistantCompletionClient, GarryCompletionClient>(client =>
 {
     client.BaseAddress = new Uri((builder.Configuration["Services:Garry"] ?? "http://localhost:5010").TrimEnd('/') + "/");
@@ -130,10 +147,32 @@ builder.Services.AddAuthorizationBuilder()
                 out var userId) && userId > 0)
         .Build());
 
+// Per-user limit on gameplay actions (guesses and hints), so scripted submission cannot brute
+// force a solution or exhaust hints faster than a human could play.
+const string GameActionsRateLimiterPolicy = "game-actions";
+builder.Services.AddRateLimiter(options =>
+{
+    options.OnRejected = (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        return ValueTask.CompletedTask;
+    };
+    options.AddPolicy(GameActionsRateLimiterPolicy, context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: GetUserId(context).ToString(),
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+});
+
 var app = builder.Build();
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.Use(async (context, next) =>
 {
@@ -214,6 +253,90 @@ app.MapPost("/api/assistant/messages", async (
     }
 });
 
+// Lists the MCP tools available to Garry for this feature (scoped to "games"), so the
+// frontend can offer them as quick actions. Mirrors the quizzes-courses-service contract.
+app.MapGet("/api/assistant/tools", async (
+    IMcpToolClient mcpTools,
+    HttpRequest httpRequest,
+    CancellationToken cancellationToken) =>
+{
+    if (!mcpTools.Enabled)
+    {
+        return AssistantToolsDisabled();
+    }
+
+    try
+    {
+        var tools = await mcpTools.ListToolsAsync(UserTokenReader.Read(httpRequest), cancellationToken);
+        return Results.Ok(new AssistantToolsResponse(tools
+            .Select(tool => new AssistantToolDescriptor(tool.Name, tool.Title, tool.Description))
+            .ToList()));
+    }
+    catch (Exception exception) when (IsAssistantToolFailure(exception, cancellationToken))
+    {
+        app.Logger.LogWarning(
+            "Assistant tool listing failed with error type {ErrorType}.",
+            exception.GetType().Name);
+        return AssistantToolsUnavailable();
+    }
+});
+
+// Calls one MCP tool directly (not through a chat turn), forwarding the caller's own token so
+// the tool can never see more than the signed-in user is allowed to.
+app.MapPost("/api/assistant/tools/{name}", async (
+    string name,
+    HttpRequest httpRequest,
+    IMcpToolClient mcpTools,
+    CancellationToken cancellationToken) =>
+{
+    if (!mcpTools.Enabled)
+    {
+        return AssistantToolsDisabled();
+    }
+
+    if (!Regex.IsMatch(name, AssistantToolNamePattern))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["name"] = ["Unknown assistant tool."]
+        });
+    }
+
+    var arguments = await ReadAssistantToolArgumentsAsync(httpRequest, cancellationToken);
+    if (arguments is null)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["arguments"] = [$"Tool arguments must be a JSON object of at most {MaxAssistantToolArgumentBytes} bytes."]
+        });
+    }
+
+    try
+    {
+        var result = await mcpTools.CallToolAsync(
+            name,
+            arguments,
+            UserTokenReader.Read(httpRequest),
+            cancellationToken);
+        return Results.Ok(new AssistantToolCallResponse(name, result.IsError, result.Result));
+    }
+    catch (ModelContextProtocol.McpProtocolException exception) when (
+        exception.ErrorCode is ModelContextProtocol.McpErrorCode.InvalidParams or ModelContextProtocol.McpErrorCode.MethodNotFound)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["name"] = ["Unknown assistant tool or invalid arguments."]
+        });
+    }
+    catch (Exception exception) when (IsAssistantToolFailure(exception, cancellationToken))
+    {
+        app.Logger.LogWarning(
+            "Assistant tool call failed with error type {ErrorType}.",
+            exception.GetType().Name);
+        return AssistantToolsUnavailable();
+    }
+});
+
 // Languages the user has unlocked vocabulary in (started courses with completed lessons).
 // The frontend offers these as the per-user language selection for the games.
 app.MapGet("/api/game-languages", async (HttpContext context, CourseVocabularyClient courseClient, CancellationToken cancellationToken) =>
@@ -249,6 +372,35 @@ app.MapGet("/api/game-modes", async (HttpContext context, CourseVocabularyClient
     });
 });
 
+// Documentation search: proxies the local RAG server so the frontend can ask questions about
+// how the platform's services work without embedding a RAG client in the browser.
+app.MapPost("/api/rag/query", async (RagQueryApiRequest request, RagClient ragClient, CancellationToken cancellationToken) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Query))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["query"] = ["Query must not be empty."]
+        });
+    }
+
+    try
+    {
+        var response = await ragClient.QueryAsync(request.Query, request.NResults, cancellationToken);
+        return Results.Ok(response);
+    }
+    catch (HttpRequestException exception)
+    {
+        app.Logger.LogWarning(
+            "RAG server request failed with error type {ErrorType}.",
+            exception.GetType().Name);
+        return Results.Problem(
+            title: "The documentation search service is unavailable.",
+            detail: "Please try again.",
+            statusCode: StatusCodes.Status502BadGateway);
+    }
+}).RequireRateLimiting(GameActionsRateLimiterPolicy);
+
 // Successful completions per game type for the user, optionally scoped to one course
 // (the language selected on the game page). Powers the completion tracker on the frontend.
 app.MapGet("/api/stats/completions", async (HttpContext context, string? courseCode, GamesDatabaseClient databaseClient, CancellationToken cancellationToken) =>
@@ -262,16 +414,29 @@ app.MapGet("/api/stats/completions", async (HttpContext context, string? courseC
         .Where(game => courseCode is null || string.Equals(game.CourseCode, courseCode, StringComparison.OrdinalIgnoreCase))
         .ToDictionary(game => game.Id, game => game.GameType);
 
-    var counts = attempts
-        .Where(attempt => attempt.IsWon && gameTypesById.ContainsKey(attempt.GameId))
+    var scopedAttempts = attempts.Where(attempt => gameTypesById.ContainsKey(attempt.GameId)).ToList();
+
+    var counts = scopedAttempts
+        .Where(attempt => attempt.IsWon)
         .GroupBy(attempt => gameTypesById[attempt.GameId])
         .ToDictionary(group => group.Key, group => group.Count());
+
+    var bestTimes = scopedAttempts
+        .Where(attempt => attempt.IsWon && attempt.TimeSpentSeconds > 0)
+        .GroupBy(attempt => gameTypesById[attempt.GameId])
+        .ToDictionary(group => group.Key, group => group.Min(attempt => attempt.TimeSpentSeconds));
+
+    var streak = StreakCalculator.CalculateStreak(scopedAttempts.Where(attempt => attempt.IsComplete));
 
     return Results.Ok(new CompletionStatsResponse(
         courseCode,
         counts.GetValueOrDefault("guess_the_word"),
         counts.GetValueOrDefault("word_search"),
-        counts.GetValueOrDefault("associations")));
+        counts.GetValueOrDefault("associations"),
+        bestTimes.GetValueOrDefault("guess_the_word") is int guessBest and > 0 ? guessBest : null,
+        bestTimes.GetValueOrDefault("word_search") is int searchBest and > 0 ? searchBest : null,
+        bestTimes.GetValueOrDefault("associations") is int associationsBest and > 0 ? associationsBest : null,
+        streak));
 });
 
 // Starts a game, translating "no vocabulary yet" into a 422 the frontend can show a friendly message for.
@@ -336,7 +501,7 @@ app.MapPost("/api/guess-the-word/guess", async (HttpContext context, GuessTheWor
     {
         return Results.Conflict(new { error = exception.Message });
     }
-});
+}).RequireRateLimiting(GameActionsRateLimiterPolicy);
 
 app.MapPost("/api/guess-the-word/reset", (HttpContext context, GameSessionManager gameManager) =>
 {
@@ -377,7 +542,7 @@ app.MapPost("/api/word-search/guess", async (HttpContext context, WordSearchGues
     {
         return Results.Conflict(new { error = exception.Message });
     }
-});
+}).RequireRateLimiting(GameActionsRateLimiterPolicy);
 
 app.MapPost("/api/word-search/hint", (HttpContext context, GameSessionManager gameManager) =>
 {
@@ -390,7 +555,7 @@ app.MapPost("/api/word-search/hint", (HttpContext context, GameSessionManager ga
     {
         return Results.Conflict(new { error = exception.Message });
     }
-});
+}).RequireRateLimiting(GameActionsRateLimiterPolicy);
 
 app.MapPost("/api/word-search/give-up", async (HttpContext context, GameSessionManager gameManager) =>
 {
@@ -443,7 +608,7 @@ app.MapPost("/api/associations/guess", async (HttpContext context, AssociationsG
     {
         return Results.Conflict(new { error = exception.Message });
     }
-});
+}).RequireRateLimiting(GameActionsRateLimiterPolicy);
 
 app.MapPost("/api/associations/reset", (HttpContext context, GameSessionManager gameManager) =>
 {
@@ -472,5 +637,64 @@ static string? GetAccessToken(HttpContext context)
 
 static int GetUserId(HttpContext context) =>
     int.Parse(context.User.FindFirst(JwtRegisteredClaimNames.Sub)!.Value);
+
+static IResult AssistantToolsDisabled() =>
+    Results.Problem(
+        title: "Assistant tools are disabled.",
+        detail: "Garry's tools are not enabled on this server.",
+        statusCode: StatusCodes.Status503ServiceUnavailable,
+        extensions: new Dictionary<string, object?> { ["code"] = "mcp_disabled" });
+
+static IResult AssistantToolsUnavailable() =>
+    Results.Problem(
+        title: "Assistant tools are unavailable.",
+        detail: "Garry's tools could not be reached. Please try again.",
+        statusCode: StatusCodes.Status502BadGateway,
+        extensions: new Dictionary<string, object?> { ["code"] = "mcp_unavailable" });
+
+static bool IsAssistantToolFailure(Exception exception, CancellationToken cancellationToken) =>
+    exception is HttpRequestException or ModelContextProtocol.McpException or TimeoutException or IOException or JsonException
+    || (exception is OperationCanceledException && !cancellationToken.IsCancellationRequested);
+
+static async Task<IReadOnlyDictionary<string, JsonElement>?> ReadAssistantToolArgumentsAsync(
+    HttpRequest request,
+    CancellationToken cancellationToken)
+{
+    var buffer = new byte[MaxAssistantToolArgumentBytes + 1];
+    var length = 0;
+    int read;
+    while (length < buffer.Length &&
+        (read = await request.Body.ReadAsync(buffer.AsMemory(length), cancellationToken)) > 0)
+    {
+        length += read;
+    }
+
+    if (length > MaxAssistantToolArgumentBytes)
+    {
+        return null;
+    }
+
+    if (length == 0 || buffer.AsSpan(0, length).Trim(" \t\r\n"u8).IsEmpty)
+    {
+        return new Dictionary<string, JsonElement>();
+    }
+
+    try
+    {
+        using var document = JsonDocument.Parse(buffer.AsMemory(0, length));
+        if (document.RootElement.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        return document.RootElement
+            .EnumerateObject()
+            .ToDictionary(property => property.Name, property => property.Value.Clone());
+    }
+    catch (JsonException)
+    {
+        return null;
+    }
+}
 
 public sealed class MiniGamesApiAssemblyMarker;

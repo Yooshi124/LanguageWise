@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from collectors.file_reader import CodeBundle
 from collectors.repo_observer import Observation
 from config.settings import Settings
-from core.gemini_client import GeminiClient, ModelResponse, dump_json
 from core.models import Finding, ImplementationPlan
+from core.openrouter_client import ModelResponse, OpenRouterClient, dump_json
 from core.prompt_registry import PromptRegistry
 
 
@@ -26,7 +26,7 @@ def build_plan(
     observation: Observation,
     settings: Settings,
     prompts: PromptRegistry,
-    client: GeminiClient,
+    client: OpenRouterClient,
 ) -> PlanResult:
     if not accepted:
         raise ValueError("build_plan requires at least one accepted finding.")

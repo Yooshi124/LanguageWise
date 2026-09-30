@@ -23,6 +23,8 @@ public sealed class GameSessionManager(
     private const int MinimumWordSearchWords = 4;
     private const int AssociationGroupSize = 4;
     private const int AssociationGroupCount = 4;
+    // Rounds are kept for stats/history, then purged by the database service's cleanup job.
+    private static readonly TimeSpan GameRetention = TimeSpan.FromDays(90);
 
     private readonly Dictionary<string, TrackedGame> games = new();
 
@@ -53,7 +55,7 @@ public sealed class GameSessionManager(
     /// <summary>Get the current Guess the Word game for the user.</summary>
     public GuessTheWordState? GetGuessTheWordGameState(int userId) =>
         games.TryGetValue(GuessTheWordKey(userId), out var tracked) && tracked.Game is GuessTheWordGame guessTheWord
-            ? WithDefinitions(guessTheWord.GetState(), tracked)
+            ? WithCompletionExtras(guessTheWord.GetState(), tracked)
             : null;
 
     /// <summary>Submit a guess to the user's Guess the Word game.</summary>
@@ -64,9 +66,16 @@ public sealed class GameSessionManager(
         var result = game.SubmitGuess(guess);
         var state = game.GetState();
         await PersistCompletionAsync(tracked, userId, userName, token, state.IsComplete, state.IsWon, score: 0, state.Attempts);
-        return state.IsComplete && tracked.Definitions.Count > 0
-            ? result with { Definitions = tracked.Definitions }
-            : result;
+        if (!state.IsComplete)
+        {
+            return result;
+        }
+
+        return result with
+        {
+            Definitions = tracked.Definitions.Count > 0 ? tracked.Definitions : result.Definitions,
+            ElapsedSeconds = RoundElapsedSeconds(tracked)
+        };
     }
 
     /// <summary>Reset the user's Guess the Word game; the next init starts (and persists) a fresh round.</summary>
@@ -102,7 +111,7 @@ public sealed class GameSessionManager(
     /// <summary>Get the current Word Search game for the user.</summary>
     public WordSearchState? GetWordSearchGameState(int userId) =>
         games.TryGetValue(WordSearchKey(userId), out var tracked) && tracked.Game is WordSearchGame wordSearch
-            ? WithDefinitions(wordSearch.GetState(), tracked)
+            ? WithCompletionExtras(wordSearch.GetState(), tracked)
             : null;
 
     /// <summary>Submit a word to the user's Word Search game.</summary>
@@ -112,7 +121,7 @@ public sealed class GameSessionManager(
         var result = ((WordSearchGame)tracked.Game).SubmitWord(word, indices ?? []);
         await PersistCompletionAsync(
             tracked, userId, userName, token, result.State.IsComplete, result.State.IsComplete && !result.State.IsGivenUp, result.State.Score, result.State.Words.Count);
-        return result with { State = WithDefinitions(result.State, tracked) };
+        return result with { State = WithCompletionExtras(result.State, tracked) };
     }
 
     /// <summary>Use a hint in the user's Word Search game.</summary>
@@ -125,7 +134,7 @@ public sealed class GameSessionManager(
         var tracked = GetTrackedGame(WordSearchKey(userId), "Word Search");
         var state = ((WordSearchGame)tracked.Game).GiveUp();
         await PersistCompletionAsync(tracked, userId, string.Empty, string.Empty, state.IsComplete, isWon: false, state.Score, state.Words.Count);
-        return WithDefinitions(state, tracked);
+        return WithCompletionExtras(state, tracked);
     }
 
     /// <summary>Reset the user's Word Search game; the next init starts (and persists) a fresh round.</summary>
@@ -170,7 +179,7 @@ public sealed class GameSessionManager(
     /// <summary>Get the current Associations game for the user.</summary>
     public AssociationsState? GetAssociationsGameState(int userId) =>
         games.TryGetValue(AssociationsKey(userId), out var tracked) && tracked.Game is AssociationsGame associations
-            ? WithDefinitions(associations.GetState(), tracked)
+            ? WithCompletionExtras(associations.GetState(), tracked)
             : null;
 
     /// <summary>Submit a guess to the user's Associations game.</summary>
@@ -180,7 +189,7 @@ public sealed class GameSessionManager(
         var result = ((AssociationsGame)tracked.Game).SubmitGuess(words);
         await PersistCompletionAsync(
             tracked, userId, userName, token, result.State.IsComplete, result.State.IsWon, result.State.SolvedGroups.Count, result.State.FailedAttempts + result.State.SolvedGroups.Count);
-        return result with { State = WithDefinitions(result.State, tracked) };
+        return result with { State = WithCompletionExtras(result.State, tracked) };
     }
 
     /// <summary>Reset the user's Associations game; the next init starts (and persists) a fresh round.</summary>
@@ -256,14 +265,34 @@ public sealed class GameSessionManager(
         return definitions;
     }
 
-    private static GuessTheWordState WithDefinitions(GuessTheWordState state, TrackedGame tracked) =>
-        state.IsComplete && tracked.Definitions.Count > 0 ? state with { Definitions = tracked.Definitions } : state;
+    private static GuessTheWordState WithCompletionExtras(GuessTheWordState state, TrackedGame tracked) =>
+        !state.IsComplete
+            ? state
+            : state with
+            {
+                Definitions = tracked.Definitions.Count > 0 ? tracked.Definitions : state.Definitions,
+                ElapsedSeconds = RoundElapsedSeconds(tracked)
+            };
 
-    private static WordSearchState WithDefinitions(WordSearchState state, TrackedGame tracked) =>
-        state.IsComplete && tracked.Definitions.Count > 0 ? state with { Definitions = tracked.Definitions } : state;
+    private static WordSearchState WithCompletionExtras(WordSearchState state, TrackedGame tracked) =>
+        !state.IsComplete
+            ? state
+            : state with
+            {
+                Definitions = tracked.Definitions.Count > 0 ? tracked.Definitions : state.Definitions,
+                ElapsedSeconds = RoundElapsedSeconds(tracked)
+            };
 
-    private static AssociationsState WithDefinitions(AssociationsState state, TrackedGame tracked) =>
-        state.IsComplete && tracked.Definitions.Count > 0 ? state with { Definitions = tracked.Definitions } : state;
+    private static AssociationsState WithCompletionExtras(AssociationsState state, TrackedGame tracked) =>
+        !state.IsComplete
+            ? state
+            : state with
+            {
+                Definitions = tracked.Definitions.Count > 0 ? tracked.Definitions : state.Definitions,
+                ElapsedSeconds = RoundElapsedSeconds(tracked)
+            };
+
+    private static int RoundElapsedSeconds(TrackedGame tracked) => (int)(DateTime.UtcNow - tracked.StartedAt).TotalSeconds;
 
     private TrackedGame GetTrackedGame(string sessionKey, string gameName) =>
         games.TryGetValue(sessionKey, out var tracked)
@@ -280,7 +309,8 @@ public sealed class GameSessionManager(
     {
         try
         {
-            var createdGame = await databaseClient.CreateGameAsync(gameType, courseCode ?? "all", solution, words);
+            var expiresAt = DateTime.UtcNow.Add(GameRetention).ToString("O");
+            var createdGame = await databaseClient.CreateGameAsync(gameType, courseCode ?? "all", solution, words, expiresAt: expiresAt);
             if (createdGame is null)
             {
                 logger.LogWarning("Could not persist a new {GameType} game for user {UserId}: the database rejected the create", gameType, userId);
@@ -313,12 +343,23 @@ public sealed class GameSessionManager(
         int score,
         int attemptCount)
     {
-        if (!isComplete || tracked.CompletionPersisted || tracked.AttemptId is not int attemptId)
+        if (!isComplete || tracked.AttemptId is not int attemptId)
         {
             return;
         }
 
-        tracked.CompletionPersisted = true;
+        // Guard against a duplicate persist/achievement-post if the client double-submits the
+        // completing guess before the first request returns.
+        lock (tracked)
+        {
+            if (tracked.CompletionPersisted)
+            {
+                return;
+            }
+
+            tracked.CompletionPersisted = true;
+        }
+
         try
         {
             var updated = await databaseClient.UpdateGameAttemptAsync(

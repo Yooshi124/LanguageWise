@@ -13,6 +13,12 @@ All commands run from `LanguageWise\Tools\AgenticLoop`.
 | --- | --- |
 | `python main.py` | Interactive session. Run as many review rounds as you like; all of them are recorded in one evidence log. |
 | `python main.py --prompt "review test coverage"` | Runs a single round, writes the session log, exits. Useful for scripting. |
+| `python main.py --ci-failures` | Pulls the latest failed GitHub Actions run (with job-log excerpts), diagnoses it against the code, writes the session log, exits. |
+| `python main.py --ci-failures student-3.yml` | Same, but only looks at that workflow's latest failed run. |
+| `python main.py --rag-validate` | Retrieves documentation context from the local RAG server and cross-checks the code in scope against it, writes the session log, exits. |
+| `python main.py --rag-validate "achievements service"` | Same, but scopes the retrieval to that topic. |
+| `python main.py --mcp-validate` | Exercises the local MCP server (`initialize`, `tools/list`, one `tools/call` probe) and validates the mcp-server code against the observed behaviour, writes the session log, exits. |
+| `python main.py --mcp-validate courses_list_courses` | Same, but probes that specific tool. |
 | `python main.py --scope ..\..\DatabaseService` | Overrides `TARGETED_DIRECTORY` for this run only. |
 | `python main.py --env C:\path\to\other.env` | Uses an alternative configuration file. |
 | `python main.py --help` | Shows the flags. |
@@ -33,7 +39,87 @@ review prompt.
 | `/scope <path>` | Narrow the review. Relative paths resolve from the repository root. |
 | `/scope reset` | Return to the configured scope. |
 | `/session` | Print the evidence log path. |
+| `/ci-failures [workflow]` | Pull the latest failed GitHub Actions run and diagnose it against the code. |
+| `/rag-validate [topic]` | Retrieve documentation context from the local RAG server and cross-check the code in scope against it. |
+| `/rag <question>` | Query the local RAG server directly and print the results, without running a full review round. |
+| `/mcp-validate [tool]` | Exercise the local MCP server (`initialize`, `tools/list`, one `tools/call` probe) and validate the mcp-server code in scope against the observed behaviour. |
+| `/mcp [tool]` | List the MCP tools for the configured scope, or call one directly with empty arguments, without running a full review round. |
 | `/exit` | End the session, write the log footer, and list any plans created. |
+
+---
+
+## Diagnosing a failed CI run
+
+The CI-failures mode turns a red pipeline into a normal review round:
+
+```
+agentic-loop > /ci-failures student-3.yml
+Fetching the latest failed GitHub Actions run...
+Found: my-org/LanguageWise run 812 (student-3) on main@a1b2c3d4 - 1 failed job(s)
+  - backend-tests: failure
+```
+
+The failure excerpts from the job logs appear in the OBSERVE stage, and the
+implementation agent is asked to name each failing test or build error, find its
+root cause in the code, and propose the fix that would turn the pipeline green.
+Findings, critique, acceptance and the implementation plan all work exactly as in
+any other round.
+
+Setup lives in `.env`: `GITHUB_TOKEN` (optional for public repos), `GITHUB_REPO`
+(auto-detected from the `origin` remote), and `GITHUB_WORKFLOW` (a default
+workflow filter).
+
+---
+
+## Validating the MCP server
+
+The MCP-validate mode turns a live MCP interaction into a normal review round:
+
+```
+agentic-loop > /mcp-validate
+Exercising the MCP server at http://localhost:8200/mcp (scope: courses)...
+Found: languagewise-mcp 1.0.0 at http://localhost:8200/mcp | scope=courses | 8 tool(s) | probe courses_list_courses -> ok
+  - courses_list_courses
+  - courses_get_lesson_vocabulary
+  ...
+```
+
+The handshake, the tool list for the configured scope, and the probe call's
+result (or its safe `isError` payload) appear in the OBSERVE stage, and the
+implementation agent is asked to validate the mcp-server code in scope against
+that observed behaviour — scope filtering, read-only semantics, error shapes.
+Pass a tool name (`/mcp-validate courses_get_my_progress`) to probe a specific
+tool; without one, the first tool requiring no arguments is probed.
+
+Setup lives in `.env`: `MCP_BASE_URL`, `MCP_API_KEY` (defaults to reading
+`mcp-server/.mcp-api-key`), `MCP_TOOL_SCOPE`, and `MCP_USER_TOKEN` (optional
+user JWT for per-user tools).
+
+---
+
+## Cross-checking code against documentation (RAG)
+
+The RAG validation mode injects retrieved documentation passages as evidence and
+asks the analyst to flag any drift between the code in scope and what's documented:
+
+```
+agentic-loop > /rag-validate mini games completion stats
+Querying the local RAG server for documentation context...
+Found: 'mini games completion stats' - 5 passage(s) retrieved
+```
+
+The retrieved passages appear in the OBSERVE stage, and the implementation agent
+is asked to reference the documented behaviour when explaining each finding.
+Findings, critique, acceptance and the implementation plan all work exactly as in
+any other round.
+
+This mode requires the RAG server running locally and not containerised (from
+`rag-server/`, run `python server.py`). Setup lives in `.env`: `RAG_BASE_URL`
+(default `http://localhost:8100`), `RAG_REQUEST_TIMEOUT_SECONDS`, and
+`RAG_DEFAULT_N_RESULTS`.
+
+Use `/rag <question>` for a quick connectivity check or a one-off lookup without
+running a full review round — it prints the retrieved passages directly.
 
 ---
 
@@ -91,7 +177,7 @@ STAGE 6/6 - ADAPT           a plan is written for what you accepted
 > python main.py
 
 ╭─ Agentic Loop - Rubber Duck Code Review ─────────────────────────────────╮
-│ Model          gemini-3.7-flash                                          │
+│ Model          google/gemma-4-26b-a4b-it                                 │
 │ Review agent   gemma4:e2b (local, via Ollama - mandatory)                │
 │ Repo root      C:\Users\justi\source\repos\LanguageWise                  │
 │ Scope          C:\Users\justi\source\repos\LanguageWise  (whole repo)    │
@@ -164,7 +250,7 @@ Nothing here comes from a model. These are facts both you and the agent can rely
 ```
 ──────────────────────────── STAGE 4/6 - AGENT ────────────────────────────
 Implementation agent proposes findings; review agent critiques them.
-Implementation agent reading 6 file(s) (41208 bytes) with gemini-3.7-flash...
+Implementation agent reading 6 file(s) (41208 bytes) with google/gemma-4-26b-a4b-it...
 Implementation agent proposed 4 finding(s).
 Review agent critiquing with gemma4:e2b (local, via Ollama)...
 
@@ -244,7 +330,7 @@ A clean result is a valid result, and the loop no longer leaves you at a dead en
 
 ```
 ──────────────────────────── STAGE 4/6 - AGENT ────────────────────────────
-Implementation agent reading 6 file(s) (41208 bytes) with gemini-3.7-flash...
+Implementation agent reading 6 file(s) (41208 bytes) with google/gemma-4-26b-a4b-it...
 Implementation agent proposed 0 finding(s).
 
 ╭────────────────────────────────────────────────────────╮
@@ -294,7 +380,7 @@ spends that budget before writing the findings array you get an empty result, or
 - **Plan ID:** 8b41d0e7-...-2f5a
 - **Session:** 6f2a...c91b (round 1)
 - **Created:** 2026-08-19 08:41:12 UTC
-- **Model:** gemini-3.7-flash
+- **Model:** google/gemma-4-26b-a4b-it
 - **Review scope:** `C:\...\LanguageWise\DatabaseService`
 
 ## Original Request
@@ -373,8 +459,8 @@ stage headings in order, so the loop is auditable end to end:
 - **Repo root:** C:\Users\justi\source\repos\LanguageWise
 - **Scope:** C:\...\LanguageWise\DatabaseService
 - **Scope mode:** TARGETED_DIRECTORY
-- **Analysis model:** gemini-3.7-flash
-- **Selection model:** gemini-3.7-flash
+- **Analysis model:** google/gemma-4-26b-a4b-it
+- **Selection model:** google/gemma-4-26b-a4b-it
 - **Review model:** gemma4:e2b (local, via Ollama - mandatory)
 
 This is an evidence log. Each round below records the full loop: PLAN → ACT → OBSERVE → AGENT → HUMAN REVIEW → ADAPT.

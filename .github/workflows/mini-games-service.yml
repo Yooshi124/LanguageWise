@@ -114,6 +114,19 @@ jobs:
           --logger "trx;LogFileName=mini-games-service.trx"
           --results-directory TestResults
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mini-games-service/frontend/package-lock.json
+
+      - name: Run frontend Vitest tests
+        working-directory: mini-games-service/frontend
+        run: |
+          npm ci
+          npm test
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
