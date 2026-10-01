@@ -8,13 +8,17 @@ import {
     mdiMinus,
     mdiRefresh,
     mdiSend,
-    mdiStopCircleOutline
+    mdiStopCircleOutline,
+    mdiToolboxOutline
 } from '@mdi/js';
 import { ASSISTANT_MAX_MESSAGE } from '../api.js';
 import { useAssistant } from '../composables/useAssistant.js';
+import { assistantToolChips, missingRequirement } from '../config/assistantTools.js';
+import ToolResultCard from './ToolResultCard.vue';
 
 const {
-    open, messages, streaming, error, suggestions, expand, close, clear, cancel, ask, retry
+    open, messages, streaming, error, suggestions, expand, close, clear, cancel, ask, retry,
+    tools, toolsEnabled, toolsLoading, toolsError, toolRunning, setToolsEnabled, loadTools, runTool
 } = useAssistant();
 
 const route = useRoute();
@@ -48,6 +52,33 @@ const context = computed(() => {
 
     return { routeName: name };
 });
+
+const toolContext = computed(() => ({
+    forumCode: context.value.forumCode,
+    postId: context.value.postId,
+    query: draft.value
+}));
+
+const toolChips = computed(() =>
+    assistantToolChips
+        .map((chip) => ({
+            chip,
+            tool: tools.value.find((tool) => tool.name === chip.tool),
+            unavailable: missingRequirement(chip, toolContext.value)
+        }))
+        .filter((entry) => entry.tool !== undefined));
+
+const toolsBusy = computed(() => streaming.value || toolRunning.value !== null);
+
+async function runToolChip(chip) {
+    const tool = tools.value.find((item) => item.name === chip.tool);
+
+    if (!tool || missingRequirement(chip, toolContext.value)) {
+        return;
+    }
+
+    await runTool(tool, chip.arguments(toolContext.value));
+}
 
 async function scrollToLatest() {
     await nextTick();
@@ -103,6 +134,15 @@ function onKeydown(event) {
                         <span>Hi, I’m Garry and I’m here to help you learn!</span>
                     </div>
                     <v-btn
+                        :icon="mdiToolboxOutline"
+                        :variant="toolsEnabled ? 'tonal' : 'text'"
+                        size="small"
+                        :aria-pressed="toolsEnabled"
+                        :aria-label="toolsEnabled ? 'Hide Garry’s tools' : 'Show Garry’s tools'"
+                        :title="toolsEnabled ? 'Hide tools' : 'Show tools'"
+                        @click="setToolsEnabled(!toolsEnabled)"
+                    />
+                    <v-btn
                         :icon="mdiDeleteOutline"
                         variant="text"
                         size="small"
@@ -147,6 +187,11 @@ function onKeydown(event) {
                         <span class="sr-only">
                             {{ message.role === 'assistant' ? 'Garry' : 'You' }}:
                         </span>
+                        <ToolResultCard
+                            v-for="(toolResult, index) in message.toolResults ?? []"
+                            :key="`${message.id}-tool-${index}`"
+                            :result="toolResult"
+                        />
                         <div
                             v-if="message.content"
                             class="garry-message-content"
@@ -164,6 +209,27 @@ function onKeydown(event) {
                 <p class="sr-only" role="status" aria-live="polite">
                     {{ streaming ? 'Garry is writing a response.' : '' }}
                 </p>
+
+                <div class="assistant-tools">
+                    <template v-if="toolsEnabled">
+                        <p v-if="toolsLoading" class="assistant-tools-status">Loading tools…</p>
+                        <p v-else-if="toolsError" class="assistant-tools-status">
+                            {{ toolsError }}
+                            <button type="button" @click="loadTools()">Retry</button>
+                        </p>
+                        <div v-else class="assistant-tool-chips" aria-label="Garry's tools">
+                            <button
+                                v-for="entry in toolChips"
+                                :key="entry.chip.tool"
+                                type="button"
+                                :disabled="toolsBusy || entry.unavailable !== null"
+                                :title="entry.unavailable ?? entry.tool?.description"
+                                :aria-busy="toolRunning === entry.chip.tool"
+                                @click="runToolChip(entry.chip)"
+                            >{{ entry.chip.label }}</button>
+                        </div>
+                    </template>
+                </div>
 
                 <v-alert
                     v-if="error"

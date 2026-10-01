@@ -110,7 +110,7 @@ function upload(path, file) {
  * part-way through — the distinction matters because a broken stream has already
  * put some of an answer on screen.
  */
-async function streamAssistantMessage({ message, history, context }, { onDelta, onDone }, signal) {
+async function streamAssistantMessage({ message, history, context }, { onDelta, onDone, onTool }, signal) {
     let response;
 
     try {
@@ -160,7 +160,7 @@ async function streamAssistantMessage({ message, history, context }, { onDelta, 
         let boundary = buffer.indexOf('\n\n');
 
         while (boundary >= 0) {
-            completed = readFrame(buffer.slice(0, boundary), onDelta, onDone) || completed;
+            completed = readFrame(buffer.slice(0, boundary), onDelta, onDone, onTool) || completed;
             buffer = buffer.slice(boundary + 2);
             boundary = buffer.indexOf('\n\n');
         }
@@ -171,7 +171,7 @@ async function streamAssistantMessage({ message, history, context }, { onDelta, 
     }
 
     if (buffer.trim()) {
-        completed = readFrame(buffer, onDelta, onDone) || completed;
+        completed = readFrame(buffer, onDelta, onDone, onTool) || completed;
     }
 
     // No terminating event means the connection dropped mid-answer. Saying so is
@@ -182,7 +182,7 @@ async function streamAssistantMessage({ message, history, context }, { onDelta, 
 }
 
 /** One server-sent event. Returns true when it was the one that ends the stream. */
-function readFrame(frame, onDelta, onDone) {
+function readFrame(frame, onDelta, onDone, onTool) {
     let name = 'message';
     const data = [];
 
@@ -219,6 +219,19 @@ function readFrame(frame, onDelta, onDone) {
         return true;
     }
 
+    if (name === 'tool') {
+        if (typeof payload?.name === 'string' && payload.name && onTool) {
+            onTool({
+                tool: payload.name,
+                arguments: isRecord(payload.arguments) ? payload.arguments : undefined,
+                isError: payload.isError === true,
+                result: payload.result ?? null
+            });
+        }
+
+        return false;
+    }
+
     if (name === 'error') {
         throw new Error(
             typeof payload?.message === 'string' && payload.message
@@ -228,6 +241,20 @@ function readFrame(frame, onDelta, onDone) {
     }
 
     return false;
+}
+
+function isRecord(value) {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+async function callAssistantTool(name, args) {
+    const body = await request(`/assistant/tools/${encodeURIComponent(name)}`, { method: 'POST', body: args });
+    return {
+        tool: body?.tool ?? name,
+        arguments: args,
+        isError: body?.isError === true,
+        result: body?.result ?? null
+    };
 }
 
 export const api = {
@@ -267,6 +294,11 @@ export const api = {
     unlikeComment: (id) => request(`/comments/${id}/likes`, { method: 'DELETE' }),
 
     assistantTopics: () => request('/assistant/topics'),
+    assistantTools: async () => {
+        const body = await request('/assistant/tools');
+        return Array.isArray(body?.tools) ? body.tools : [];
+    },
+    callAssistantTool,
 
     streamAssistantMessage
 };

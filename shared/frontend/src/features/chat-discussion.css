@@ -425,7 +425,7 @@
   .garry-launcher:hover { transform: translateY(-4px); box-shadow: 0 0 0 8px rgba(255, 127, 110, .14), 0 0 44px rgba(79, 70, 229, .38), 0 24px 58px rgba(15, 23, 42, .29); }
   .garry-launcher:focus-visible { outline: 3px solid #818cf8; outline-offset: 4px; }
   .garry-launcher img { width: 80px; height: 80px; object-fit: contain; }
-  .garry-panel { display: grid; width: min(410px, calc(100vw - 32px)); height: min(650px, calc(100dvh - 48px)); grid-template-rows: auto minmax(0, 1fr) auto auto auto; overflow: hidden; border: 1px solid rgba(79, 70, 229, .16); border-radius: 26px; background: var(--lw-colour-surface); box-shadow: 0 24px 56px rgba(15, 23, 42, .24); transform-origin: bottom right; }
+  .garry-panel { display: grid; width: min(410px, calc(100vw - 32px)); height: min(650px, calc(100dvh - 48px)); grid-template-rows: auto minmax(0, 1fr) auto auto auto auto; overflow: hidden; border: 1px solid rgba(79, 70, 229, .16); border-radius: 26px; background: var(--lw-colour-surface); box-shadow: 0 24px 56px rgba(15, 23, 42, .24); transform-origin: bottom right; }
   .garry-header { display: flex; min-height: 76px; padding: 10px 12px 10px 10px; align-items: center; gap: 8px; color: white; background: linear-gradient(135deg, #3730a3, #4f46e5); }
   .garry-header-image { width: 58px; height: 58px; flex: 0 0 58px; padding: 2px; object-fit: contain; border-radius: 18px; background: rgba(255, 255, 255, .94); }
   .garry-header > div { display: flex; min-width: 0; margin-right: auto; flex-direction: column; }
@@ -463,6 +463,25 @@
   .garry-typing span:nth-child(2) { animation-delay: .15s; }
   .garry-typing span:nth-child(3) { animation-delay: .3s; }
   .garry-error { margin: 0 14px 8px; font-size: .82rem; }
+  .assistant-tools:empty { display: none; }
+  .assistant-tools { padding: 0 14px 10px; }
+  .assistant-tools-status { display: flex; margin: 0; align-items: center; gap: 8px; color: #667085; font-size: .8rem; }
+  .assistant-tools-status button { padding: 2px 8px; border: 1px solid #dfe3ef; border-radius: 999px; color: #3730a3; background: #f5f6ff; font: inherit; font-size: .74rem; cursor: pointer; }
+  .assistant-tool-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .assistant-tool-chips button { padding: 6px 13px; border: 1px solid #c7d2fe; border-radius: 999px; color: #3730a3; background: #eef2ff; font: inherit; font-size: .8rem; font-weight: 650; cursor: pointer; }
+  .assistant-tool-chips button:hover:not(:disabled), .assistant-tool-chips button:focus-visible:not(:disabled) { border-color: #818cf8; background: #e0e7ff; outline: none; }
+  .assistant-tool-chips button:disabled { color: #98a2b3; background: #f5f6ff; cursor: not-allowed; opacity: .7; }
+  .assistant-tool-card { width: 100%; margin-bottom: 10px; padding: 11px 14px; border: 1px solid #e5e7ef; border-radius: 16px; background: #f8f9ff; }
+  .assistant-tool-card-error { border-color: #fecaca; background: #fef2f2; }
+  .assistant-tool-card header { display: flex; align-items: center; gap: 8px; color: #354052; font-size: .92rem; }
+  .assistant-tool-card-badge { padding: 1px 8px; border-radius: 999px; color: #3730a3; background: #e0e7ff; font-size: .68rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; }
+  .assistant-tool-card-summary { margin: 7px 0 0; color: #354052; font-size: .86rem; line-height: 1.5; }
+  .assistant-tool-card-rows { display: flex; margin: 8px 0 0; padding: 0; flex-direction: column; gap: 5px; list-style: none; }
+  .assistant-tool-card-rows li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 10px; border-radius: 10px; color: #354052; background: white; font-size: .84rem; }
+  .assistant-tool-card-rows li small { color: #667085; }
+  .assistant-tool-card-more { margin: 6px 0 0; color: #98a2b3; font-size: .76rem; }
+  .assistant-tool-card-raw { margin-top: 8px; color: #98a2b3; font-size: .74rem; }
+  .assistant-tool-card-raw pre { margin: 6px 0 0; padding: 8px; overflow-x: auto; border-radius: 10px; background: #172033; color: #e5e7ef; font-size: .72rem; }
   .garry-composer { display: flex; margin: 0 14px; padding: 7px 7px 7px 13px; align-items: center; gap: 7px; border: 1px solid #d8dce7; border-radius: 18px; background: var(--lw-colour-surface); }
   .garry-composer:focus-within { border-color: #818cf8; box-shadow: 0 0 0 3px rgba(99, 102, 241, .12); }
   .garry-composer textarea { width: 100%; min-height: 42px; max-height: 112px; padding: 10px 0; resize: none; border: 0; outline: 0; color: var(--lw-colour-ink); background: transparent; font: inherit; line-height: 22px; }

@@ -31,6 +31,7 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   SOLUTION: chat-discussion-service/LanguageWise.ChatDiscussionService.BE.slnx
+  Mcp__Enabled: false
 
 jobs:
   # The job name below is what you add to the branch ruleset as a required check.
@@ -107,6 +108,15 @@ jobs:
 
       - name: Restore
         run: dotnet restore "${{ env.SOLUTION }}"
+
+      - name: Verify MCP is disabled in CI
+        shell: bash
+        run: |
+          if [ "${Mcp__Enabled}" != "false" ]; then
+            echo "::error::Mcp__Enabled must be false in CI; tests use fake MCP clients only."
+            exit 1
+          fi
+          echo "Mcp__Enabled=${Mcp__Enabled}: assistant tools are served by fakes, no MCP server is contacted."
 
       - name: Build
         run: dotnet build "${{ env.SOLUTION }}" -c Release --no-restore

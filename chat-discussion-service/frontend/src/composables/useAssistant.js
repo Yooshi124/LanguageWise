@@ -23,6 +23,13 @@ const open = ref(false);
 const messages = ref([]);
 const streaming = ref(false);
 const error = ref('');
+const toolsEnabled = ref(false);
+const tools = ref([]);
+const toolsLoading = ref(false);
+const toolsError = ref('');
+const toolRunning = ref(null);
+
+const MAX_STORED_TOOL_RESULT_CHARACTERS = 20000;
 
 // Which user the transcript on screen belongs to. Signing in as somebody else
 // has to start a fresh conversation rather than inherit the previous one.
@@ -31,6 +38,10 @@ let controller = null;
 
 function storageKey(userId) {
     return `languagewise:chat-discussion:assistant:v1:user:${userId}`;
+}
+
+function toolsStorageKey(userId) {
+    return `${storageKey(userId)}:tools`;
 }
 
 /**
@@ -51,6 +62,22 @@ function initialise() {
     streaming.value = false;
     error.value = '';
     messages.value = userId === null ? [] : load(userId);
+    tools.value = [];
+    toolsError.value = '';
+    toolRunning.value = null;
+    toolsEnabled.value = userId !== null && readToolsPreference(userId);
+
+    if (toolsEnabled.value) {
+        void loadTools();
+    }
+}
+
+function readToolsPreference(userId) {
+    try {
+        return sessionStorage.getItem(toolsStorageKey(userId)) === 'on';
+    } catch {
+        return false;
+    }
 }
 
 // The panel's setup runs while the router guard is still awaiting the account, so
@@ -125,6 +152,12 @@ async function ask(question, context) {
                             ? { ...message, content: message.content + delta }
                             : message);
                 },
+                onTool: (result) => {
+                    messages.value = messages.value.map((message) =>
+                        message.id === answer.id
+                            ? { ...message, toolResults: [...(message.toolResults ?? []), result] }
+                            : message);
+                },
                 onDone: (reason) => {
                     if (reason === 'fallback') {
                         messages.value = messages.value.map((message) =>
@@ -178,6 +211,74 @@ async function retry(context) {
     const question = messages.value[asked].content;
     messages.value = messages.value.slice(0, asked);
     await ask(question, context);
+}
+
+async function setToolsEnabled(enabled) {
+    toolsEnabled.value = enabled;
+
+    if (loadedUserId !== null) {
+        try {
+            sessionStorage.setItem(toolsStorageKey(loadedUserId), enabled ? 'on' : 'off');
+        } catch {
+            // Losing the preference on reload is not worth an error.
+        }
+    }
+
+    if (enabled && tools.value.length === 0) {
+        await loadTools();
+    }
+}
+
+async function loadTools() {
+    if (toolsLoading.value) {
+        return;
+    }
+
+    toolsLoading.value = true;
+    toolsError.value = '';
+
+    try {
+        tools.value = await api.assistantTools();
+    } catch (failure) {
+        tools.value = [];
+        toolsError.value = failure instanceof ApiError && failure.body?.code === 'mcp_disabled'
+            ? 'Garry’s tools are turned off on this server.'
+            : 'Garry’s tools are unavailable right now.';
+    } finally {
+        toolsLoading.value = false;
+    }
+}
+
+/** Calls one tool directly, outside a chat turn, and shows its result as Garry's reply. */
+async function runTool(tool, args) {
+    if (streaming.value || toolRunning.value || loadedUserId === null) {
+        return;
+    }
+
+    error.value = '';
+    toolRunning.value = tool.name;
+
+    try {
+        const result = await api.callAssistantTool(tool.name, args);
+        messages.value = [
+            ...messages.value,
+            {
+                id: crypto.randomUUID(),
+                role: 'assistant',
+                content: result.isError
+                    ? `I couldn't use **${tool.title}** just now.`
+                    : `Here's what I found with **${tool.title}**.`,
+                toolResults: [result]
+            }
+        ];
+        persist();
+    } catch (failure) {
+        error.value = failure instanceof ApiError && failure.firstValidationMessage
+            ? failure.firstValidationMessage
+            : 'Garry could not use that tool. Please try again.';
+    } finally {
+        toolRunning.value = null;
+    }
 }
 
 function describe(failure) {
@@ -253,7 +354,8 @@ function persist() {
         return;
     }
 
-    messages.value = bounded(messages.value.filter((message) => message.content.trim()));
+    messages.value = bounded(messages.value.filter((message) => message.content.trim()))
+        .map(withStorableToolResults);
 
     try {
         sessionStorage.setItem(storageKey(loadedUserId), JSON.stringify(messages.value));
@@ -261,6 +363,16 @@ function persist() {
         // A full or unavailable session storage costs the transcript on reload,
         // which is not worth interrupting the conversation over.
     }
+}
+
+function withStorableToolResults(message) {
+    if (!message.toolResults?.length) {
+        return message;
+    }
+
+    return JSON.stringify(message.toolResults).length <= MAX_STORED_TOOL_RESULT_CHARACTERS
+        ? message
+        : { ...message, toolResults: undefined };
 }
 
 function load(userId) {
@@ -303,6 +415,14 @@ export function useAssistant() {
         streaming: readonly(streaming),
         error: readonly(error),
         suggestions: SUGGESTIONS,
+        tools: readonly(tools),
+        toolsEnabled: readonly(toolsEnabled),
+        toolsLoading: readonly(toolsLoading),
+        toolsError: readonly(toolsError),
+        toolRunning: readonly(toolRunning),
+        setToolsEnabled,
+        loadTools,
+        runTool,
         expand,
         close,
         clear,
