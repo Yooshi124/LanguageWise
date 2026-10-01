@@ -1,46 +1,25 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { computed, onMounted, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import AppIcon from '../components/AppIcon.vue';
 import PostCard from '../components/PostCard.vue';
 import StateBlock from '../components/StateBlock.vue';
 import { usePostList } from '../composables/usePostList.js';
 import { useForums } from '../composables/useForums.js';
+import { useSearchTerm } from '../composables/useSearchTerm.js';
 import { forumColour, forumFlag } from '../config/languages.js';
 
 const props = defineProps({ code: { type: String, required: true } });
 
 const route = useRoute();
-const router = useRouter();
 const { ensureLoaded, forumName, exists, forums } = useForums();
 const { posts, loading, loadingMore, error, hasMore, load, loadMore, replace } = usePostList();
+const { term, activeTerm } = useSearchTerm();
 
-const term = ref(typeof route.query.q === 'string' ? route.query.q : '');
 const forumsReady = ref(false);
-let debounce = null;
 
 const filter = computed(() => ({ forumCode: props.code, q: route.query.q || undefined }));
-const activeTerm = computed(() => (typeof route.query.q === 'string' ? route.query.q : ''));
 const forumKnown = computed(() => !forumsReady.value || exists(props.code));
-
-watch(term, (value) => {
-    window.clearTimeout(debounce);
-    debounce = window.setTimeout(() => {
-        const next = value.trim();
-
-        if (next === activeTerm.value) {
-            return;
-        }
-
-        router.replace({ query: next ? { q: next } : {} });
-    }, 300);
-});
-
-watch(activeTerm, (value) => {
-    if (value !== term.value.trim()) {
-        term.value = value;
-    }
-});
 
 watch(filter, () => load(filter.value), { deep: true });
 
@@ -56,8 +35,6 @@ onMounted(async () => {
         await load(filter.value);
     }
 });
-
-onBeforeUnmount(() => window.clearTimeout(debounce));
 </script>
 
 <template>

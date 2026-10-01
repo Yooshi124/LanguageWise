@@ -1,46 +1,22 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { computed, onMounted, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import PostCard from '../components/PostCard.vue';
 import StateBlock from '../components/StateBlock.vue';
 import { usePostList } from '../composables/usePostList.js';
+import { useSearchTerm } from '../composables/useSearchTerm.js';
 import { useFeatureUser } from '../federation/featureHost.js';
 
 const route = useRoute();
-const router = useRouter();
 const me = useFeatureUser();
 const { posts, loading, loadingMore, error, hasMore, load, loadMore, replace } = usePostList();
+const { term, activeTerm } = useSearchTerm();
 
-const term = ref(typeof route.query.q === 'string' ? route.query.q : '');
-let debounce = null;
+const filter = computed(() => ({ mine: true, q: route.query.q || undefined }));
 
-const activeTerm = computed(() => (typeof route.query.q === 'string' ? route.query.q : ''));
-
-const filter = computed(() => ({ userId: me.value?.id, q: route.query.q || undefined }));
-
-watch(term, (value) => {
-    window.clearTimeout(debounce);
-    debounce = window.setTimeout(() => {
-        const next = value.trim();
-
-        if (next === activeTerm.value) {
-            return;
-        }
-
-        router.replace({ query: next ? { q: next } : {} });
-    }, 300);
-});
-
-watch(activeTerm, (value) => {
-    if (value !== term.value.trim()) {
-        term.value = value;
-    }
-});
-
-watch(filter, () => load(filter.value), { deep: true });
+watch([filter, () => me.value?.id], () => load(filter.value), { deep: true });
 
 onMounted(() => load(filter.value));
-onBeforeUnmount(() => window.clearTimeout(debounce));
 </script>
 
 <template>

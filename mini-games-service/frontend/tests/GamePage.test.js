@@ -17,7 +17,7 @@ vi.mock('../src/api.js', () => ({
 import { fetchGameModes, fetchCompletionStats } from '../src/api.js';
 import GamePage from '../src/GamePage.vue';
 
-const stubs = { RouterLink: RouterLinkStub, AppIcon: true, DocsSearch: true };
+const stubs = { RouterLink: RouterLinkStub, AppIcon: true };
 
 describe('GamePage', () => {
   beforeEach(() => {

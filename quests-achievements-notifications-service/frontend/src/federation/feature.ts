@@ -12,3 +12,5 @@ export const metadata = {
 }
 
 export const routes = [{ path: '', name: 'quests-achievements-home', component: QuestsDashboard }]
+
+export { assistant } from './assistant'

@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import AppIcon from '../components/AppIcon.vue';
+import AuthorAvatar from '../components/AuthorAvatar.vue';
 import CommentItem from '../components/CommentItem.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
 import ImageGallery from '../components/ImageGallery.vue';
@@ -12,12 +13,10 @@ import { api, PAGE_SIZE } from '../api.js';
 import { formatDate } from '../format.js';
 import { uploadCommentImages } from '../composables/useImageUploads.js';
 import { isOwnedByFeatureUser } from '../federation/featureHost.js';
-import { useForums } from '../composables/useForums.js';
 
 const props = defineProps({ id: { type: [String, Number], required: true } });
 
 const router = useRouter();
-const { displayName } = useForums();
 
 const post = ref(null);
 const comments = ref([]);
@@ -206,7 +205,10 @@ watch(postId, load, { immediate: true });
         <article class="lw-card">
             <h2 class="cd-detail__title">{{ post.title }}</h2>
 
-            <p class="cd-detail__author">{{ post.authorName || 'Unknown author' }}</p>
+            <p class="cd-detail__author">
+                <AuthorAvatar :user-id="post.userId" :name="post.authorName" />
+                <span>{{ post.authorName || 'Unknown author' }}</span>
+            </p>
             <p class="cd-detail__meta">
                 <span>{{ formatDate(post.createdAt) }}</span>
                 <span v-if="post.updatedAt !== post.createdAt" class="cd-detail__edited">(edited)</span>

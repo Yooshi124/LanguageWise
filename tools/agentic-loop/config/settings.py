@@ -19,6 +19,10 @@ DEFAULT_MODEL = "google/gemma-4-26b-a4b-it"
 DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 DEFAULT_OLLAMA_REVIEW_MODEL = "gemma4:e2b"
+# Short-lived: Ollama otherwise keeps the full model resident in RAM for 5
+# minutes (its own default) after every call, which adds up across a session
+# that also has the rag-server and mcp-server running locally.
+DEFAULT_OLLAMA_KEEP_ALIVE = "30s"
 DEFAULT_RAG_BASE_URL = "http://localhost:8100"
 DEFAULT_RAG_N_RESULTS = 5
 DEFAULT_MCP_BASE_URL = "http://localhost:8200"
@@ -145,6 +149,7 @@ class Settings:
     openrouter_base_url: str
     ollama_host: str
     ollama_review_model: str
+    ollama_keep_alive: str
     ollama_request_timeout_seconds: int
     github_token: str
     github_repo: str
@@ -152,6 +157,7 @@ class Settings:
     rag_base_url: str
     rag_request_timeout_seconds: int
     rag_default_n_results: int
+    rag_technical_key: str
     mcp_base_url: str
     mcp_api_key: str
     mcp_tool_scope: str
@@ -206,7 +212,8 @@ class Settings:
             "Selection model": self.selection_model,
             "OpenRouter base URL": self.openrouter_base_url,
             "Review agent (mandatory, local)": (
-                f"{self.ollama_review_model} via Ollama at {self.ollama_host}"
+                f"{self.ollama_review_model} via Ollama at {self.ollama_host} "
+                f"(keep_alive={self.ollama_keep_alive})"
             ),
             "GitHub repository": self.github_repo or "auto-detect from git remote",
             "GitHub workflow": self.github_workflow or "(latest failed run)",
@@ -230,6 +237,7 @@ class Settings:
             "API key": redact(self.api_key),
             "GitHub token": redact(self.github_token),
             "MCP API key": redact(self.mcp_api_key),
+            "RAG technical key": redact(self.rag_technical_key),
         }
 
 
@@ -282,6 +290,7 @@ def load_settings(
         )
     ollama_host = get("OLLAMA_HOST") or DEFAULT_OLLAMA_HOST
     ollama_review_model = get("OLLAMA_REVIEW_MODEL") or DEFAULT_OLLAMA_REVIEW_MODEL
+    ollama_keep_alive = get("OLLAMA_KEEP_ALIVE") or DEFAULT_OLLAMA_KEEP_ALIVE
     ollama_request_timeout_seconds = _int(
         "OLLAMA_REQUEST_TIMEOUT_SECONDS", get("OLLAMA_REQUEST_TIMEOUT_SECONDS"), 600
     )
@@ -329,7 +338,11 @@ def load_settings(
     max_output_tokens = _int(
         "MAX_OUTPUT_TOKENS", get("MAX_OUTPUT_TOKENS"), 32_000, minimum=1024
     )
-    thinking_level = (get("THINKING_LEVEL") or "low").strip().lower()
+    # Blank/model-default is the safe choice: on this model, requesting an explicit
+    # reasoning effort has been observed to consume the entire MAX_OUTPUT_TOKENS
+    # budget on hidden reasoning for large multi-file prompts, leaving nothing for
+    # the actual JSON content (an empty-response failure with no repair possible).
+    thinking_level = (get("THINKING_LEVEL") or "").strip().lower()
     if thinking_level in {"", "default", "auto"}:
         thinking_level = ""
     elif thinking_level not in THINKING_LEVELS:
@@ -359,6 +372,22 @@ def load_settings(
     rag_default_n_results = _int(
         "RAG_DEFAULT_N_RESULTS", get("RAG_DEFAULT_N_RESULTS"), DEFAULT_RAG_N_RESULTS
     )
+    # The technical endpoint key comes from RAG_TECHNICAL_KEY, falling back to the
+    # key file the rag-server generates (rag-server/.rag-technical-key by default).
+    rag_technical_key = get("RAG_TECHNICAL_KEY")
+    rag_key_path_raw = get("RAG_TECHNICAL_KEY_PATH")
+    rag_key_path = (
+        Path(rag_key_path_raw).expanduser()
+        if rag_key_path_raw
+        else repo_root / "rag-server" / ".rag-technical-key"
+    )
+    if not rag_key_path.is_absolute():
+        rag_key_path = (repo_root / rag_key_path).resolve()
+    if not rag_technical_key and rag_key_path.is_file():
+        try:
+            rag_technical_key = rag_key_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            rag_technical_key = ""
 
     mcp_base_url = get("MCP_BASE_URL") or DEFAULT_MCP_BASE_URL
     if "://" not in mcp_base_url:
@@ -392,6 +421,7 @@ def load_settings(
         openrouter_base_url=openrouter_base_url,
         ollama_host=ollama_host,
         ollama_review_model=ollama_review_model,
+        ollama_keep_alive=ollama_keep_alive,
         ollama_request_timeout_seconds=ollama_request_timeout_seconds,
         github_token=github_token,
         github_repo=github_repo.strip("/"),
@@ -399,6 +429,7 @@ def load_settings(
         rag_base_url=rag_base_url,
         rag_request_timeout_seconds=rag_request_timeout_seconds,
         rag_default_n_results=rag_default_n_results,
+        rag_technical_key=rag_technical_key,
         mcp_base_url=mcp_base_url,
         mcp_api_key=mcp_api_key,
         mcp_tool_scope=mcp_tool_scope,

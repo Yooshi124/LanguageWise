@@ -1,5 +1,6 @@
 <script setup>
 import AppIcon from './AppIcon.vue';
+import AuthorAvatar from './AuthorAvatar.vue';
 import LikeButton from './LikeButton.vue';
 import { excerpt, formatDate } from '../format.js';
 
@@ -21,7 +22,10 @@ function onLike({ liked, count }) {
             <RouterLink :to="{ name: 'post', params: { id: post.id } }">{{ post.title }}</RouterLink>
         </h3>
 
-        <p class="cd-post__author">{{ post.authorName || 'Unknown author' }}</p>
+        <p class="cd-post__author">
+            <AuthorAvatar :user-id="post.userId" :name="post.authorName" />
+            <span>{{ post.authorName || 'Unknown author' }}</span>
+        </p>
         <p class="cd-post__meta">
             <span>{{ formatDate(post.createdAt) }}</span>
             <template v-if="showForum">

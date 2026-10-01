@@ -3,7 +3,9 @@ import { computed, onErrorCaptured, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AppIcon from './components/AppIcon.vue'
 import AppSidebar from './components/AppSidebar.vue'
+import GarryAssistant from './components/GarryAssistant.vue'
 import { useAuth } from './composables/useAuth'
+import { featureAssistants } from './federation/featureAssistants'
 import HostErrorView from './views/HostErrorView.vue'
 import HostLoadingView from './views/HostLoadingView.vue'
 
@@ -14,6 +16,15 @@ const mobileSidebarOpen = ref(false)
 const hostError = ref('')
 const renderKey = ref(0)
 const showShell = computed(() => route.name !== 'login' && route.name !== 'create-account')
+const garry = computed(() => {
+  const featureKey = route.meta.federatedFeature
+  const user = auth.user.value
+  if (typeof featureKey !== 'string' || !user || route.meta.hideAssistant || hostError.value) {
+    return null
+  }
+  const assistant = featureAssistants.get(featureKey)
+  return assistant ? { featureKey, userId: user.id, assistant } : null
+})
 
 async function bootstrapAuthentication() {
   hostError.value = ''
@@ -68,6 +79,13 @@ watch(() => route.fullPath, () => {
         <router-view v-else :key="`${route.fullPath}:${renderKey}`" />
       </v-main>
     </div>
+    <GarryAssistant
+      v-if="garry"
+      :key="`${garry.featureKey}:${garry.userId}`"
+      :feature-key="garry.featureKey"
+      :user-id="garry.userId"
+      :assistant="garry.assistant"
+    />
   </v-app>
   <v-app v-else>
     <router-view />

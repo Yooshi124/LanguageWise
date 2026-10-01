@@ -59,7 +59,8 @@ public sealed class McpEndpointTests
 			"courses_list_quizzes",
 			"courses_get_flashcards",
 			"courses_get_my_vocabulary",
-			"courses_get_my_milestones"
+			"courses_get_my_milestones",
+			"docs_search"
 		}));
 		Assert.That(tools.All(t => t.ProtocolTool.Annotations?.ReadOnlyHint == true), Is.True);
 	}
@@ -81,7 +82,8 @@ public sealed class McpEndpointTests
 		Assert.That(tools.Select(t => t.Name), Is.EquivalentTo(new[]
 		{
 			"games_get_completion_stats",
-			"games_list_game_languages"
+			"games_list_game_languages",
+			"docs_search"
 		}));
 		Assert.That(tools.All(t => t.ProtocolTool.Annotations?.ReadOnlyHint == true), Is.True);
 	}
@@ -95,10 +97,164 @@ public sealed class McpEndpointTests
 		{
 			"chat_list_forums",
 			"chat_search_posts",
-			"chat_get_post"
+			"chat_get_post",
+			"docs_search"
 		}));
 		Assert.That(tools.All(t => t.ProtocolTool.Annotations?.ReadOnlyHint == true), Is.True);
 	}
+
+	[Test]
+	public async Task ListTools_WithQuestsScope_ReturnsOnlyQuestsToolsWithAccurateHints()
+	{
+		await using var client = await factory.CreateMcpClientAsync("quests");
+		var tools = await client.ListToolsAsync();
+		Assert.That(tools.Select(t => t.Name), Is.EquivalentTo(new[]
+		{
+			"quests_get_my_preferences",
+			"quests_set_notifications_enabled",
+			"quests_update_my_preferences",
+			"quests_get_my_achievements",
+			"docs_search"
+		}));
+		Assert.That(
+			tools.Where(t => t.ProtocolTool.Annotations?.ReadOnlyHint == true).Select(t => t.Name),
+			Is.EquivalentTo(new[] { "quests_get_my_preferences", "quests_get_my_achievements", "docs_search" }));
+	}
+
+	[TestCase("leaderboard")]
+	public async Task ListTools_ForScopesWithoutOwnTools_OffersOnlyDocsSearch(string scope)
+	{
+		await using var client = await factory.CreateMcpClientAsync(scope);
+		var tools = await client.ListToolsAsync();
+		Assert.That(tools.Select(t => t.Name), Is.EqualTo(new[] { "docs_search" }));
+	}
+
+	[Test]
+	public async Task DocsSearch_QueriesGeneralRagEndpointAndReturnsPassages()
+	{
+		factory.Downstream.Body = """
+			{"results":[{"source":"quests-achievements-notifications-service","heading":"Notification preferences","relevance":0.7,"text":"A master switch turns all emails on or off."}],"resultCount":1}
+			""";
+		await using var client = await factory.CreateMcpClientAsync("chat", factory.CreateUserToken());
+
+		var result = await client.CallToolAsync("docs_search", new Dictionary<string, object?> { ["query"] = "notifications page", ["maxResults"] = 9 });
+
+		Assert.That(result.IsError, Is.Not.True);
+		var request = factory.Downstream.Requests.Single();
+		using var body = JsonDocument.Parse(factory.Downstream.RequestBodies.Single()!);
+		var passage = result.StructuredContent!.Value.GetProperty("passages")[0];
+		Assert.Multiple(() =>
+		{
+			Assert.That(request.RequestUri!.AbsolutePath, Is.EqualTo("/query"));
+			Assert.That(body.RootElement.GetProperty("query").GetString(), Is.EqualTo("notifications page"));
+			Assert.That(body.RootElement.GetProperty("n_results").GetInt32(), Is.EqualTo(5));
+			Assert.That(passage.GetProperty("heading").GetString(), Is.EqualTo("Notification preferences"));
+			Assert.That(passage.GetProperty("text").GetString(), Does.Contain("master switch"));
+		});
+	}
+
+	[Test]
+	public async Task SetNotificationsEnabled_OnlyFlipsMasterSwitch()
+	{
+		var token = factory.CreateUserToken();
+		factory.Downstream.Body = QuestsPreferencesJson;
+		await using var client = await factory.CreateMcpClientAsync("quests", token);
+
+		var result = await client.CallToolAsync("quests_set_notifications_enabled", new Dictionary<string, object?> { ["enabled"] = false });
+
+		Assert.That(result.IsError, Is.Not.True);
+		var put = factory.Downstream.Requests.Single(r => r.Method == HttpMethod.Put);
+		using var body = JsonDocument.Parse(factory.Downstream.RequestBodies[factory.Downstream.Requests.IndexOf(put)]!);
+		Assert.Multiple(() =>
+		{
+			Assert.That(put.RequestUri!.AbsolutePath, Is.EqualTo("/api/preferences"));
+			Assert.That(put.Headers.Authorization?.Parameter, Is.EqualTo(token));
+			Assert.That(body.RootElement.GetProperty("notifyAll").GetBoolean(), Is.False);
+			Assert.That(body.RootElement.GetProperty("email").GetString(), Is.EqualTo("learner@example.com"));
+			Assert.That(body.RootElement.GetProperty("notifyQuizResult").GetBoolean(), Is.False);
+			Assert.That(body.RootElement.GetProperty("notifyLoginStreak").GetBoolean(), Is.True);
+			Assert.That(result.StructuredContent!.Value.GetProperty("notificationsEnabled").GetBoolean(), Is.False);
+		});
+	}
+
+	[Test]
+	public async Task UpdateMyPreferences_ChangesOnlyRequestedCategories()
+	{
+		factory.Downstream.Body = QuestsPreferencesJson;
+		await using var client = await factory.CreateMcpClientAsync("quests", factory.CreateUserToken());
+
+		var result = await client.CallToolAsync("quests_update_my_preferences", new Dictionary<string, object?>
+		{
+			["quizResult"] = true,
+			["loginStreak"] = false
+		});
+
+		Assert.That(result.IsError, Is.Not.True);
+		var put = factory.Downstream.Requests.Single(r => r.Method == HttpMethod.Put);
+		using var body = JsonDocument.Parse(factory.Downstream.RequestBodies[factory.Downstream.Requests.IndexOf(put)]!);
+		Assert.Multiple(() =>
+		{
+			Assert.That(body.RootElement.GetProperty("notifyQuizResult").GetBoolean(), Is.True);
+			Assert.That(body.RootElement.GetProperty("notifyLoginStreak").GetBoolean(), Is.False);
+			Assert.That(body.RootElement.GetProperty("notifyAll").GetBoolean(), Is.True);
+			Assert.That(body.RootElement.GetProperty("notifyMinigameWin").GetBoolean(), Is.True);
+		});
+	}
+
+	[Test]
+	public async Task UpdateMyPreferences_WithNoCategories_ReturnsErrorWithoutCallingService()
+	{
+		await using var client = await factory.CreateMcpClientAsync("quests", factory.CreateUserToken());
+
+		var result = await client.CallToolAsync("quests_update_my_preferences");
+
+		Assert.That(result.IsError, Is.True);
+		Assert.That(factory.Downstream.Requests, Is.Empty);
+	}
+
+	[Test]
+	public async Task SetNotificationsEnabled_WithoutEmail_ReturnsErrorWithoutSaving()
+	{
+		factory.Downstream.Body = QuestsPreferencesJson.Replace("\"learner@example.com\"", "null");
+		await using var client = await factory.CreateMcpClientAsync("quests", factory.CreateUserToken());
+
+		var result = await client.CallToolAsync("quests_set_notifications_enabled", new Dictionary<string, object?> { ["enabled"] = true });
+
+		Assert.That(result.IsError, Is.True);
+		Assert.That(factory.Downstream.Requests.Any(r => r.Method == HttpMethod.Put), Is.False);
+	}
+
+	[Test]
+	public async Task GetMyAchievements_MarksEarnedAndRecordAchievements()
+	{
+		factory.Downstream.Body = """
+			[
+				{"achievementId":1,"name":"First Lesson","description":"Complete your first lesson","progress":1,"progressNeeded":1},
+				{"achievementId":2,"name":"Committed Learner","description":"Complete five lessons","progress":2,"progressNeeded":5},
+				{"achievementId":11,"name":"Longest Login Streak","description":"Your longest run","progress":4,"progressNeeded":-1}
+			]
+			""";
+		await using var client = await factory.CreateMcpClientAsync("quests", factory.CreateUserToken());
+
+		var result = await client.CallToolAsync("quests_get_my_achievements");
+
+		Assert.That(result.IsError, Is.Not.True);
+		Assert.That(factory.Downstream.Requests.Single().RequestUri!.AbsolutePath, Is.EqualTo("/api/achievements"));
+		var achievements = result.StructuredContent!.Value.GetProperty("achievements");
+		Assert.Multiple(() =>
+		{
+			Assert.That(achievements[0].GetProperty("earned").GetBoolean(), Is.True);
+			Assert.That(achievements[1].GetProperty("earned").GetBoolean(), Is.False);
+			Assert.That(
+				achievements[2].TryGetProperty("progressNeeded", out var needed) && needed.ValueKind != JsonValueKind.Null,
+				Is.False);
+			Assert.That(achievements[2].GetProperty("earned").GetBoolean(), Is.False);
+		});
+	}
+
+	private const string QuestsPreferencesJson = """
+		{"email":"learner@example.com","notifyAll":true,"notifyCommunityContribution":true,"notifyPostEngagement":true,"notifyLessonCompletion":true,"notifyCourseCompletion":true,"notifyQuizResult":false,"notifyMinigameWin":true,"notifyLoginStreak":true,"notifyAchievements":true}
+		""";
 
 	[Test]
 	public async Task CallTool_OutOfScope_IsRejected()

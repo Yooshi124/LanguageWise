@@ -155,7 +155,7 @@ public sealed class AuthenticationTests
 
     private sealed record AuthenticatedUserResponse(int Id, string Name);
 
-    private sealed class ApiFixture : WebApplicationFactory<SharedApiAssemblyMarker>
+    internal sealed class ApiFixture : WebApplicationFactory<SharedApiAssemblyMarker>
     {
         private readonly RSA signingKey = RSA.Create(2048);
         private readonly string signingKeyPath = Path.Combine(
@@ -170,6 +170,8 @@ public sealed class AuthenticationTests
         }
 
         internal RecordingAchievementsHandler AchievementsHandler { get; } = new();
+
+        internal RecordingRagHandler RagHandler { get; } = new();
 
         internal HttpClient CreateCookieClient(string token)
         {
@@ -234,6 +236,11 @@ public sealed class AuthenticationTests
                 {
                     BaseAddress = new Uri("http://achievements/")
                 }));
+                services.RemoveAll<RagClient>();
+                services.AddSingleton(new RagClient(new HttpClient(RagHandler)
+                {
+                    BaseAddress = new Uri("http://rag/")
+                }));
             });
         }
 
@@ -261,6 +268,38 @@ public sealed class AuthenticationTests
                     Content = JsonContent.Create(new { value = streakValue.Value })
                 };
             return Task.FromResult(response);
+        }
+    }
+
+    internal sealed class RecordingRagHandler : HttpMessageHandler
+    {
+        internal string? Path { get; private set; }
+        internal string? RequestBody { get; private set; }
+        internal HttpStatusCode StatusCode { get; set; } = HttpStatusCode.OK;
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Path = request.RequestUri?.AbsolutePath;
+            RequestBody = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return new HttpResponseMessage(StatusCode)
+            {
+                Content = JsonContent.Create(new
+                {
+                    results = new[]
+                    {
+                        new
+                        {
+                            source = "leaderboard-analytics-service",
+                            heading = "For users",
+                            relevance = 0.565,
+                            text = "Global analytics comparing you against other students."
+                        }
+                    },
+                    resultCount = 1
+                })
+            };
         }
     }
 

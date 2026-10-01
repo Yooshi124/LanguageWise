@@ -2,7 +2,6 @@
 import {
 	mdiAccountCircleOutline,
 	mdiArrowLeft,
-	mdiBookSearchOutline,
 	mdiClose,
 	mdiContentCopy,
 	mdiControllerClassicOutline,
@@ -29,7 +28,6 @@ const icons = {
 	copy: mdiContentCopy,
 	courses: mdiBookOpenPageVariantOutline,
 	discussion: mdiForumOutline,
-	'docs-search': mdiBookSearchOutline,
 	games: mdiControllerClassicOutline,
 	help: mdiHelpCircleOutline,
 	home: mdiHomeOutline,

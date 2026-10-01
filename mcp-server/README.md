@@ -38,6 +38,8 @@ Windows may show a firewall prompt the first time; allow private networks so Doc
 | `Services:QuizzesCourses` | `http://localhost:5003` | quizzes-courses-service API |
 | `Services:MiniGames` | `http://localhost:5001` | mini-games-service API |
 | `Services:ChatDiscussion` | `http://localhost:5002` | chat-discussion-service API |
+| `Services:QuestsAchievements` | `http://localhost:5004` | quests-achievements-notifications-service API |
+| `Services:Rag` | `http://localhost:8100` | RAG server; `docs_search` (offered in every scope) uses its general `POST /query` |
 
 ## Security model
 
@@ -114,5 +116,5 @@ Using quizzes-courses as the example:
 5. **Use it from Garry** – send `"toolScope": "<scope>"` in your backend's `POST /api/completions` body. Garry will then run the tool loop and stream `event: tool` (`{name, arguments, isError, result}`) before the `delta` events. Only send `toolScope` once your SSE parser handles the `tool` event.
 6. **Wire your backend and frontend** – `quizzes-courses-service` is the reference implementation:
    - Backend: `Clients/McpToolClient.cs` (MCP client with your scope), `GET /api/assistant/tools` and `POST /api/assistant/tools/{name}` in `Program.cs` (503 `mcp_disabled` when `Mcp:Enabled` is false), `toolScope` in `GarryCompletionClient`, and the `tool` event relay in `AssistantSseResult`.
-   - Frontend: the `onTool` handler plus `listAssistantTools`/`callAssistantTool` in `api/assistant.ts`, the chip config in `config/assistantTools.ts`, the Tools toggle in `GarryAssistant.vue` and `ToolResultCard.vue`.
+   - Frontend: export an `assistant.tools` config (chips + result `view`) from your feature module – see `quizzes-courses-service/frontend/src/federation/assistant.ts`. The shared host's `GarryAssistant.vue` renders the Tools toggle, chips, and result cards, and handles the `tool` SSE event.
    - Compose: add `Mcp__Enabled`, `Mcp__Endpoint`, `Mcp__ApiKeyPath`, the `mcp_api_key` secret and `extra_hosts` to your backend. CI: set `Mcp__Enabled: false`.

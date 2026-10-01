@@ -42,7 +42,8 @@ class RagReport:
             lines.extend(
                 [
                     f"[{rank}] source: {result.source} | heading: {result.heading} "
-                    f"| relevance: {result.relevance:.3f}",
+                    f"| relevance: {result.relevance:.3f}"
+                    + (" | internal (TECHNICAL)" if result.technical else ""),
                     result.text,
                     "",
                 ]

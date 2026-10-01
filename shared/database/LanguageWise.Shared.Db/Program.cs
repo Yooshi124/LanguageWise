@@ -46,6 +46,9 @@ app.MapPost("/api/users/verify", (LoginInput input, UserRepository users) =>
         : Results.Unauthorized();
 });
 
+app.MapGet("/api/users", (int[] ids, UserRepository users) =>
+    Results.Ok(users.GetUsernames(ids)));
+
 app.MapPost("/api/users", (CreateUserInput input, UserRepository users) =>
 {
     if (string.IsNullOrWhiteSpace(input.Username) || string.IsNullOrEmpty(input.Password))

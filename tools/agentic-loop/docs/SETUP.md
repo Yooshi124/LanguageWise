@@ -219,6 +219,7 @@ key is never committed.
 | `OLLAMA_HOST` | `http://localhost:11434` | Where the local Ollama daemon is listening. | `http://localhost:11434` |
 | `OLLAMA_REVIEW_MODEL` | `gemma4:e2b` | Ollama model tag used by the Review Agent. Must be pulled first (`ollama pull <tag>`). A bigger tag gives sharper critiques at the cost of speed. | `gemma4:12b` |
 | `OLLAMA_REQUEST_TIMEOUT_SECONDS` | `600` | Per-request timeout against Ollama. Local models can be slow, especially loading into memory on first use — 10 minutes gives it plenty of room. | `900` |
+| `OLLAMA_KEEP_ALIVE` | `30s` | Ollama's own `keep_alive` duration: how long it keeps the review model loaded in RAM after a call before unloading it. Short values stop the model staying resident in memory between rounds, which matters when rag-server/mcp-server are also running locally. `0` unloads immediately, `-1` never unloads. | `0` |
 
 There is no setting to disable the Review Agent — it always runs. If it cannot
 be reached, the round aborts with an explanation instead of silently showing

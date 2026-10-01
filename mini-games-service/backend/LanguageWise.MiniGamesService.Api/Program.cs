@@ -30,7 +30,6 @@ builder.Services.AddMemoryCache();
 var databaseServiceUrl = builder.Configuration["Services:Database"] ?? "http://localhost:6005";
 var courseServiceUrl = builder.Configuration["Services:Courses"] ?? "http://localhost:6003";
 var achievementsServiceUrl = builder.Configuration["Services:Achievements"] ?? "http://localhost:5004";
-var ragServiceUrl = builder.Configuration["Services:Rag"] ?? "http://localhost:8100";
 
 // Register HTTP clients for external services
 builder.Services.AddHttpClient<GamesDatabaseClient>(client =>
@@ -49,13 +48,6 @@ builder.Services.AddHttpClient<AchievementEventsClient>(client =>
 {
     client.BaseAddress = new Uri($"{achievementsServiceUrl}/");
     client.Timeout = TimeSpan.FromSeconds(20);
-});
-
-// RAG server: runs locally, not containerised (reachable from containers via host.docker.internal).
-builder.Services.AddHttpClient<RagClient>(client =>
-{
-    client.BaseAddress = new Uri(ragServiceUrl.TrimEnd('/') + "/");
-    client.Timeout = TimeSpan.FromSeconds(15);
 });
 
 // OpenRouter vocabulary generation (AI game mode), modelled on the quizzes-courses assistant setup.
@@ -371,35 +363,6 @@ app.MapGet("/api/game-modes", async (HttpContext context, CourseVocabularyClient
             .ToArray()
     });
 });
-
-// Documentation search: proxies the local RAG server so the frontend can ask questions about
-// how the platform's services work without embedding a RAG client in the browser.
-app.MapPost("/api/rag/query", async (RagQueryApiRequest request, RagClient ragClient, CancellationToken cancellationToken) =>
-{
-    if (string.IsNullOrWhiteSpace(request.Query))
-    {
-        return Results.ValidationProblem(new Dictionary<string, string[]>
-        {
-            ["query"] = ["Query must not be empty."]
-        });
-    }
-
-    try
-    {
-        var response = await ragClient.QueryAsync(request.Query, request.NResults, cancellationToken);
-        return Results.Ok(response);
-    }
-    catch (HttpRequestException exception)
-    {
-        app.Logger.LogWarning(
-            "RAG server request failed with error type {ErrorType}.",
-            exception.GetType().Name);
-        return Results.Problem(
-            title: "The documentation search service is unavailable.",
-            detail: "Please try again.",
-            statusCode: StatusCodes.Status502BadGateway);
-    }
-}).RequireRateLimiting(GameActionsRateLimiterPolicy);
 
 // Successful completions per game type for the user, optionally scoped to one course
 // (the language selected on the game page). Powers the completion tracker on the frontend.

@@ -30,6 +30,7 @@ Each remote exposes one module whose named exports satisfy these interfaces:
 
 ```ts
 import type { Component } from 'vue'
+import type { RouteLocationNormalizedLoaded } from 'vue-router'
 
 export interface AuthenticatedUser {
   id: number
@@ -51,6 +52,33 @@ export interface FeatureRouteDefinition {
   meta?: Record<string, unknown>
 }
 
+export interface AssistantToolResult {
+  tool: string
+  arguments?: Record<string, unknown>
+  isError: boolean
+  result: unknown
+}
+
+export interface FeatureAssistant {
+  apiBase: string
+  welcome: string
+  placeholder: string
+  suggestions: (route: RouteLocationNormalizedLoaded) => readonly string[]
+  context: (route: RouteLocationNormalizedLoaded) => Record<string, unknown>
+  tools?: {
+    chips: readonly {
+      tool: string
+      label: string
+      arguments: (route: RouteLocationNormalizedLoaded) => Record<string, unknown>
+      unavailable?: (route: RouteLocationNormalizedLoaded) => string | null
+    }[]
+    view: (result: AssistantToolResult) => {
+      summary?: string
+      rows: { primary: string; secondary?: string }[]
+    }
+  }
+}
+
 export interface FederatedFeatureModule {
   metadata: {
     key: string
@@ -60,16 +88,37 @@ export interface FederatedFeatureModule {
     requiresAuth: boolean
   }
   routes: readonly FeatureRouteDefinition[]
+  assistant?: FeatureAssistant
 }
 ```
 
-The module exports `metadata` and `routes`. Route paths are relative to
+The module exports `metadata`, `routes`, and optionally `assistant`. Route paths are relative to
 `metadata.basePath`: use `''` for the feature root and a segment such as
 'details'` for a child. A route may also declare static `props` and feature
 `meta`; the host merges its own federation and authentication metadata into
 every child. Route names and metadata keys must be globally unique. The host
 converts these definitions into nested Vue Router records and supplies
 `FeatureHostContext` as the shell-free root component prop.
+
+### Garry assistant
+
+The host renders the only Garry component (`shared/frontend/src/components/GarryAssistant.vue`)
+fixed to the bottom-right of the shell. It appears on a feature's routes when
+the feature exports `assistant`, the user is signed in, and the route does not
+set `meta.hideAssistant`. The feature supplies only domain configuration:
+
+- `apiBase`: prefix for its backend's `/assistant/messages` (SSE) and, when
+  `tools` is set, `/assistant/tools` and `/assistant/tools/{name}` endpoints;
+- `context(route)`: the route context its backend validates;
+- `welcome`, `placeholder`, and `suggestions(route)`;
+- optional `tools`: MCP tool chips (with route-derived arguments and
+  availability) and a `view` that formats each tool result as summary/rows.
+  Features without `tools` get no Tools toggle.
+
+The host owns the UI, streaming, transcripts (per feature and user in
+`sessionStorage`), and styling. Every feature's Garry also has an "Ask the docs"
+icon that searches the general (non-`TECHNICAL-`) RAG corpus through the shared
+backend's `POST /api/rag/query`.
 
 The production reference implementation is
 `quizzes-courses-service/frontend/src/federation/feature.ts`; its contract types

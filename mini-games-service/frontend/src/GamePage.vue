@@ -5,10 +5,6 @@
 				<span class="games-chip">Train a little every day</span>
 				<h1>Pick a game.<br /><span>Make it stick.</span></h1>
 				<p>Three quick vocabulary workouts built from the words you have already unlocked in your courses.</p>
-				<button type="button" class="docs-search-trigger" @click="docsSearchVisible = true">
-					<AppIcon name="docs-search" :size="16" />
-					Ask the docs
-				</button>
 			</div>
 
 			<section class="mode-picker" aria-label="Vocabulary source">
@@ -108,15 +104,11 @@
 				</li>
 			</ul>
 		</div>
-
-		<DocsSearch :visible="docsSearchVisible" @close="docsSearchVisible = false" />
 	</main>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue';
-import AppIcon from './components/AppIcon.vue';
-import DocsSearch from './components/DocsSearch.vue';
 import {
 	ensureCourseCode,
 	fetchCompletionStats,
@@ -132,9 +124,6 @@ import {
 // Vocabulary modes available right now (content needs the courses service + unlocked words).
 const modes = ref({ contentAvailable: true, aiAvailable: false, defaultMode: 'content', contentLanguages: [], aiLanguages: [] });
 const mode = ref('content');
-
-// Whether the "Ask the docs" search modal is open.
-const docsSearchVisible = ref(false);
 
 // Languages the current mode offers; the selected one scopes every game.
 const selectedLanguage = ref(null);
