@@ -73,10 +73,11 @@ public class StreakCalculatorTests
     [Test]
     public void MultipleAttemptsOnTheSameDayCountOnce()
     {
+        var today = DateTime.UtcNow.Date;
         var attempts = new[]
         {
-            CompletedOn(DateTime.UtcNow),
-            CompletedOn(DateTime.UtcNow.AddHours(-1)),
+            CompletedOn(today.AddHours(3)),
+            CompletedOn(today.AddHours(21)),
         };
 
         Assert.That(StreakCalculator.CalculateStreak(attempts), Is.EqualTo(1));
