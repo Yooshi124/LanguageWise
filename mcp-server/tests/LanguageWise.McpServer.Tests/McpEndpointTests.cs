@@ -116,6 +116,20 @@ public sealed class McpEndpointTests
 	}
 
 	[Test]
+	public async Task WhenRagDisabled_DocsSearchIsHiddenAndRejected()
+	{
+		using var ragOff = new McpServerFactory { RagEnabled = false };
+		await using var client = await ragOff.CreateMcpClientAsync("games", ragOff.CreateUserToken());
+
+		var tools = await client.ListToolsAsync();
+
+		Assert.That(tools.Select(t => t.Name), Is.EquivalentTo(new[] { "games_get_completion_stats", "games_list_game_languages" }));
+		Assert.ThrowsAsync<McpProtocolException>(async () =>
+			await client.CallToolAsync("docs_search", new Dictionary<string, object?> { ["query"] = "mini games" }));
+		Assert.That(ragOff.Downstream.Requests, Is.Empty);
+	}
+
+	[Test]
 	public async Task DocsSearch_QueriesGeneralRagEndpointAndReturnsPassages()
 	{
 		factory.Downstream.Body = """

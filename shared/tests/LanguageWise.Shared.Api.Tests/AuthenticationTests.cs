@@ -162,10 +162,12 @@ public sealed class AuthenticationTests
             AppContext.BaseDirectory,
             $"shared-auth-test-key-{Guid.NewGuid():N}.pem");
         private readonly int? streakValue;
+        private readonly bool ragEnabled;
 
-        internal ApiFixture(int? streakValue = null)
+        internal ApiFixture(int? streakValue = null, bool ragEnabled = true)
         {
             this.streakValue = streakValue;
+            this.ragEnabled = ragEnabled;
             File.WriteAllText(signingKeyPath, signingKey.ExportRSAPrivateKeyPem());
         }
 
@@ -219,6 +221,7 @@ public sealed class AuthenticationTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseSetting("Auth:SigningKeyPath", signingKeyPath);
+            builder.UseSetting("Rag:Enabled", ragEnabled ? "true" : "false");
             builder.ConfigureAppConfiguration((_, configuration) =>
             {
                 configuration.AddInMemoryCollection(new Dictionary<string, string?>

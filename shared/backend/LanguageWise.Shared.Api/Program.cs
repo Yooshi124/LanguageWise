@@ -200,6 +200,7 @@ app.MapPost("/api/logout", (HttpContext ctx) =>
 app.MapPost("/api/rag/answer", async (
     HttpContext ctx,
     DocsAnswerApiRequest? request,
+    IConfiguration configuration,
     RagClient ragClient,
     GarryClient garryClient,
     CancellationToken cancellationToken) =>
@@ -207,6 +208,15 @@ app.MapPost("/api/rag/answer", async (
     if (ReadSessionUser(ctx) is null)
     {
         return Results.Unauthorized();
+    }
+
+    // Rag:Enabled=false (as in CI) keeps the RAG server and Garry out of the request path.
+    if (!configuration.GetValue("Rag:Enabled", true))
+    {
+        return Results.Problem(
+            title: "Ask the docs is turned off on this server.",
+            statusCode: StatusCodes.Status503ServiceUnavailable,
+            extensions: new Dictionary<string, object?> { ["code"] = "rag_disabled" });
     }
 
     var query = request?.Query?.Trim();

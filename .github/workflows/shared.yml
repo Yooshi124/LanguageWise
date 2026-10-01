@@ -31,6 +31,8 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   SOLUTION: shared/LanguageWise.Shared.BE.slnx
+  Mcp__Enabled: false
+  Rag__Enabled: false
 
 jobs:
   # The job name below is what you add to the branch ruleset as a required check.
@@ -113,6 +115,17 @@ jobs:
 
       - name: Restore
         run: dotnet restore "${{ env.SOLUTION }}"
+
+      - name: Verify MCP and RAG are disabled in CI
+        shell: bash
+        run: |
+          for flag in Mcp__Enabled Rag__Enabled; do
+            if [ "${!flag}" != "false" ]; then
+              echo "::error::$flag must be false in CI; tests use fakes and never contact the local MCP or RAG server."
+              exit 1
+            fi
+          done
+          echo "Mcp__Enabled=false, Rag__Enabled=false: no local MCP or RAG server is contacted."
 
       - name: Build
         run: dotnet build "${{ env.SOLUTION }}" -c Release --no-restore
