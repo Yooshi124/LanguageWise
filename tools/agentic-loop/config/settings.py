@@ -331,7 +331,11 @@ def load_settings(
     max_output_tokens = _int(
         "MAX_OUTPUT_TOKENS", get("MAX_OUTPUT_TOKENS"), 32_000, minimum=1024
     )
-    thinking_level = (get("THINKING_LEVEL") or "low").strip().lower()
+    # Blank/model-default is the safe choice: on this model, requesting an explicit
+    # reasoning effort has been observed to consume the entire MAX_OUTPUT_TOKENS
+    # budget on hidden reasoning for large multi-file prompts, leaving nothing for
+    # the actual JSON content (an empty-response failure with no repair possible).
+    thinking_level = (get("THINKING_LEVEL") or "").strip().lower()
     if thinking_level in {"", "default", "auto"}:
         thinking_level = ""
     elif thinking_level not in THINKING_LEVELS:

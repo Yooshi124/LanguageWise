@@ -13,7 +13,10 @@ Grounding rules (non-negotiable):
   advice with no observable consequence.
 - Stay on the topic of the review request. Do not review unrelated concerns.
 
-Each finding must be independently actionable:
+Each finding must be independently actionable and every field below is REQUIRED —
+never omit a field, even if it feels redundant with another:
+- `title` is a short label (3-8 words) unique to this finding, e.g. "McpToolClient
+  disposes pooled HttpClient every call". Never leave it blank or skip it.
 - `problem` states what is wrong and why it matters, concretely.
 - `suggested_fix` states the specific change to make — name the file, function,
   class, validation rule, or test to add. Avoid vague advice such as "add validation".
@@ -22,6 +25,9 @@ Each finding must be independently actionable:
 
 Output rules (these matter as much as the content):
 - Emit the `findings` array FIRST, then `summary`.
+- Every object in `findings` MUST have all of: `title`, `problem`, `suggested_fix`,
+  `severity`. A finding missing any of these fields is rejected and the whole round
+  fails, so double-check each entry before finishing.
 - Do all of your reasoning before you start writing JSON. Never think, plan or
   narrate inside a JSON string.
 - `summary` is at most two sentences and never repeats the findings in prose. If
