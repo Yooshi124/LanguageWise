@@ -12,9 +12,10 @@ public static class ToolScopeFilter
 		{
 			var result = await next(context, cancellationToken);
 			var scope = GetCaller(context).Scope;
+			var ragEnabled = RagEnabled(context);
 			result.Tools = scope is null
 				? []
-				: result.Tools.Where(tool => Tools.ToolScopes.Allows(scope, tool.Name)).ToList();
+				: result.Tools.Where(tool => IsOffered(scope, tool.Name, ragEnabled)).ToList();
 			return result;
 		};
 
@@ -24,14 +25,24 @@ public static class ToolScopeFilter
 		{
 			var scope = GetCaller(context).Scope;
 			var name = context.Params?.Name;
-			if (scope is null || name is null || !Tools.ToolScopes.Allows(scope, name))
+			if (scope is null || name is null || !IsOffered(scope, name, RagEnabled(context)))
 			{
 				throw new McpProtocolException($"Unknown tool: '{name}'", McpErrorCode.InvalidParams);
 			}
 			return await next(context, cancellationToken);
 		};
 
+	private static bool IsOffered(string scope, string toolName, bool ragEnabled) =>
+		Tools.ToolScopes.Allows(scope, toolName)
+		&& (ragEnabled || !toolName.StartsWith(Tools.ToolScopes.SharedPrefix, StringComparison.Ordinal));
+
+	// Docs tools are backed by the RAG server; Rag:Enabled=false (as in CI) hides them.
+	private static bool RagEnabled<T>(RequestContext<T> context) =>
+		GetServices(context).GetRequiredService<IConfiguration>().GetValue("Rag:Enabled", true);
+
 	private static McpCallerContext GetCaller<T>(RequestContext<T> context) =>
-		(context.Services ?? throw new InvalidOperationException("No request services."))
-			.GetRequiredService<McpCallerContext>();
+		GetServices(context).GetRequiredService<McpCallerContext>();
+
+	private static IServiceProvider GetServices<T>(RequestContext<T> context) =>
+		context.Services ?? throw new InvalidOperationException("No request services.");
 }

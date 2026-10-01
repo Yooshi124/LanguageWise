@@ -32,6 +32,7 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   SOLUTION: quizzes-courses-service/LanguageWise.QuizzesCoursesService.BE.slnx
   Mcp__Enabled: false
+  Rag__Enabled: false
 
 jobs:
   # The job name below is what you add to the branch ruleset as a required check.
@@ -102,14 +103,16 @@ jobs:
       - name: Restore
         run: dotnet restore "${{ env.SOLUTION }}"
 
-      - name: Verify MCP is disabled in CI
+      - name: Verify MCP and RAG are disabled in CI
         shell: bash
         run: |
-          if [ "${Mcp__Enabled}" != "false" ]; then
-            echo "::error::Mcp__Enabled must be false in CI; tests use fake MCP clients only."
-            exit 1
-          fi
-          echo "Mcp__Enabled=${Mcp__Enabled}: assistant tools are served by fakes, no MCP server is contacted."
+          for flag in Mcp__Enabled Rag__Enabled; do
+            if [ "${!flag}" != "false" ]; then
+              echo "::error::$flag must be false in CI; tests use fakes and never contact the local MCP or RAG server."
+              exit 1
+            fi
+          done
+          echo "Mcp__Enabled=false, Rag__Enabled=false: no local MCP or RAG server is contacted."
 
       - name: Build
         run: dotnet build "${{ env.SOLUTION }}" -c Release --no-restore

@@ -27,10 +27,15 @@ class RagResult:
     technical: bool = False
 
 
+INSUFFICIENT_CONFIDENCE = "insufficient"
+
+
 @dataclass(frozen=True)
 class RagQueryResult:
     query: str
     results: list[RagResult] = field(default_factory=list)
+    # high, medium, low, or insufficient, from the RAG server's best match.
+    confidence: str = INSUFFICIENT_CONFIDENCE
 
 
 class RagClient:
@@ -94,4 +99,5 @@ class RagClient:
             )
             for item in payload.get("results", [])
         ]
-        return RagQueryResult(query=text, results=results)
+        confidence = str(payload.get("confidence") or INSUFFICIENT_CONFIDENCE)
+        return RagQueryResult(query=text, results=results, confidence=confidence)

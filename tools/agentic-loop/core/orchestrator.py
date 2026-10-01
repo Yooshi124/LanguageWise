@@ -49,8 +49,12 @@ RAG_VALIDATION_PROMPT = (
     "to behave are included in the observations below. Compare the source code "
     "in scope against that documented behaviour, and flag any place where the "
     "code contradicts, is missing, or drifts from what the documentation "
-    "describes. Each finding should quote or reference the relevant documented "
-    "behaviour and name the specific code location that disagrees with it."
+    "describes. Each finding should name the specific code location that "
+    "disagrees and cite the documentation passages it relies on by their "
+    "bracketed number, for example [1] or [2][3], in its evidence. Only cite "
+    "numbers that appear in the observations. If the documentation context is "
+    "marked as insufficient, report that the topic is not documented instead "
+    "of inferring expected behaviour."
 )
 
 MCP_VALIDATION_PROMPT = (

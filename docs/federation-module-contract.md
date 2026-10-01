@@ -117,8 +117,11 @@ set `meta.hideAssistant`. The feature supplies only domain configuration:
 
 The host owns the UI, streaming, transcripts (per feature and user in
 `sessionStorage`), and styling. Every feature's Garry also has an "Ask the docs"
-icon that searches the general (non-`TECHNICAL-`) RAG corpus through the shared
-backend's `POST /api/rag/query`.
+icon that answers from the general (non-`TECHNICAL-`) RAG corpus through the
+shared backend's `POST /api/rag/answer`. Each answer has `[n]` source citations
+and a confidence category, or is an insufficient-context reply when nothing in
+the docs matches. Garry's chat adds the same sources and confidence footer
+whenever it used `docs_search`.
 
 The production reference implementation is
 `quizzes-courses-service/frontend/src/federation/feature.ts`; its contract types

@@ -60,11 +60,18 @@ Compose network reach it at `http://host.docker.internal:8100/mcp`.
 
 | Endpoint | Returns | Used by | Auth |
 | --- | --- | --- | --- |
-| `POST /query` | General passages only | The shared backend (`POST /api/rag/query`), for Garry's "Ask the docs" button on every feature | None |
-| `POST /query/technical` | General and `TECHNICAL-` passages (each result has `"technical": true/false`) | The internal agentic loop | `X-LanguageWise-Rag-Key` header |
+| `POST /query` | General passages at or above the relevance floor | The shared backend (`POST /api/rag/answer`, Garry's "Ask the docs" on every feature) and the MCP `docs_search` tool | None |
+| `POST /query/technical` | General and `TECHNICAL-` passages, unfiltered (each result has `"technical": true/false`) | The internal agentic loop | `X-LanguageWise-Rag-Key` header |
 
 Both take `{ "query": "...", "n_results": 5 }` (1-20) and return
-`{ "results": [{ source, heading, relevance, text }], "resultCount" }`.
+`{ "results": [{ source, heading, relevance, text }], "resultCount", "confidence" }`.
+
+`confidence` comes from the best match's relevance (1 minus cosine distance):
+`high` (0.45 or more), `medium` (0.35 or more), `low` (0.25 or more), otherwise
+`insufficient`. `POST /query` drops passages below 0.25, so an `insufficient`
+response has no results. The bands are in `rag/store.py` and were calibrated on
+this corpus (off-topic questions scored up to about 0.20, on-topic ones from
+about 0.30); re-check them after large corpus changes.
 
 The technical key is read from `RAG_TECHNICAL_KEY_PATH` (default
 `.rag-technical-key`, git-ignored) and generated on first start if missing. The
@@ -90,9 +97,10 @@ sections. Re-run `python ingest.py` after editing the corpus.
 | `query_text` | string | — | Natural-language question or topic to search for. |
 | `n_results` | int | `5` | Maximum number of passages to return. |
 
-It returns the most relevant general (non-`TECHNICAL-`) corpus passages as text,
-each labelled with its source service, heading, and a relevance score, ordered
-most-relevant first.
+It returns a confidence category followed by the most relevant general
+(non-`TECHNICAL-`) corpus passages as text, each labelled with its source
+service, heading, and a relevance score, ordered most-relevant first. When no
+passage clears the relevance floor it says the context is insufficient.
 
 ## Configuration
 

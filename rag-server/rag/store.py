@@ -22,6 +22,11 @@ _MAX_CHUNK_CHARS = 1200
 # detail for the agentic loop only; their sub-sections inherit the marker.
 TECHNICAL_MARKER = re.compile(r"^TECHNICAL-[a-z0-9-]+")
 
+# Calibrated on the corpus: off-topic questions top out near 0.20 relevance, on-topic ones start near 0.30.
+MIN_RELEVANCE = 0.25
+_CONFIDENCE_BANDS = ((0.45, "high"), (0.35, "medium"), (MIN_RELEVANCE, "low"))
+INSUFFICIENT = "insufficient"
+
 
 @dataclass(frozen=True)
 class RetrievedChunk:
@@ -30,6 +35,24 @@ class RetrievedChunk:
     text: str
     distance: float
     technical: bool
+
+
+def relevance(chunk: RetrievedChunk) -> float:
+    return 1 - chunk.distance
+
+
+def confidence_for(chunks: list[RetrievedChunk]) -> str:
+    """Confidence category from the best match: high, medium, low, or insufficient."""
+    top = max((relevance(chunk) for chunk in chunks), default=0.0)
+    for floor, label in _CONFIDENCE_BANDS:
+        if top >= floor:
+            return label
+    return INSUFFICIENT
+
+
+def supported(chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
+    """Drops passages too weakly related to the question to ground an answer."""
+    return [chunk for chunk in chunks if relevance(chunk) >= MIN_RELEVANCE]
 
 
 @dataclass(frozen=True)
