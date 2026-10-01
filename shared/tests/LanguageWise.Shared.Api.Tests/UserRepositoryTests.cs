@@ -69,6 +69,16 @@ public sealed class UserRepositoryTests
     }
 
     [Test]
+    public void GetUsernames_ReturnsOnlyTheUsersThatExist()
+    {
+        var amber = repository.Create("amber", "secret").Account!;
+
+        var accounts = repository.GetUsernames([7, amber.Id, 404]);
+
+        Assert.That(accounts, Is.EqualTo(new[] { new UserAccount(7, "justin"), amber }));
+    }
+
+    [Test]
     public void Create_WithNewUsername_ReturnsAccountThatCanVerify()
     {
         var result = repository.Create("amber", "secret");

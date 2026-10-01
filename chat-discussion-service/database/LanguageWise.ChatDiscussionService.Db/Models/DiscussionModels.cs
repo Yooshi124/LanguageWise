@@ -90,3 +90,5 @@ public sealed record Image(
 public sealed record ImageInput(string StorageKey, string? FileName, string? ContentType, long SizeBytes);
 
 public sealed record ForumSyncResult(int Added, int Renamed);
+
+public sealed record DirectoryUser(int Id, string Username);

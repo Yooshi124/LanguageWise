@@ -94,8 +94,8 @@ function upload(path, file) {
 export const api = {
     forums: () => request('/forums'),
 
-    posts: ({ userId, forumCode, q, limit, offset } = {}) =>
-        request(`/posts${query({ userId, forumCode, q, limit, offset })}`),
+    posts: ({ mine, forumCode, q, limit, offset } = {}) =>
+        request(`/posts${query({ mine, forumCode, q, limit, offset })}`),
 
     post: (id) => request(`/posts/${id}`),
 

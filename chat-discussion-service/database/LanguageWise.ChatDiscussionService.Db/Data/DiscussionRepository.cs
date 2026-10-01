@@ -156,6 +156,38 @@ public sealed class DiscussionRepository(string connectionString)
 
     public bool DeletePost(int id) => Delete("Posts", id);
 
+    public IReadOnlyList<int> GetAuthorIds()
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT UserId FROM Posts UNION SELECT UserId FROM Comments ORDER BY 1;";
+        return ReadAll(command, reader => (int)reader.GetInt64(0));
+    }
+
+    public int SyncAuthorNames(IReadOnlyList<DirectoryUser> users)
+    {
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        var renamed = 0;
+
+        foreach (var user in users)
+        {
+            foreach (var table in (string[])["Posts", "Comments"])
+            {
+                using var command = connection.CreateCommand();
+                command.Transaction = transaction;
+                command.CommandText =
+                    $"UPDATE {table} SET AuthorName = $name WHERE UserId = $userId AND AuthorName <> $name;";
+                Add(command, "$userId", user.Id);
+                Add(command, "$name", user.Username);
+                renamed += command.ExecuteNonQuery();
+            }
+        }
+
+        transaction.Commit();
+        return renamed;
+    }
+
     // -----------------------------------------------------------------------
     // Forums
     // -----------------------------------------------------------------------

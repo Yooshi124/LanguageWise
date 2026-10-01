@@ -127,10 +127,33 @@
   .cd-post__author,
   .cd-detail__author,
   .cd-comment__author {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     margin: 0 0 0.15rem;
     color: var(--lw-colour-ink);
     font-weight: 800;
     font-size: 1.05rem;
+  }
+
+  .cd-avatar {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    overflow: hidden;
+    border-radius: 50%;
+    background: var(--lw-colour-primary);
+    color: #fff;
+    font-size: 0.9rem;
+  }
+
+  .cd-avatar__image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
   .cd-comment__edited,
   .cd-detail__edited { font-style: italic; }
