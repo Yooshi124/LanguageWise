@@ -17,13 +17,15 @@ from pathlib import Path
 from typing import Callable
 
 from agents import analyst, critic, decision_parser, file_selector, planner
-from collectors import file_reader, repo_observer, repo_scanner
+from collectors import file_reader, github_actions, mcp_observer, rag_observer, repo_observer, repo_scanner
 from config.settings import Settings
 from core import console, stages
-from core.gemini_client import GeminiClient, GeminiError
+from core.mcp_client import McpClient
 from core.models import Finding
 from core.ollama_client import OllamaClient, OllamaError
+from core.openrouter_client import OpenRouterClient, OpenRouterError
 from core.prompt_registry import PromptRegistry
+from core.rag_client import RagClient
 from core.session import RoundState, SessionState, format_timestamp
 from output.plan_writer import write_plan
 from output.session_writer import SessionWriter
@@ -33,6 +35,35 @@ logger = logging.getLogger(__name__)
 InputFn = Callable[[str], str]
 
 CONSOLE_FILE_PREVIEW = 12
+
+CI_FAILURE_PROMPT = (
+    "The most recent GitHub Actions workflow run failed. The failure excerpts "
+    "from its failed jobs are included in the observations below. Diagnose the "
+    "root cause of each failure using the source code in scope, and propose "
+    "concrete fixes. Each finding should name the failing test or build error "
+    "and the specific code change that would make the pipeline pass again."
+)
+
+RAG_VALIDATION_PROMPT = (
+    "Retrieved documentation passages describing how this service is expected "
+    "to behave are included in the observations below. Compare the source code "
+    "in scope against that documented behaviour, and flag any place where the "
+    "code contradicts, is missing, or drifts from what the documentation "
+    "describes. Each finding should quote or reference the relevant documented "
+    "behaviour and name the specific code location that disagrees with it."
+)
+
+MCP_VALIDATION_PROMPT = (
+    "A live interaction with the shared local MCP server (initialize, "
+    "tools/list, and one real tools/call probe) is included in the observations "
+    "below. Validate the MCP server implementation in scope against that "
+    "evidence: check that scope filtering only exposes <scope>_* tools, that "
+    "the probe call returned a valid, read-only tool result (or a safe "
+    "isError result with a non-leaking message), and that the server code "
+    "matches the contract its tools actually exhibit. Flag any mismatch "
+    "between the code and the observed behaviour, citing the specific tool or "
+    "code location."
+)
 
 
 class RoundAborted(RuntimeError):
@@ -60,7 +91,7 @@ class Orchestrator:
         self,
         settings: Settings,
         prompts: PromptRegistry,
-        client: GeminiClient,
+        client: OpenRouterClient,
         review_client: OllamaClient,
         session: SessionState,
         writer: SessionWriter,
@@ -86,7 +117,7 @@ class Orchestrator:
         """Restore the scope the session started with (TARGETED_DIRECTORY or --scope)."""
         self.settings = self._initial_settings
 
-    def run_round(self, user_prompt: str) -> RoundOutcome:
+    def run_round(self, user_prompt: str, extra_context: str | None = None) -> RoundOutcome:
         round_state = self.session.start_round(user_prompt)
         self.writer.start_round(round_state.number)
         self._end_session = False
@@ -96,7 +127,7 @@ class Orchestrator:
             self._stage_plan(round_state)
             selection, scan = self._stage_act(user_prompt)
             bundle = file_reader.load_files(selection.entries, self.settings)
-            observation = self._stage_observe(scan, bundle)
+            observation = self._stage_observe(scan, bundle, extra_context)
             findings = self._stage_agent(user_prompt, bundle, observation, round_state)
             accepted = self._stage_human_review(findings, round_state)
             plan_path = self._stage_adapt(
@@ -133,6 +164,53 @@ class Orchestrator:
             # in the evidence log before it propagates to the REPL.
             self._record_unreached(f"unexpected error: {exc}")
             raise
+
+    def run_ci_failure_round(self, workflow: str | None = None) -> RoundOutcome:
+        """Fetch the latest failed GitHub Actions run and review it as a round.
+
+        The failure report is injected into the OBSERVE stage so both the
+        implementation agent and the review agent see it alongside the code.
+        Raises `GithubActionsError` if no usable failure data can be fetched.
+        """
+        client = github_actions.GithubActionsClient(self.settings)
+        console.print_info("Fetching the latest failed GitHub Actions run...")
+        report = client.fetch_failure_report(workflow=workflow)
+        console.print_info(f"Found: {report.summary_line()}")
+        for job in report.failed_jobs:
+            console.print_info(f"  - {job.name}: {job.conclusion}")
+        return self.run_round(CI_FAILURE_PROMPT, extra_context=report.as_prompt_text())
+
+    def run_rag_validation_round(self, topic: str | None = None) -> RoundOutcome:
+        """Retrieve documentation context from the local RAG server and cross-check it.
+
+        The retrieved passages are injected into the OBSERVE stage so both the
+        implementation agent and the review agent see them alongside the code.
+        Raises `RagError` if the RAG server cannot be reached.
+        """
+        client = RagClient(self.settings)
+        console.print_info("Querying the local RAG server for documentation context...")
+        report = rag_observer.fetch_rag_report(client, topic)
+        console.print_info(f"Found: {report.summary_line()}")
+        return self.run_round(RAG_VALIDATION_PROMPT, extra_context=report.as_prompt_text())
+
+    def run_mcp_validation_round(self, tool: str | None = None) -> RoundOutcome:
+        """Exercise the shared local MCP server and validate it as a round.
+
+        The live initialize/tools/list/tools/call report is injected into the
+        OBSERVE stage so both the implementation agent and the review agent see
+        it alongside the mcp-server source code. Raises `McpError` if the MCP
+        server cannot be reached or rejects the request.
+        """
+        client = McpClient(self.settings)
+        console.print_info(
+            f"Exercising the MCP server at {client.endpoint} "
+            f"(scope: {self.settings.mcp_tool_scope})..."
+        )
+        report = mcp_observer.fetch_mcp_report(client, tool=tool)
+        console.print_info(f"Found: {report.summary_line()}")
+        for listed in report.tools:
+            console.print_info(f"  - {listed.name}")
+        return self.run_round(MCP_VALIDATION_PROMPT, extra_context=report.as_prompt_text())
 
     # -- stage 1 -------------------------------------------------------------
 
@@ -173,7 +251,7 @@ class Orchestrator:
                 prompts=self.prompts,
                 client=self.client,
             )
-        except GeminiError as exc:
+        except OpenRouterError as exc:
             self.writer.write_act_stage(f"- Scope: `{self.settings.scope}`\n- Selection failed: {exc}")
             raise RoundAborted(stages.ACT, f"file selection failed: {exc}") from exc
 
@@ -220,9 +298,12 @@ class Orchestrator:
         self,
         scan: repo_scanner.ScanResult,
         bundle: file_reader.CodeBundle,
+        extra_context: str | None = None,
     ) -> repo_observer.Observation:
         console.print_stage_banner(stages.OBSERVE, stages.OBSERVE.description)
         observation = repo_observer.observe(scan, bundle)
+        if extra_context:
+            observation.extra_sections.append(extra_context)
         console.print_block(observation.as_text())
         self.writer.write_observe_stage(observation.as_text())
         return observation
@@ -251,7 +332,7 @@ class Orchestrator:
                 prompts=self.prompts,
                 client=self.client,
             )
-        except GeminiError as exc:
+        except OpenRouterError as exc:
             self.writer.write_agent_stage(f"**Implementation agent failed:** {exc}")
             raise RoundAborted(stages.AGENT, f"implementation agent failed: {exc}") from exc
 
@@ -452,7 +533,7 @@ class Orchestrator:
                 prompts=self.prompts,
                 client=self.client,
             )
-        except GeminiError as exc:
+        except OpenRouterError as exc:
             self.writer.write_adapt_stage(
                 f"- Plan created: no\n- Planning agent failed: {exc}\n"
                 f"- Accepted findings preserved: {', '.join(f.title for f in accepted)}"

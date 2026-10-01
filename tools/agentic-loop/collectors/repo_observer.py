@@ -34,6 +34,8 @@ class Observation:
     git_branch: str | None
     git_commit: str | None
     warnings: list[str] = field(default_factory=list)
+    # Additional evidence gathered outside the scan (e.g. a CI failure report).
+    extra_sections: list[str] = field(default_factory=list)
 
     def as_text(self) -> str:
         lines = [
@@ -61,6 +63,9 @@ class Observation:
         if self.warnings:
             lines.append("Warnings:")
             lines.extend(f"  - {warning}" for warning in self.warnings)
+
+        for section in self.extra_sections:
+            lines.extend(["", section])
 
         return "\n".join(lines)
 

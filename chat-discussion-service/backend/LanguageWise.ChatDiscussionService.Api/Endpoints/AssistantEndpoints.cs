@@ -7,8 +7,6 @@ namespace LanguageWise.ChatDiscussionService.Api.Endpoints;
 
 internal static class AssistantEndpoints
 {
-    internal const string RateLimitPolicy = "assistant-per-user";
-
     public static IEndpointRouteBuilder MapAssistantEndpoints(this IEndpointRouteBuilder app)
     {
         var logger = EndpointSupport.CreateLogger(app);
@@ -46,12 +44,20 @@ internal static class AssistantEndpoints
                 completion = await completionClient.StartCompletionAsync(messages, cancellationToken);
             }
             catch (AssistantProviderException exception) when (
-                exception.StatusCode == HttpStatusCode.NotFound)
+                exception.StatusCode == HttpStatusCode.ServiceUnavailable)
             {
                 logger.LogWarning(
-                    "The assistant model is not installed; answering from the help topics alone.");
+                    "Garry could not start a response; answering from the help topics alone.");
 
                 completion = new HelpTextEventStream(assistantContext.FallbackAnswer);
+            }
+            catch (AssistantProviderException exception) when (
+                exception.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                return Results.Problem(
+                    title: "Too many assistant requests.",
+                    detail: "Please wait before sending another question.",
+                    statusCode: StatusCodes.Status429TooManyRequests);
             }
             catch (Exception exception) when (
                 exception is HttpRequestException
@@ -77,8 +83,7 @@ internal static class AssistantEndpoints
 
             return new AssistantSseResult(completion, sseLogger);
         })
-            .RequireAuthorization()
-            .RequireRateLimiting(RateLimitPolicy);
+            .RequireAuthorization();
 
         return app;
     }

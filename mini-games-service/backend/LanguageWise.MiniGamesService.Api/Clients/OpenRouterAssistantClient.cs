@@ -3,8 +3,6 @@ using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using LanguageWise.MiniGamesService.Api.Models;
-using LanguageWise.MiniGamesService.Api.Options;
-using Microsoft.Extensions.Options;
 
 namespace LanguageWise.MiniGamesService.Api.Clients;
 
@@ -15,82 +13,81 @@ public interface IAssistantCompletionClient
         CancellationToken cancellationToken);
 }
 
-public sealed class OpenRouterAssistantClient(
-    HttpClient httpClient,
-    IOptions<OpenRouterOptions> options) : IAssistantCompletionClient
+public sealed class GarryCompletionClient(
+    HttpClient client,
+    IHttpContextAccessor contextAccessor,
+    IMcpToolClient mcpTools) : IAssistantCompletionClient
 {
-    private const int MaximumRateLimitRetries = 3;
-    private readonly OpenRouterOptions options = options.Value;
-
     public async Task<AssistantCompletionStream> StartCompletionAsync(
-        IReadOnlyList<OpenRouterChatMessage> messages,
-        CancellationToken cancellationToken)
+        IReadOnlyList<OpenRouterChatMessage> messages, CancellationToken cancellationToken)
     {
-        for (var attempt = 0; ; attempt++)
+        var context = contextAccessor.HttpContext ?? throw new InvalidOperationException("No assistant request context.");
+        var token = UserTokenReader.Read(context.Request);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/completions")
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
+            Content = JsonContent.Create(new
             {
-                Content = JsonContent.Create(new OpenRouterChatRequest(
-                    options.Model,
-                    messages,
-                    Stream: true,
-                    options.MaxOutputTokens))
-            };
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey);
-            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
-
-            var response = await httpClient.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken);
-            if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests &&
-                attempt < MaximumRateLimitRetries)
-            {
-                var retryDelay = response.Headers.RetryAfter?.Delta ??
-                    TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
-                response.Dispose();
-                await Task.Delay(
-                    retryDelay > TimeSpan.FromSeconds(8)
-                        ? TimeSpan.FromSeconds(8)
-                        : retryDelay,
-                    cancellationToken);
-                continue;
-            }
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var statusCode = response.StatusCode;
-                response.Dispose();
-                throw new AssistantProviderException(
-                    "The assistant provider rejected the request.",
-                    statusCode);
-            }
-
-            var disposeResponse = true;
-            try
-            {
-                var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-                disposeResponse = false;
-                return new AssistantCompletionStream(response, stream);
-            }
-            finally
-            {
-                if (disposeResponse)
-                {
-                    response.Dispose();
-                }
-            }
+                message = messages[^1].Content,
+                history = messages.Skip(2).SkipLast(1),
+                domainRules = messages[0].Content,
+                canonicalContext = messages[1].Content,
+                toolScope = mcpTools.Enabled ? McpToolClient.Scope : null
+            })
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var status = response.StatusCode;
+            response.Dispose();
+            throw new AssistantProviderException("Garry could not start the assistant.", status);
+        }
+        try
+        {
+            return new AssistantCompletionStream(response, await response.Content.ReadAsStreamAsync(cancellationToken), true);
+        }
+        catch
+        {
+            response.Dispose();
+            throw;
         }
     }
 }
 
 public sealed class AssistantCompletionStream(
     HttpResponseMessage response,
-    Stream responseStream) : IAsyncDisposable
+    Stream responseStream,
+    bool fromGarry = false) : IAsyncDisposable
 {
     public async IAsyncEnumerable<ProviderStreamEvent> ReadEventsAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        if (fromGarry)
+        {
+            using var garryReader = new StreamReader(responseStream);
+            string? eventName = null;
+            while (await garryReader.ReadLineAsync(cancellationToken) is { } garryLine)
+            {
+                if (garryLine.StartsWith("event: ", StringComparison.Ordinal))
+                {
+                    eventName = garryLine[7..].Trim();
+                    continue;
+                }
+                if (!garryLine.StartsWith("data: ", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                var streamEvent = ParseGarryEvent(eventName, garryLine[6..]);
+                eventName = null;
+                yield return streamEvent;
+                if (streamEvent.Type == "done")
+                {
+                    yield break;
+                }
+            }
+            throw new AssistantProviderStreamException();
+        }
+
         using var reader = new StreamReader(responseStream);
         var dataLines = new List<string>();
         var doneReceived = false;
@@ -148,6 +145,42 @@ public sealed class AssistantCompletionStream(
         return ValueTask.CompletedTask;
     }
 
+    private static ProviderStreamEvent ParseGarryEvent(string? eventName, string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (eventName == "tool")
+            {
+                if (root.ValueKind != JsonValueKind.Object ||
+                    !root.TryGetProperty("name", out var name) ||
+                    name.ValueKind != JsonValueKind.String)
+                {
+                    throw new AssistantProviderStreamException();
+                }
+                return ProviderStreamEvent.Tool(new AssistantToolEvent(
+                    name.GetString()!,
+                    root.TryGetProperty("arguments", out var arguments) ? arguments.Clone() : null,
+                    root.TryGetProperty("isError", out var isError) && isError.ValueKind == JsonValueKind.True,
+                    root.TryGetProperty("result", out var result) ? result.Clone() : null));
+            }
+            if (root.TryGetProperty("content", out var content))
+            {
+                return ProviderStreamEvent.Delta(content.GetString()!);
+            }
+            if (root.TryGetProperty("reason", out var reason))
+            {
+                return ProviderStreamEvent.Done(reason.GetString() ?? "stop");
+            }
+        }
+        catch (JsonException)
+        {
+            throw new AssistantProviderStreamException();
+        }
+        throw new AssistantProviderStreamException();
+    }
+
     private static IReadOnlyList<ProviderStreamEvent> ParseEvent(IReadOnlyList<string> dataLines)
     {
         var data = string.Join('\n', dataLines);
@@ -194,11 +227,13 @@ public sealed class AssistantCompletionStream(
     }
 }
 
-public sealed record ProviderStreamEvent(string Type, string? Content, string? Reason)
+public sealed record ProviderStreamEvent(string Type, string? Content, string? Reason, AssistantToolEvent? ToolEvent = null)
 {
     public static ProviderStreamEvent Delta(string content) => new("delta", content, null);
 
     public static ProviderStreamEvent Done(string reason = "stop") => new("done", null, reason);
+
+    public static ProviderStreamEvent Tool(AssistantToolEvent toolEvent) => new("tool", null, null, toolEvent);
 }
 
 public sealed class AssistantProviderException(string message, System.Net.HttpStatusCode statusCode)

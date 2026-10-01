@@ -1,5 +1,3 @@
-using System.Text.Json.Serialization;
-
 namespace LanguageWise.QuestsAchievementsNotificationsService.Api.Models;
 
 public sealed record AssistantMessageRequest(
@@ -17,19 +15,26 @@ public sealed record AssistantDoneEvent(string Reason);
 
 public sealed record AssistantErrorEvent(string Message, string Code);
 
+public sealed record AssistantToolEvent(
+    string Name,
+    System.Text.Json.JsonElement? Arguments,
+    bool IsError,
+    System.Text.Json.JsonElement? Result);
+
+public sealed record AssistantToolsResponse(IReadOnlyList<AssistantToolDescriptor> Tools);
+
+public sealed record AssistantToolDescriptor(string Name, string Title, string Description);
+
+public sealed record AssistantToolCallResponse(string Tool, bool IsError, System.Text.Json.JsonElement Result);
+
+public sealed record AchievementStatus(
+    int AchievementId,
+    string Name,
+    string Description,
+    int Progress,
+    int ProgressNeeded);
+
 public sealed record AssistantChatMessage(string Role, string Content);
-
-public sealed record OpenRouterChatRequest(
-    string Model,
-    IReadOnlyList<AssistantChatMessage> Messages,
-    bool Stream,
-    [property: JsonPropertyName("max_tokens")] int MaxTokens);
-
-public sealed record OllamaChatRequest(
-    string Model,
-    IReadOnlyList<AssistantChatMessage> Messages,
-    bool Stream,
-    bool Think);
 
 public sealed record ValidatedAssistantRequest(
     string Message,

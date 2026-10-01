@@ -1,10 +1,8 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
-using System.Threading.RateLimiting;
 using LanguageWise.ChatDiscussionService.Api.Clients;
 using LanguageWise.ChatDiscussionService.Api.Endpoints;
-using LanguageWise.ChatDiscussionService.Api.Options;
 using LanguageWise.ChatDiscussionService.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -29,25 +27,10 @@ builder.Services.AddHttpClient<AchievementEventsClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(20);
 });
 
-// AI mode. The model runs in the shared 'ollama' container, so there is nothing
-// to configure beyond its address, which resolves by container name inside
-// Docker exactly as the database address above does.
-var ollamaServiceUrl = builder.Configuration["Services:Ollama"] ?? "http://localhost:11434";
-
-builder.Services
-    .AddOptions<OllamaOptions>()
-    .Bind(builder.Configuration.GetSection(OllamaOptions.SectionName))
-    .Validate(
-        options => !string.IsNullOrWhiteSpace(options.Model),
-        "Ollama:Model is required.")
-    .Validate(
-        options => options.MaxOutputTokens is > 0 and <= 8192,
-        "Ollama:MaxOutputTokens must be between 1 and 8192.")
-    .ValidateOnStart();
-
-builder.Services.AddHttpClient<IAssistantCompletionClient, OllamaAssistantClient>(client =>
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient<IAssistantCompletionClient, GarryCompletionClient>(client =>
 {
-    client.BaseAddress = new Uri(ollamaServiceUrl.TrimEnd('/') + "/");
+    client.BaseAddress = new Uri((builder.Configuration["Services:Garry"] ?? "http://localhost:5010").TrimEnd('/') + "/");
 
     // No timeout: the response is a stream that stays open for as long as the
     // model keeps writing, and the first token after a cold start is slow.
@@ -58,35 +41,6 @@ builder.Services.AddHttpClient<IAssistantCompletionClient, OllamaAssistantClient
 builder.Services.AddSingleton<AssistantRequestValidator>();
 builder.Services.AddSingleton<IAssistantPromptBuilder, AssistantPromptBuilder>();
 builder.Services.AddScoped<IAssistantContextService, AssistantContextService>();
-
-// The model is metered, so one signed-in user cannot spend the whole allowance.
-// Partitioned by 'sub' rather than IP: everyone here is signed in anyway, and a
-// shared campus address should not be one bucket.
-builder.Services.AddRateLimiter(options =>
-{
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.OnRejected = async (context, _) =>
-    {
-        if (!context.HttpContext.Response.HasStarted)
-        {
-            await Results.Problem(
-                title: "Too many assistant requests.",
-                detail: "Please wait a moment before sending another question.",
-                statusCode: StatusCodes.Status429TooManyRequests)
-                .ExecuteAsync(context.HttpContext);
-        }
-    };
-    options.AddPolicy(AssistantEndpoints.RateLimitPolicy, httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            httpContext.User.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? "anonymous",
-            _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 10,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0,
-                AutoReplenishment = true
-            }));
-});
 
 // Tokens are minted by shared-backend and signed with the private half of this
 // key pair. This service only ever verifies them.
@@ -133,7 +87,6 @@ var app = builder.Build();
 
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseRateLimiter();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = ServiceName }));
 

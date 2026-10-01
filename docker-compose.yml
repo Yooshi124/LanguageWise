@@ -18,6 +18,9 @@ secrets:
     file: ./signing_private_key.pem
   signing_public_key:
     file: ./signing_public_key.pem
+  # Generate using mcp-server/scripts/New-McpApiKey.ps1
+  mcp_api_key:
+    file: ./mcp-server/.mcp-api-key
 
 services:
   ollama:
@@ -49,6 +52,37 @@ services:
         condition: service_healthy
     restart: "no"
 
+  garry-ai-service-backend:
+    container_name: garry-ai-service-backend
+    build:
+      context: ./garry-ai-service/backend
+    env_file:
+      - path: ./garry-ai-service/backend/.env
+        required: false
+    environment:
+      Services__Ollama: http://ollama:11434
+      Ollama__Model: gemma4:e4b
+      Auth__VerificationKeyPath: /run/secrets/signing_public_key
+      Mcp__Enabled: "true"
+      Mcp__Endpoint: http://host.docker.internal:8200/mcp
+      Mcp__ApiKeyPath: /run/secrets/mcp_api_key
+    secrets:
+      - signing_public_key
+      - mcp_api_key
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [languagewise]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      start_period: 15s
+      retries: 6
+    depends_on:
+      ollama-model-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   shared-db:
     container_name: shared-db
     build:
@@ -69,9 +103,12 @@ services:
     environment:
       Services__Database: http://shared-db:8080
       Services__Achievements: http://quests-achievements-notifications-service-backend:8080
+      Services__Rag: http://host.docker.internal:8100
       Auth__SigningKeyPath: /run/secrets/signing_private_key
     secrets:
       - signing_private_key
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:5000:8080"
     networks: [languagewise]
@@ -116,15 +153,24 @@ services:
       Services__Database: http://mini-games-service-db:8080
       Services__Courses: http://quizzes-courses-service-backend:8080
       Services__Achievements: http://quests-achievements-notifications-service-backend:8080
+      Services__Garry: http://garry-ai-service-backend:8080
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
+      Mcp__Enabled: "true"
+      Mcp__Endpoint: http://host.docker.internal:8200/mcp
+      Mcp__ApiKeyPath: /run/secrets/mcp_api_key
     secrets:
       - signing_public_key
+      - mcp_api_key
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:5001:8080"
     networks: [languagewise]
     depends_on:
       mini-games-service-db:
         condition: service_started
+      garry-ai-service-backend:
+        condition: service_healthy
     restart: unless-stopped
 
   mini-games-service-frontend:
@@ -155,20 +201,26 @@ services:
     container_name: quizzes-courses-service-backend
     build:
       context: ./quizzes-courses-service/backend
-    env_file:
-      - path: ./quizzes-courses-service/backend/.env
-        required: false
     environment:
       Services__Database: http://quizzes-courses-service-db:8080
       Services__Achievements: http://quests-achievements-notifications-service-backend:8080
+      Services__Garry: http://garry-ai-service-backend:8080
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
+      Mcp__Enabled: "true"
+      Mcp__Endpoint: http://host.docker.internal:8200/mcp
+      Mcp__ApiKeyPath: /run/secrets/mcp_api_key
     secrets:
       - signing_public_key
+      - mcp_api_key
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:5003:8080"
     networks: [languagewise]
     depends_on:
       quizzes-courses-service-db:
+        condition: service_healthy
+      garry-ai-service-backend:
         condition: service_healthy
     restart: unless-stopped
 
@@ -206,9 +258,8 @@ services:
       context: ./chat-discussion-service/backend
     environment:
       Services__Database: http://chat-discussion-service-db:8080
-      Services__Ollama: http://ollama:11434
       Services__Achievements: http://quests-achievements-notifications-service-backend:8080
-      Ollama__Model: gemma4:e4b
+      Services__Garry: http://garry-ai-service-backend:8080
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
     secrets:
       - signing_public_key
@@ -218,8 +269,8 @@ services:
     depends_on:
       chat-discussion-service-db:
         condition: service_healthy
-      ollama-model-init:
-        condition: service_completed_successfully
+      garry-ai-service-backend:
+        condition: service_healthy
     restart: unless-stopped
 
   chat-discussion-service-frontend:
@@ -268,16 +319,25 @@ services:
     environment:
       Services__Database: http://quests-achievements-notifications-service-db-api:3000
       Services__Ollama: http://ollama:11434
+      Services__Garry: http://garry-ai-service-backend:8080
       Ollama__Model: gemma4:e4b
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
+      Mcp__Enabled: "true"
+      Mcp__Endpoint: http://host.docker.internal:8200/mcp
+      Mcp__ApiKeyPath: /run/secrets/mcp_api_key
     secrets:
       - signing_public_key
+      - mcp_api_key
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "5004:8080"
     networks: [languagewise]
     depends_on:
       quests-achievements-notifications-service-db-api:
         condition: service_started
+      garry-ai-service-backend:
+        condition: service_healthy
       ollama-model-init:
         condition: service_completed_successfully
     restart: unless-stopped
@@ -302,6 +362,7 @@ services:
     environment:
       Services__QuizzesCourses: http://quizzes-courses-service-backend:8080
       Services__Ollama: http://ollama:11434
+      Services__Garry: http://garry-ai-service-backend:8080
       Ollama__Model: gemma4:e4b
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
     secrets:
@@ -311,6 +372,8 @@ services:
     networks: [languagewise]
     depends_on:
       quizzes-courses-service-backend:
+        condition: service_healthy
+      garry-ai-service-backend:
         condition: service_healthy
       ollama-model-init:
         condition: service_completed_successfully

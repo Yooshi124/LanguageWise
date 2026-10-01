@@ -37,7 +37,7 @@ public sealed class AssistantPromptBuilderTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(messages[0].Content, Does.Contain("achievements and notifications assistant"));
+            Assert.That(messages[0].Content, Does.Contain("Never claim that an email was delivered"));
             Assert.That(messages[1].Content, Does.Contain("\"email\":\"amber@example.com\""));
             Assert.That(messages[1].Content, Does.Contain("\"name\":\"Next Step\""));
             Assert.That(messages[1].Content, Does.Contain("\"trigger\":\"post-engagement\""));

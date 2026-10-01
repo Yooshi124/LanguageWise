@@ -28,8 +28,8 @@ public sealed class AssistantPromptBuilderTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(messages[0].Content, Does.Contain("Garry"));
-            Assert.That(messages[0].Content, Does.Contain("leaderboard and analytics assistant"));
+            Assert.That(messages[0].Content, Does.Contain("leaderboard and analytics"));
+            Assert.That(messages[0].Content, Does.Contain("rank 1 is"));
             Assert.That(messages[1].Content, Does.Contain("\"username\":\"justin\""));
             Assert.That(messages[1].Content, Does.Contain("\"language\":\"German\""));
             Assert.That(messages[1].Content, Does.Contain("\"rank\":2"));

@@ -9,7 +9,10 @@ public sealed record AssociationsState(
     bool IsComplete,
     bool IsWon,
     IReadOnlyList<AssociationGroup> RevealedGroups,
-    IReadOnlyDictionary<string, string>? Definitions = null);
+    IReadOnlyDictionary<string, string>? Definitions = null,
+    // Seconds since the round started; only populated once the round is complete, for the
+    // end-of-round summary panel.
+    int? ElapsedSeconds = null);
 
 public sealed record AssociationGroup(string Summary, IReadOnlyList<string> Words);
 

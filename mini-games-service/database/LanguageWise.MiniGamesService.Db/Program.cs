@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using LanguageWise.MiniGamesService.Db.Data;
 using LanguageWise.MiniGamesService.Db.Models;
+using LanguageWise.MiniGamesService.Db.Services;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Http.Json;
 
@@ -23,6 +24,7 @@ builder.Services.AddSingleton(serviceProvider => new DatabaseInitializer(
     connectionString,
     Path.Combine(AppContext.BaseDirectory, "sql"),
     serviceProvider.GetRequiredService<ILogger<DatabaseInitializer>>()));
+builder.Services.AddHostedService<ExpiredGameCleanupService>();
 
 builder.Services.Configure<JsonOptions>(options =>
     options.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull);

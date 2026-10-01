@@ -31,7 +31,13 @@ public sealed record CompletionStatsResponse(
     string? CourseCode,
     int GuessTheWord,
     int WordSearch,
-    int Associations);
+    int Associations,
+    // Fastest winning round per game type, in seconds; null when the user has no win yet.
+    int? BestGuessTheWordSeconds = null,
+    int? BestWordSearchSeconds = null,
+    int? BestAssociationsSeconds = null,
+    // Consecutive days (ending today or yesterday) with at least one completed round.
+    int CurrentStreak = 0);
 
 /// <summary>Database response wrapper.</summary>
 public sealed record DatabaseResponse<T>(

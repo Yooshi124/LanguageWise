@@ -1,6 +1,9 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace LanguageWise.MiniGamesService.Api.Clients;
 
@@ -27,15 +30,21 @@ public sealed record UserVocabulary(IReadOnlyList<CourseVocabulary> Courses);
 /// Client for the quizzes-courses API. Vocabulary is user-scoped, so requests forward the
 /// caller's JWT as a bearer token and the API resolves the user from it.
 /// </summary>
-public sealed class CourseVocabularyClient(HttpClient httpClient)
+public sealed class CourseVocabularyClient(HttpClient httpClient, IMemoryCache cache)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(15);
 
     /// <summary>
     /// Vocabulary unlocked by the authenticated user: the courses they have started, limited to
     /// lessons whose milestone they have achieved. Null when the token is missing or the
     /// quizzes-courses service cannot fulfil the request.
     /// </summary>
+    /// <remarks>
+    /// Cached briefly per user (by token hash): every game init otherwise re-fetches the same
+    /// unlocked vocabulary from the courses service, and the result only changes when the user
+    /// completes new course content.
+    /// </remarks>
     public async Task<UserVocabulary?> GetUserVocabularyAsync(
         string? accessToken,
         CancellationToken cancellationToken = default)
@@ -43,6 +52,12 @@ public sealed class CourseVocabularyClient(HttpClient httpClient)
         if (string.IsNullOrWhiteSpace(accessToken))
         {
             return null;
+        }
+
+        var cacheKey = $"course-vocabulary:{HashToken(accessToken)}";
+        if (cache.TryGetValue<UserVocabulary>(cacheKey, out var cached))
+        {
+            return cached;
         }
 
         try
@@ -55,11 +70,21 @@ public sealed class CourseVocabularyClient(HttpClient httpClient)
                 return null;
             }
 
-            return await response.Content.ReadFromJsonAsync<UserVocabulary>(JsonOptions, cancellationToken);
+            var vocabulary = await response.Content.ReadFromJsonAsync<UserVocabulary>(JsonOptions, cancellationToken);
+            if (vocabulary is not null)
+            {
+                cache.Set(cacheKey, vocabulary, CacheDuration);
+            }
+
+            return vocabulary;
         }
         catch (HttpRequestException)
         {
             return null;
         }
     }
+
+    /// <summary>Never cache the raw token itself; keys are a one-way hash of it.</summary>
+    private static string HashToken(string accessToken) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(accessToken)));
 }

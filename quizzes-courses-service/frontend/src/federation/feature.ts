@@ -10,6 +10,7 @@ import QuizzesCoursesComponent from './QuizzesCoursesComponent.vue'
 import type { FederatedFeatureModule } from './contracts'
 
 export { QuizzesCoursesComponent }
+export { assistant } from './assistant'
 
 export const metadata: FederatedFeatureModule['metadata'] = {
   key: 'quizzes-courses',

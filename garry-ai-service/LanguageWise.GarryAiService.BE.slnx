@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/backend/">
+    <Project Path="backend/LanguageWise.GarryAiService.Api/LanguageWise.GarryAiService.Api.csproj" />
+    <File Path="backend/Dockerfile" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/LanguageWise.GarryAiService.Api.Tests/LanguageWise.GarryAiService.Api.Tests.csproj" />
+  </Folder>
+</Solution>

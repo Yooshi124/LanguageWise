@@ -5,11 +5,9 @@ using LanguageWise.ChatDiscussionService.Api.Models;
 namespace LanguageWise.ChatDiscussionService.Api.Tests;
 
 /// <summary>
-/// A stand-in for Ollama, so the endpoint tests never wait on a language model.
+/// A stand-in for Garry, so the endpoint tests never wait on a language model.
 /// It replays a canned model stream, which means the endpoint's own server-sent
 /// event relay is still exercised end to end.
-///
-/// The model request itself is covered by <see cref="OllamaAssistantClientTests"/>.
 /// </summary>
 internal sealed class StubAssistantCompletionClient : IAssistantCompletionClient
 {

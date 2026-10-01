@@ -1,5 +1,3 @@
-using System.Text.Json.Serialization;
-
 namespace LanguageWise.QuizzesCoursesService.Api.Models;
 
 public sealed record AssistantMessageRequest(
@@ -20,10 +18,16 @@ public sealed record AssistantDoneEvent(string Reason);
 
 public sealed record AssistantErrorEvent(string Message, string Code);
 
-public sealed record OpenRouterChatRequest(
-    string Model,
-    IReadOnlyList<OpenRouterChatMessage> Messages,
-    bool Stream,
-    [property: JsonPropertyName("max_tokens")] int MaxTokens);
+public sealed record AssistantToolEvent(
+    string Name,
+    System.Text.Json.JsonElement? Arguments,
+    bool IsError,
+    System.Text.Json.JsonElement? Result);
+
+public sealed record AssistantToolsResponse(IReadOnlyList<AssistantToolDescriptor> Tools);
+
+public sealed record AssistantToolDescriptor(string Name, string Title, string Description);
+
+public sealed record AssistantToolCallResponse(string Tool, bool IsError, System.Text.Json.JsonElement Result);
 
 public sealed record OpenRouterChatMessage(string Role, string Content);

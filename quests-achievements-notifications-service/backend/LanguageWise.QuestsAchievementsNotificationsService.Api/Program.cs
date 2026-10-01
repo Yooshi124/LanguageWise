@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.RateLimiting;
 using LanguageWise.QuestsAchievementsNotificationsService.Api;
 using LanguageWise.QuestsAchievementsNotificationsService.Api.Clients;
@@ -13,6 +14,8 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 
 const string ServiceName = "quests-achievements-notifications-service-backend";
+const string AssistantToolNamePattern = "^quests_[a-z_]{1,58}$";
+const int MaxAssistantToolArgumentBytes = 2048;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -34,35 +37,17 @@ builder.Services.AddHttpClient<IEmailContentGenerator, OllamaEmailGenerator>(cli
     client.BaseAddress = new Uri(ollamaServiceUrl.TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(15);
 });
-builder.Services.Configure<OpenRouterOptions>(
-    builder.Configuration.GetSection(OpenRouterOptions.SectionName));
-builder.Services.AddHttpClient<OpenRouterAssistantClient>(client =>
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient(McpToolClient.HttpClientName, client =>
+    client.Timeout = TimeSpan.FromSeconds(builder.Configuration.GetValue("Mcp:TimeoutSeconds", 15)));
+builder.Services.AddSingleton<IMcpToolClient, McpToolClient>();
+builder.Services.AddHttpClient<IAssistantCompletionClient, GarryCompletionClient>(client =>
 {
-    client.BaseAddress = new Uri("https://openrouter.ai/api/v1/");
-    client.Timeout = TimeSpan.FromSeconds(30);
-});
-builder.Services.AddHttpClient<OllamaAssistantClient>(client =>
-{
-    client.BaseAddress = new Uri(ollamaServiceUrl.TrimEnd('/') + "/");
+    client.BaseAddress = new Uri((builder.Configuration["Services:Garry"] ?? "http://localhost:5010").TrimEnd('/') + "/");
     client.Timeout = Timeout.InfiniteTimeSpan;
 });
-builder.Services.AddTransient<IAssistantCompletionClient, FallbackAssistantCompletionClient>();
 builder.Services.AddSingleton<AssistantRequestValidator>();
 builder.Services.AddSingleton<IAssistantPromptBuilder, AssistantPromptBuilder>();
-builder.Services.AddRateLimiter(options =>
-{
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddPolicy("assistant-per-user", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            httpContext.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value ?? "anonymous",
-            _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 10,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0,
-                AutoReplenishment = true
-            }));
-});
 builder.Services.AddSingleton<ISmtpTransport, MailKitSmtpTransport>();
 builder.Services.AddSingleton<IEmailSender, GmailEmailSender>();
 
@@ -108,7 +93,6 @@ var app = builder.Build();
 
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseRateLimiter();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = ServiceName }))
     .AllowAnonymous();
@@ -190,8 +174,15 @@ app.MapPost("/api/assistant/messages", async (
     catch (AssistantProviderException exception)
     {
         app.Logger.LogWarning(
-            "All assistant providers rejected the request; final HTTP status was {HttpStatus}.",
+            "Garry could not start the request; HTTP status was {HttpStatus}.",
             (int)exception.StatusCode);
+        if (exception.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+        {
+            return Results.Problem(
+                title: "Too many assistant requests.",
+                detail: "Please wait before sending another question.",
+                statusCode: StatusCodes.Status429TooManyRequests);
+        }
         return Results.Problem(
             title: "Garry is unavailable.",
             detail: "The assistant could not start a response. Please try again.",
@@ -209,8 +200,137 @@ app.MapPost("/api/assistant/messages", async (
             detail: "The assistant could not start a response. Please try again.",
             statusCode: StatusCodes.Status502BadGateway);
     }
-})
-    .RequireRateLimiting("assistant-per-user");
+});
+
+app.MapGet("/api/preferences", async (
+    HttpContext context,
+    ProfileService profileService,
+    CancellationToken cancellationToken) =>
+{
+    var userId = NotificationRules.GetUserId(context.User);
+    if (userId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    try
+    {
+        return Results.Ok(await profileService.GetPreferencesAsync(userId.Value, cancellationToken));
+    }
+    catch (Exception exception) when (exception is not OperationCanceledException)
+    {
+        app.Logger.LogError(exception, "Failed to load preferences for user {UserId}.", userId);
+        return Results.Problem(
+            title: "The database microservice is unavailable.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+});
+
+app.MapGet("/api/achievements", async (
+    HttpContext context,
+    ProfileService profileService,
+    CancellationToken cancellationToken) =>
+{
+    var userId = NotificationRules.GetUserId(context.User);
+    if (userId is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    try
+    {
+        return Results.Ok(await profileService.GetAchievementStatusAsync(userId.Value, cancellationToken));
+    }
+    catch (Exception exception) when (exception is not OperationCanceledException)
+    {
+        app.Logger.LogError(exception, "Failed to load achievements for user {UserId}.", userId);
+        return Results.Problem(
+            title: "The database microservice is unavailable.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+});
+
+// Lists the MCP tools Garry can use for this feature (scoped to "quests") so the frontend can offer them as quick actions.
+app.MapGet("/api/assistant/tools", async (
+    IMcpToolClient mcpTools,
+    HttpRequest httpRequest,
+    CancellationToken cancellationToken) =>
+{
+    if (!mcpTools.Enabled)
+    {
+        return AssistantToolsDisabled();
+    }
+
+    try
+    {
+        var tools = await mcpTools.ListToolsAsync(UserTokenReader.Read(httpRequest), cancellationToken);
+        return Results.Ok(new AssistantToolsResponse(tools
+            .Select(tool => new AssistantToolDescriptor(tool.Name, tool.Title, tool.Description))
+            .ToList()));
+    }
+    catch (Exception exception) when (IsAssistantToolFailure(exception, cancellationToken))
+    {
+        app.Logger.LogWarning(
+            "Assistant tool listing failed with error type {ErrorType}.",
+            exception.GetType().Name);
+        return AssistantToolsUnavailable();
+    }
+});
+
+// Calls one MCP tool directly with the caller's own token, so a tool can never act beyond the signed-in user.
+app.MapPost("/api/assistant/tools/{name}", async (
+    string name,
+    HttpRequest httpRequest,
+    IMcpToolClient mcpTools,
+    CancellationToken cancellationToken) =>
+{
+    if (!mcpTools.Enabled)
+    {
+        return AssistantToolsDisabled();
+    }
+
+    if (!Regex.IsMatch(name, AssistantToolNamePattern))
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["name"] = ["Unknown assistant tool."]
+        });
+    }
+
+    var arguments = await ReadAssistantToolArgumentsAsync(httpRequest, cancellationToken);
+    if (arguments is null)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["arguments"] = [$"Tool arguments must be a JSON object of at most {MaxAssistantToolArgumentBytes} bytes."]
+        });
+    }
+
+    try
+    {
+        var result = await mcpTools.CallToolAsync(
+            name,
+            arguments,
+            UserTokenReader.Read(httpRequest),
+            cancellationToken);
+        return Results.Ok(new AssistantToolCallResponse(name, result.IsError, result.Result));
+    }
+    catch (ModelContextProtocol.McpProtocolException exception) when (
+        exception.ErrorCode is ModelContextProtocol.McpErrorCode.InvalidParams or ModelContextProtocol.McpErrorCode.MethodNotFound)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["name"] = ["Unknown assistant tool or invalid arguments."]
+        });
+    }
+    catch (Exception exception) when (IsAssistantToolFailure(exception, cancellationToken))
+    {
+        app.Logger.LogWarning(
+            "Assistant tool call failed with error type {ErrorType}.",
+            exception.GetType().Name);
+        return AssistantToolsUnavailable();
+    }
+});
 
 app.MapPut("/api/preferences", async (
     HttpContext context,
@@ -441,6 +561,65 @@ static async Task<PreferenceUpdateRequest?> ReadPreferencesAsync(
     return request.HasJsonContentType()
         ? await request.ReadFromJsonAsync<PreferenceUpdateRequest>(cancellationToken)
         : null;
+}
+
+static IResult AssistantToolsDisabled() =>
+    Results.Problem(
+        title: "Assistant tools are disabled.",
+        detail: "Garry's tools are not enabled on this server.",
+        statusCode: StatusCodes.Status503ServiceUnavailable,
+        extensions: new Dictionary<string, object?> { ["code"] = "mcp_disabled" });
+
+static IResult AssistantToolsUnavailable() =>
+    Results.Problem(
+        title: "Assistant tools are unavailable.",
+        detail: "Garry's tools could not be reached. Please try again.",
+        statusCode: StatusCodes.Status502BadGateway,
+        extensions: new Dictionary<string, object?> { ["code"] = "mcp_unavailable" });
+
+static bool IsAssistantToolFailure(Exception exception, CancellationToken cancellationToken) =>
+    exception is HttpRequestException or ModelContextProtocol.McpException or TimeoutException or IOException or JsonException
+    || (exception is OperationCanceledException && !cancellationToken.IsCancellationRequested);
+
+static async Task<IReadOnlyDictionary<string, JsonElement>?> ReadAssistantToolArgumentsAsync(
+    HttpRequest request,
+    CancellationToken cancellationToken)
+{
+    var buffer = new byte[MaxAssistantToolArgumentBytes + 1];
+    var length = 0;
+    int read;
+    while (length < buffer.Length &&
+        (read = await request.Body.ReadAsync(buffer.AsMemory(length), cancellationToken)) > 0)
+    {
+        length += read;
+    }
+
+    if (length > MaxAssistantToolArgumentBytes)
+    {
+        return null;
+    }
+
+    if (length == 0 || buffer.AsSpan(0, length).Trim(" \t\r\n"u8).IsEmpty)
+    {
+        return new Dictionary<string, JsonElement>();
+    }
+
+    try
+    {
+        using var document = JsonDocument.Parse(buffer.AsMemory(0, length));
+        if (document.RootElement.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        return document.RootElement
+            .EnumerateObject()
+            .ToDictionary(property => property.Name, property => property.Value.Clone());
+    }
+    catch (JsonException)
+    {
+        return null;
+    }
 }
 
     public partial class Program;

@@ -67,8 +67,12 @@
 					<li v-for="stat in completionStats" :key="stat.name" class="completion-tracker__item">
 						<strong class="completion-tracker__count">{{ stat.count }}</strong>
 						<span class="completion-tracker__name">{{ stat.name }}</span>
+						<span v-if="stat.bestTime" class="completion-tracker__best">Best {{ stat.bestTime }}</span>
 					</li>
 				</ul>
+				<p v-if="currentStreak > 0" class="completion-tracker__streak">
+					🔥 {{ currentStreak }} day{{ currentStreak === 1 ? '' : 's' }} streak
+				</p>
 			</section>
 
 			<ul class="game-list">
@@ -135,10 +139,20 @@ const selectedLanguageTitle = computed(
 );
 
 const completionStats = computed(() => [
-	{ name: 'Guess the word', count: completions.value?.guessTheWord ?? 0 },
-	{ name: 'Word Search', count: completions.value?.wordSearch ?? 0 },
-	{ name: 'Associations', count: completions.value?.associations ?? 0 }
+	{ name: 'Guess the word', count: completions.value?.guessTheWord ?? 0, bestTime: formatBestTime(completions.value?.bestGuessTheWordSeconds) },
+	{ name: 'Word Search', count: completions.value?.wordSearch ?? 0, bestTime: formatBestTime(completions.value?.bestWordSearchSeconds) },
+	{ name: 'Associations', count: completions.value?.associations ?? 0, bestTime: formatBestTime(completions.value?.bestAssociationsSeconds) }
 ]);
+
+const currentStreak = computed(() => completions.value?.currentStreak ?? 0);
+
+// Format a best-time in seconds as "1:05" (or just seconds under a minute).
+function formatBestTime(seconds) {
+	if (!seconds) return null;
+	const minutes = Math.floor(seconds / 60);
+	const remainingSeconds = seconds % 60;
+	return minutes > 0 ? `${minutes}:${String(remainingSeconds).padStart(2, '0')}` : `${remainingSeconds}s`;
+}
 
 async function loadCompletions(courseCode) {
 	if (!courseCode) {
