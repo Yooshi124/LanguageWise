@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from core.rag_client import RagClient, RagError, RagResult
+from core.rag_client import INSUFFICIENT_CONFIDENCE, RagClient, RagError, RagResult
 
 DEFAULT_TOPIC = "how this service is expected to behave"
 
@@ -21,22 +21,34 @@ class RagReport:
 
     topic: str
     results: list[RagResult] = field(default_factory=list)
+    confidence: str = INSUFFICIENT_CONFIDENCE
+
+    @property
+    def insufficient(self) -> bool:
+        return self.confidence == INSUFFICIENT_CONFIDENCE or not self.results
 
     def summary_line(self) -> str:
-        return f"'{self.topic}' - {len(self.results)} passage(s) retrieved"
+        return (
+            f"'{self.topic}' - {len(self.results)} passage(s) retrieved, "
+            f"confidence: {self.confidence}"
+        )
 
     def as_prompt_text(self) -> str:
         lines = [
             "RETRIEVED DOCUMENTATION CONTEXT (RAG server)",
             f"Topic: {self.topic}",
+            f"Confidence: {self.confidence}",
             "",
         ]
-        if not self.results:
+        if self.insufficient:
             lines.append(
-                "(no matching passages were found - the RAG index may be empty "
-                "or the topic may not be covered by the corpus)"
+                "(insufficient context - no passage matches this topic closely enough. "
+                "The documentation does not cover it, so do not report drift from "
+                "documented behaviour based on the passages below, if any.)"
             )
-            return "\n".join(lines)
+            if not self.results:
+                return "\n".join(lines)
+            lines.append("")
 
         for rank, result in enumerate(self.results, start=1):
             lines.extend(
@@ -59,7 +71,7 @@ def fetch_rag_report(client: RagClient, topic: str | None, n_results: int | None
     """
     resolved_topic = topic or DEFAULT_TOPIC
     result = client.query(resolved_topic, n_results=n_results)
-    return RagReport(topic=resolved_topic, results=result.results)
+    return RagReport(topic=resolved_topic, results=result.results, confidence=result.confidence)
 
 
 __all__ = ["RagReport", "fetch_rag_report", "RagError"]
