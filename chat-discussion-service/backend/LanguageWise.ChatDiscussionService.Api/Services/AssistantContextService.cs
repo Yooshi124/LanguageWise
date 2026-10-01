@@ -69,6 +69,7 @@ public sealed class AssistantContextService(DiscussionClient client) : IAssistan
                     platform = "LanguageWise discussion forum",
                     page = request.Context.RouteName,
                     forum = request.Context.ForumCode,
+                    postId = request.Context.PostId,
                     forums = (await GetForumsAsync(cancellationToken))
                         .Select(forum => new { forum.Code, forum.Name }),
                     helpTopics = articles.Select(article => new

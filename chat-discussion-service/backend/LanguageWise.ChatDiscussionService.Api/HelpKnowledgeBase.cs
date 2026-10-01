@@ -142,10 +142,11 @@ internal static class HelpKnowledgeBase
             AI mode is this assistant. It answers questions about how the discussion forum works,
             such as how to create, edit or delete a post, how commenting and likes work, and where
             to find your own posts.
-            It only helps with this forum. It can look up public posts and comments when relevant,
-            but it cannot create, edit or delete anything on your behalf.
+            It can look up public posts and comments, summarise a thread, and draft a post for you
+            to publish yourself. It can also search the LanguageWise documentation for questions
+            about other parts of LanguageWise. It cannot create, edit or delete anything on your behalf.
             """,
-            ["assistant", "chatbot", "bot", "help", "aimode", "support"])
+            ["assistant", "chatbot", "bot", "help", "aimode", "support", "summarise", "summarize", "summary", "draft"])
     ];
 
     /// <summary>

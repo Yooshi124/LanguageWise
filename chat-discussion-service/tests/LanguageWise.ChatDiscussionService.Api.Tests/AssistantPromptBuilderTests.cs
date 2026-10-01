@@ -24,6 +24,9 @@ public sealed class AssistantPromptBuilderTests
             Assert.That(messages[0].Role, Is.EqualTo("system"));
             Assert.That(messages[0].Content, Does.Contain("LanguageWise discussion forum"));
             Assert.That(messages[0].Content, Does.Contain("available read-only tools"));
+            Assert.That(messages[0].Content, Does.Contain("docs_search"));
+            Assert.That(messages[0].Content, Does.Contain("chat_get_post"));
+            Assert.That(messages[0].Content, Does.Contain("publish it themselves"));
             Assert.That(messages[1].Role, Is.EqualTo("system"));
             Assert.That(messages[^1].Role, Is.EqualTo("user"));
             Assert.That(messages[^1].Content, Is.EqualTo("How do I edit it?"));
