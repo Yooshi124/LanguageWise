@@ -62,6 +62,10 @@ class OllamaClient:
             "messages": messages,
             "stream": False,
             "format": inline_schema_refs(schema.model_json_schema()),
+            # Evict the model from RAM shortly after use instead of Ollama's own
+            # 5-minute default, so it doesn't sit resident alongside rag-server
+            # and mcp-server between review rounds.
+            "keep_alive": self._settings.ollama_keep_alive,
         }
 
         started = time.monotonic()
