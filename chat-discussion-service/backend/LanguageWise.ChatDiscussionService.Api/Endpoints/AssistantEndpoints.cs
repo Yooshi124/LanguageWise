@@ -9,7 +9,7 @@ namespace LanguageWise.ChatDiscussionService.Api.Endpoints;
 
 internal static class AssistantEndpoints
 {
-    private const string AssistantToolNamePattern = "^chat_[a-z_]{1,59}$";
+    private const string AssistantToolNamePattern = "^chat_[a-z_]{1,58}$";
     private const int MaxAssistantToolArgumentBytes = 2048;
 
     public static IEndpointRouteBuilder MapAssistantEndpoints(this IEndpointRouteBuilder app)
