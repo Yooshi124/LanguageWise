@@ -19,8 +19,11 @@ Each feature is a separate backend service with its own database.
 The Garry AI assistant retrieves grounding context from this RAG server by
 calling the `retrieve_context` MCP tool. Ask a natural-language question and it
 returns the most relevant passages, each labelled with its source service and
-heading. No other agent tools have been implemented for the feature services
-yet.
+heading.
+
+Feature-service tools are served by the shared MCP server, grouped by tool
+scope. The mini-games-service provides `games_get_completion_stats` and
+`games_list_game_languages` under the `games` scope.
 
 ## Services at a glance
 
