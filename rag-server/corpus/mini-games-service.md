@@ -23,4 +23,13 @@ When a round ends, definitions are revealed in a popup.
 
 ## For agents
 
-_No agent tools have been implemented for this service yet._
+The shared MCP server (`mcp-server/`) exposes two read-only mini games tools
+under the `games` tool scope. Both act on behalf of the signed-in user and return
+an error asking them to sign in when no user token is supplied.
+
+- **`games_get_completion_stats`** — the user's successful completion counts,
+  best times and current daily streak for Guess the Word, Word Search and
+  Associations. Takes an optional two-letter `courseCode` (for example `it` or
+  `fr`) to scope the stats to one language.
+- **`games_list_game_languages`** — the languages the user has unlocked
+  vocabulary for and can play the mini games in. Takes no arguments.
