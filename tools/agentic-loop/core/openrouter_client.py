@@ -310,10 +310,14 @@ class OpenRouterClient:
         one repair round (the same pattern as the mini-games vocabulary
         provider) before the call is declared failed.
         """
-        messages: list[dict[str, str]] = []
-        if system_instruction:
-            messages.append({"role": "system", "content": system_instruction})
-        messages.append({"role": "user", "content": prompt})
+        schema_text = json.dumps(inline_schema_refs(schema.model_json_schema()), indent=2)
+        system_text = (
+            f"{system_instruction}\n\n" if system_instruction else ""
+        ) + f"JSON schema your reply must match exactly (use these key names):\n{schema_text}"
+        messages: list[dict[str, str]] = [
+            {"role": "system", "content": system_text},
+            {"role": "user", "content": prompt},
+        ]
 
         model_name = model or self._settings.model
         response, _ = self._completion(
@@ -370,10 +374,23 @@ class OpenRouterClient:
                 part.get("text", "") for part in text if isinstance(part, dict)
             )
         if not text.strip():
+            usage = payload.get("usage") or {}
+            reasoning_tokens = int(
+                (usage.get("completion_tokens_details") or {}).get("reasoning_tokens") or 0
+            )
+            if reasoning_tokens or (message or {}).get("reasoning"):
+                raise OpenRouterError(
+                    f"OpenRouter returned no content (model={model}) - the model spent "
+                    f"its entire output budget on hidden reasoning ({reasoning_tokens} "
+                    "reasoning tokens) and had none left for the reply. Set "
+                    "THINKING_LEVEL blank in .env to stop requesting reasoning, or "
+                    "raise MAX_OUTPUT_TOKENS if reasoning is wanted."
+                )
             raise OpenRouterError(
                 f"OpenRouter returned an empty response (model={model}). "
                 "Check the model name in your .env file."
             )
+
 
         usage = payload.get("usage") or {}
         input_tokens = int(usage.get("prompt_tokens") or 0)

@@ -36,6 +36,9 @@ Example of one well-formed finding:
 
 Output rules (these matter as much as the content):
 - Emit the `findings` array FIRST, then `summary`.
+- Every object in `findings` MUST have all of: `title`, `problem`, `suggested_fix`,
+  `severity`. A finding missing any of these fields is rejected and the whole round
+  fails, so double-check each entry before finishing.
 - Do all of your reasoning before you start writing JSON. Never think, plan or
   narrate inside a JSON string.
 - `summary` is at most two sentences and never repeats the findings in prose. If

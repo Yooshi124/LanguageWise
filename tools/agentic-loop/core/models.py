@@ -115,7 +115,8 @@ class PlanItem(BaseModel):
 
 class ImplementationPlan(BaseModel):
     title: str = Field(default="Implementation Plan")
-    items: list[PlanItem] = Field(default_factory=list)
+    # Required: a plan is only built for >=1 accepted finding, so empty means wrong keys.
+    items: list[PlanItem] = Field(min_length=1)
     summary: str = Field(
         default="",
         description=(
