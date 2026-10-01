@@ -8,12 +8,15 @@ it through host.docker.internal:RAG_PORT. Run from the rag-server directory:
 The MCP endpoint is served at http://<host>:<port>/mcp. Plain REST endpoints are
 also exposed for callers without an MCP client:
 
-- POST /query            General documentation only. Used by feature backends for
-                         Garry's "Ask the docs" button. No key required.
-- POST /query/technical  General plus TECHNICAL- sections (service internals). For
-                         the internal agentic loop; requires the X-LanguageWise-Rag-Key
-                         header to match the key in RAG_TECHNICAL_KEY_PATH, which is
-                         generated on first start.
+- POST /query            General documentation only, without passages below the
+                         relevance floor. Used by the shared backend and the MCP
+                         docs_search tool. No key required.
+- POST /query/technical  General plus TECHNICAL- sections (service internals), all
+                         passages. For the internal agentic loop; requires the
+                         X-LanguageWise-Rag-Key header to match the key in
+                         RAG_TECHNICAL_KEY_PATH, which is generated on first start.
+
+Both return a confidence category (high, medium, low, insufficient) from the best match.
 
 The MCP retrieve_context tool is general-only.
 """
@@ -30,7 +33,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from rag.config import load_settings
-from rag.store import RetrievedChunk, query
+from rag.store import INSUFFICIENT, RetrievedChunk, confidence_for, query, relevance, supported
 
 TECHNICAL_KEY_HEADER = "X-LanguageWise-Rag-Key"
 MAX_RESULTS = 20
@@ -74,21 +77,24 @@ def retrieve_context(query_text: str, n_results: int = 5) -> str:
         n_results: Maximum number of passages to return (default 5).
 
     Returns:
-        The matching passages formatted as text, each labelled with its source
-        service and heading, ordered from most to least relevant.
+        A confidence category, then the matching passages formatted as text, each
+        labelled with its source service and heading, ordered from most to least
+        relevant. Says the context is insufficient when nothing matches closely.
     """
     chunks = query(settings, query_text, n_results=_clamp(n_results))
-    if not chunks:
+    confidence = confidence_for(chunks)
+    chunks = supported(chunks)
+    if confidence == INSUFFICIENT or not chunks:
         return (
-            "No matching context found. The index may be empty — run "
-            "`python ingest.py` to build it from the corpus."
+            "Confidence: insufficient. No LanguageWise documentation matches this question "
+            "closely enough to answer it."
         )
 
-    blocks: list[str] = []
+    blocks: list[str] = [f"Confidence: {confidence}"]
     for rank, chunk in enumerate(chunks, start=1):
         blocks.append(
             f"[{rank}] source: {chunk.source} | heading: {chunk.heading} "
-            f"| relevance: {1 - chunk.distance:.3f}\n{chunk.text}"
+            f"| relevance: {relevance(chunk):.3f}\n{chunk.text}"
         )
     return "\n\n---\n\n".join(blocks)
 
@@ -130,15 +136,18 @@ async def _query_response(request: Request, include_technical: bool) -> JSONResp
         return JSONResponse({"error": "'n_results' must be a whole number."}, status_code=400)
 
     chunks = query(settings, query_text, n_results=n_results, include_technical=include_technical)
+    confidence = confidence_for(chunks)
+    if not include_technical:
+        chunks = supported(chunks)
     results = [_result(chunk, include_technical) for chunk in chunks]
-    return JSONResponse({"results": results, "resultCount": len(results)})
+    return JSONResponse({"results": results, "resultCount": len(results), "confidence": confidence})
 
 
 def _result(chunk: RetrievedChunk, include_technical: bool) -> dict[str, object]:
     result: dict[str, object] = {
         "source": chunk.source,
         "heading": chunk.heading,
-        "relevance": round(1 - chunk.distance, 3),
+        "relevance": round(relevance(chunk), 3),
         "text": chunk.text,
     }
     if include_technical:

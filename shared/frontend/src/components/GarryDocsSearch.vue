@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import DOMPurify from 'dompurify'
 import MarkdownIt from 'markdown-it'
-import { nextTick, ref, watch } from 'vue'
-import { searchDocs, type DocsSearchResult } from '../composables/garryApi'
+import { computed, nextTick, ref, watch } from 'vue'
+import { askDocs, type DocsAnswer } from '../composables/garryApi'
 
 const props = defineProps<{ visible: boolean }>()
 const emit = defineEmits<{ close: [] }>()
@@ -10,12 +10,19 @@ const emit = defineEmits<{ close: [] }>()
 const cardRef = ref<HTMLElement | null>(null)
 const closeButtonRef = ref<HTMLButtonElement | null>(null)
 const query = ref('')
-const results = ref<DocsSearchResult[]>([])
+const answer = ref<DocsAnswer | null>(null)
 const loading = ref(false)
-const searched = ref(false)
 const error = ref('')
 const markdown = new MarkdownIt({ html: false, linkify: true, typographer: true })
 let previouslyFocused: Element | null = null
+
+const confidenceLabel = computed(() => {
+  const confidence = answer.value?.confidence
+  if (!confidence) return ''
+  return confidence === 'insufficient'
+    ? 'Insufficient context'
+    : `${confidence[0]!.toUpperCase()}${confidence.slice(1)} confidence`
+})
 
 function close() {
   emit('close')
@@ -59,8 +66,7 @@ watch(
   (isVisible) => {
     if (isVisible) {
       query.value = ''
-      results.value = []
-      searched.value = false
+      answer.value = null
       error.value = ''
       previouslyFocused = document.activeElement
       void nextTick(() => closeButtonRef.value?.focus())
@@ -77,14 +83,13 @@ async function submit() {
 
   loading.value = true
   error.value = ''
+  answer.value = null
   try {
-    results.value = await searchDocs(trimmed)
+    answer.value = await askDocs(trimmed)
   } catch (caught) {
-    results.value = []
-    error.value = caught instanceof Error ? caught.message : 'Could not search the docs right now.'
+    error.value = caught instanceof Error ? caught.message : 'Could not ask the docs right now.'
   } finally {
     loading.value = false
-    searched.value = true
   }
 }
 </script>
@@ -107,7 +112,7 @@ async function submit() {
             ref="closeButtonRef"
             type="button"
             class="docs-search-card__close"
-            aria-label="Close docs search"
+            aria-label="Close Ask the docs"
             @click="close"
           >
             &times;
@@ -120,33 +125,50 @@ async function submit() {
             type="search"
             class="docs-search-form__input"
             placeholder="How does the leaderboard work?"
-            aria-label="Search the documentation"
+            aria-label="Ask a question about LanguageWise"
           />
           <button
             type="submit"
             class="docs-search-form__submit"
             :disabled="loading || !query.trim()"
           >
-            {{ loading ? 'Searching…' : 'Search' }}
+            {{ loading ? 'Asking…' : 'Ask' }}
           </button>
         </form>
 
         <p v-if="error" class="docs-search-error">{{ error }}</p>
 
-        <ul v-else-if="results.length" class="docs-search-results">
-          <li
-            v-for="(result, index) in results"
-            :key="`${result.source}-${index}`"
-            class="docs-search-results__item"
-          >
-            <span class="docs-search-results__source">{{ result.source }} — {{ result.heading }}</span>
-            <div class="docs-search-results__text" v-html="render(result.text)" />
-          </li>
-        </ul>
-
-        <p v-else-if="searched && !loading" class="docs-search-empty">
-          No matching documentation found.
+        <p v-else-if="loading" class="docs-search-empty" aria-live="polite">
+          Garry is reading the docs…
         </p>
+
+        <div v-else-if="answer" class="docs-search-body" aria-live="polite">
+          <span
+            class="docs-answer__confidence"
+            :class="`docs-answer__confidence--${answer.confidence}`"
+          >
+            {{ confidenceLabel }}
+          </span>
+          <div class="docs-search-results__text" v-html="render(answer.answer)" />
+
+          <section v-if="answer.citations.length" class="docs-answer__sources">
+            <h3>Sources</h3>
+            <ol class="docs-search-results">
+              <li
+                v-for="citation in answer.citations"
+                :key="citation.number"
+                class="docs-search-results__item"
+              >
+                <details>
+                  <summary class="docs-search-results__source">
+                    [{{ citation.number }}] {{ citation.source }} — {{ citation.heading }}
+                  </summary>
+                  <div class="docs-search-results__text" v-html="render(citation.text)" />
+                </details>
+              </li>
+            </ol>
+          </section>
+        </div>
       </div>
     </div>
   </Teleport>

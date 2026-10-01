@@ -119,7 +119,7 @@ public sealed class McpEndpointTests
 	public async Task DocsSearch_QueriesGeneralRagEndpointAndReturnsPassages()
 	{
 		factory.Downstream.Body = """
-			{"results":[{"source":"quests-achievements-notifications-service","heading":"Notification preferences","relevance":0.7,"text":"A master switch turns all emails on or off."}],"resultCount":1}
+			{"results":[{"source":"quests-achievements-notifications-service","heading":"Notification preferences","relevance":0.7,"text":"A master switch turns all emails on or off."}],"resultCount":1,"confidence":"high"}
 			""";
 		await using var client = await factory.CreateMcpClientAsync("chat", factory.CreateUserToken());
 
@@ -134,8 +134,26 @@ public sealed class McpEndpointTests
 			Assert.That(request.RequestUri!.AbsolutePath, Is.EqualTo("/query"));
 			Assert.That(body.RootElement.GetProperty("query").GetString(), Is.EqualTo("notifications page"));
 			Assert.That(body.RootElement.GetProperty("n_results").GetInt32(), Is.EqualTo(5));
+			Assert.That(result.StructuredContent!.Value.GetProperty("confidence").GetString(), Is.EqualTo("high"));
 			Assert.That(passage.GetProperty("heading").GetString(), Is.EqualTo("Notification preferences"));
+			Assert.That(passage.GetProperty("relevance").GetDouble(), Is.EqualTo(0.7));
 			Assert.That(passage.GetProperty("text").GetString(), Does.Contain("master switch"));
+		});
+	}
+
+	[Test]
+	public async Task DocsSearch_WithNoRelevantPassages_ReportsInsufficientContext()
+	{
+		factory.Downstream.Body = """{"results":[],"resultCount":0,"confidence":"insufficient"}""";
+		await using var client = await factory.CreateMcpClientAsync("chat", factory.CreateUserToken());
+
+		var result = await client.CallToolAsync("docs_search", new Dictionary<string, object?> { ["query"] = "how do I cook pasta" });
+
+		Assert.Multiple(() =>
+		{
+			Assert.That(result.IsError, Is.Not.True);
+			Assert.That(result.StructuredContent!.Value.GetProperty("confidence").GetString(), Is.EqualTo("insufficient"));
+			Assert.That(result.StructuredContent!.Value.GetProperty("passages").GetArrayLength(), Is.Zero);
 		});
 	}
 

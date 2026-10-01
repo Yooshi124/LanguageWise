@@ -23,7 +23,10 @@ public sealed class GarryToolLoop(
 		When the learner asks how any LanguageWise page, feature or service works (including ones outside
 		the current page) and your context does not answer it, call docs_search before saying you do not
 		have that information. Its passages are approved LanguageWise documentation, so you may answer from
-		them in your own words even where the rules above say to use only the supplied context.
+		them even where the rules above say to use only the supplied context. Cite each passage you use
+		inline with its cite number in square brackets, for example [1]. Do not write a sources list or a
+		confidence rating yourself; they are added for you. If docs_search reports confidence
+		"insufficient", tell the learner the LanguageWise docs do not cover that instead of guessing.
 		""";
 	// Docs lookups are background research for Garry's answer, so they never appear as result cards.
 	private const string HiddenToolPrefix = "docs_";
@@ -73,13 +76,14 @@ public sealed class GarryToolLoop(
 		var callsMade = 0;
 		var callsOverLimit = 0;
 		var completedCalls = new Dictionary<string, ToolEvent>(StringComparer.Ordinal);
+		var citations = new DocsCitations();
 		for (var round = 0; round < MaxRounds; round++)
 		{
 			var reply = await CompleteAsync(provider, messages, toolSchema, allowTools: true, cancellationToken);
 			if (reply.ToolCalls.Count == 0)
 			{
 				LogLimitReached(request.ToolScope, callsOverLimit, roundsExhausted: false);
-				return reply.Content;
+				return citations.AppendTo(reply.Content);
 			}
 
 			messages.Add(reply.AssistantMessage);
@@ -110,6 +114,10 @@ public sealed class GarryToolLoop(
 				{
 					callsMade++;
 					toolEvent = await CallToolAsync(session, call.Name, arguments, cancellationToken);
+					if (call.Name.StartsWith(HiddenToolPrefix, StringComparison.Ordinal) && !toolEvent.IsError)
+					{
+						toolEvent = toolEvent with { Result = citations.Number(toolEvent.Result) };
+					}
 					completedCalls[callKey] = toolEvent;
 				}
 
@@ -123,7 +131,7 @@ public sealed class GarryToolLoop(
 
 		LogLimitReached(request.ToolScope, callsOverLimit, roundsExhausted: true);
 		var final = await CompleteAsync(provider, messages, toolSchema, allowTools: false, cancellationToken);
-		return final.Content;
+		return citations.AppendTo(final.Content);
 	}
 
 	private void LogLimitReached(string scope, int callsOverLimit, bool roundsExhausted)

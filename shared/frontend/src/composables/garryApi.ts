@@ -12,15 +12,24 @@ export interface AssistantMessageRequest {
   context: Record<string, unknown>
 }
 
-export interface DocsSearchResult {
+export type DocsConfidence = 'high' | 'medium' | 'low' | 'insufficient'
+
+export interface DocsCitation {
+  number: number
   source: string
   heading: string
   relevance: number
   text: string
 }
 
-export async function searchDocs(query: string) {
-  const response = await fetch('/api/rag/query', {
+export interface DocsAnswer {
+  answer: string
+  confidence: DocsConfidence
+  citations: DocsCitation[]
+}
+
+export async function askDocs(query: string): Promise<DocsAnswer> {
+  const response = await fetch('/api/rag/answer', {
     method: 'POST',
     credentials: 'same-origin',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
@@ -33,11 +42,15 @@ export async function searchDocs(query: string) {
       : undefined
     throw new GarryApiError(
       response.status,
-      validationError || problem?.title || 'Could not search the docs right now.',
+      validationError || problem?.title || 'Could not ask the docs right now.',
     )
   }
-  const body = (await response.json()) as { results?: DocsSearchResult[] }
-  return Array.isArray(body.results) ? body.results : []
+  const body = (await response.json()) as Partial<DocsAnswer>
+  return {
+    answer: body.answer ?? '',
+    confidence: body.confidence ?? 'insufficient',
+    citations: Array.isArray(body.citations) ? body.citations : [],
+  }
 }
 
 interface AssistantStreamHandlers {

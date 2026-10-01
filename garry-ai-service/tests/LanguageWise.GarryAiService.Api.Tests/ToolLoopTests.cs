@@ -84,7 +84,15 @@ public sealed class ToolLoopTests
 		var docsCall = """
 			{"message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"docs_search","arguments":{"query":"notifications page"}}}]},"done":true}
 			""";
-		using var fixture = new ToolFixture(docsCall, FinalAnswer);
+		var citedAnswer = """
+			{"message":{"role":"assistant","content":"Use the master switch [1]. Ignore this [7]."},"done":true}
+			""";
+		using var fixture = new ToolFixture(docsCall, citedAnswer);
+		fixture.Mcp.ResultsByTool["docs_search"] = """
+			{"confidence":"medium","passages":[
+			 {"source":"quests-achievements-notifications-service","heading":"Notification preferences","relevance":0.4,"text":"A master switch."},
+			 {"source":"quests-achievements-notifications-service","heading":"For users","relevance":0.3,"text":"Other."}]}
+			""";
 		using var client = fixture.CreateAuthorizedClient();
 
 		using var response = await client.PostAsJsonAsync("/api/completions", Request("chat"));
@@ -94,9 +102,43 @@ public sealed class ToolLoopTests
 		{
 			Assert.That(fixture.Mcp.Calls.Single().Name, Is.EqualTo("docs_search"));
 			Assert.That(fixture.Provider.ToolRequests[1], Does.Contain("\"role\":\"tool\""));
+			Assert.That(fixture.Provider.ToolRequests[1], Does.Contain("\\u0022cite\\u0022:2"));
 			Assert.That(content, Does.Not.Contain("event: tool"));
-			Assert.That(content, Does.Contain("You finished 1 of 2 lessons."));
+			Assert.That(content, Does.Contain("Use the master switch [1]."));
+			Assert.That(content, Does.Not.Contain("[7]"));
+			Assert.That(content, Does.Contain("- [1] quests-achievements-notifications-service"));
+			Assert.That(content, Does.Not.Contain("[2] quests-achievements-notifications-service"));
+			Assert.That(content, Does.Contain("**Confidence:** Medium"));
 		});
+	}
+
+	[Test]
+	public async Task DocsSearch_WithInsufficientContext_SaysSoInFooter()
+	{
+		var docsCall = """
+			{"message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"docs_search","arguments":{"query":"pasta"}}}]},"done":true}
+			""";
+		using var fixture = new ToolFixture(docsCall, FinalAnswer);
+		fixture.Mcp.ResultsByTool["docs_search"] = """{"confidence":"insufficient","passages":[]}""";
+		using var client = fixture.CreateAuthorizedClient();
+
+		using var response = await client.PostAsJsonAsync("/api/completions", Request("chat"));
+		var content = await response.Content.ReadAsStringAsync();
+
+		Assert.That(content, Does.Contain("**Confidence:** Insufficient context."));
+		Assert.That(content, Does.Not.Contain("**Sources**"));
+	}
+
+	[Test]
+	public async Task WithoutDocsSearch_AnswerHasNoSourcesFooter()
+	{
+		using var fixture = new ToolFixture(ProgressToolCall, FinalAnswer);
+		using var client = fixture.CreateAuthorizedClient();
+
+		using var response = await client.PostAsJsonAsync("/api/completions", Request("courses"));
+		var content = await response.Content.ReadAsStringAsync();
+
+		Assert.That(content, Does.Not.Contain("Confidence"));
 	}
 
 	[Test]
@@ -334,6 +376,7 @@ public sealed class ToolLoopTests
 		public bool FailToConnect { get; set; }
 		public List<(string Scope, string? UserToken)> Connections { get; } = [];
 		public List<(string Name, IReadOnlyDictionary<string, JsonElement> Arguments)> Calls { get; } = [];
+		public Dictionary<string, string> ResultsByTool { get; } = [];
 
 		public Task<IMcpToolSession> ConnectAsync(string scope, string? userToken, CancellationToken cancellationToken)
 		{
@@ -360,7 +403,8 @@ public sealed class ToolLoopTests
 			public Task<McpToolCallResult> CallToolAsync(string name, IReadOnlyDictionary<string, JsonElement> arguments, CancellationToken cancellationToken)
 			{
 				owner.Calls.Add((name, arguments));
-				return Task.FromResult(new McpToolCallResult(false, JsonDocument.Parse("""{"lessonsCompleted":1,"lessonsTotal":2}""").RootElement));
+				var result = owner.ResultsByTool.GetValueOrDefault(name, """{"lessonsCompleted":1,"lessonsTotal":2}""");
+				return Task.FromResult(new McpToolCallResult(false, JsonDocument.Parse(result).RootElement));
 			}
 
 			public ValueTask DisposeAsync() => ValueTask.CompletedTask;
