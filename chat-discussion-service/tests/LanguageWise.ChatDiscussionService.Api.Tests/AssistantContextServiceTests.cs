@@ -110,7 +110,7 @@ public sealed class AssistantContextServiceTests
         });
     }
 
-    // The assistant explains the site rather than reading it.
+    // Live thread content is fetched through scoped MCP tools, not injected into help context.
     [Test]
     public async Task BuildCanonicalContext_CarriesNoPostContentEvenOnAPostPage()
     {

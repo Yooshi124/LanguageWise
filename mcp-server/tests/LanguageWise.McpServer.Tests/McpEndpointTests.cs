@@ -89,6 +89,21 @@ public sealed class McpEndpointTests
 	}
 
 	[Test]
+	public async Task ListTools_WithChatScope_ReturnsOnlyReadOnlyDiscussionTools()
+	{
+		await using var client = await factory.CreateMcpClientAsync("chat");
+		var tools = await client.ListToolsAsync();
+		Assert.That(tools.Select(t => t.Name), Is.EquivalentTo(new[]
+		{
+			"chat_list_forums",
+			"chat_search_posts",
+			"chat_get_post",
+			"docs_search"
+		}));
+		Assert.That(tools.All(t => t.ProtocolTool.Annotations?.ReadOnlyHint == true), Is.True);
+	}
+
+	[Test]
 	public async Task ListTools_WithQuestsScope_ReturnsOnlyQuestsToolsWithAccurateHints()
 	{
 		await using var client = await factory.CreateMcpClientAsync("quests");
@@ -106,7 +121,6 @@ public sealed class McpEndpointTests
 			Is.EquivalentTo(new[] { "quests_get_my_preferences", "quests_get_my_achievements", "docs_search" }));
 	}
 
-	[TestCase("chat")]
 	[TestCase("leaderboard")]
 	public async Task ListTools_ForScopesWithoutOwnTools_OffersOnlyDocsSearch(string scope)
 	{
@@ -280,6 +294,54 @@ public sealed class McpEndpointTests
 		await using var client = await factory.CreateMcpClientAsync("games", factory.CreateUserToken());
 		Assert.ThrowsAsync<McpProtocolException>(async () => await client.CallToolAsync("courses_list_courses"));
 		Assert.That(factory.Downstream.Requests, Is.Empty);
+	}
+
+	[Test]
+	public async Task SearchPosts_ForwardsUserTokenAndMapsSearchResults()
+	{
+		var token = factory.CreateUserToken();
+		factory.Downstream.Body = """
+			[{"id":7,"userId":42,"authorName":"tester","title":"Italian greetings","content":"Ciao!","forumCode":"italian","forumName":"Italian","createdAt":"2026-09-30T10:00:00Z","updatedAt":"2026-09-30T10:00:00Z","commentCount":2,"likeCount":3,"likedByViewer":false,"matchedCommentExcerpt":null}]
+			""";
+		await using var client = await factory.CreateMcpClientAsync("chat", token);
+
+		var result = await client.CallToolAsync("chat_search_posts", new Dictionary<string, object?>
+		{
+			["query"] = "Italian greetings",
+			["forumCode"] = "italian",
+			["limit"] = 5
+		});
+
+		Assert.That(result.IsError, Is.Not.True);
+		var request = factory.Downstream.Requests.Single();
+		Assert.Multiple(() =>
+		{
+			Assert.That(request.RequestUri!.PathAndQuery, Is.EqualTo("/api/posts?q=Italian%20greetings&limit=5&offset=0&forumCode=italian"));
+			Assert.That(request.Headers.Authorization?.Parameter, Is.EqualTo(token));
+			var post = result.StructuredContent!.Value.GetProperty("posts")[0];
+			Assert.That(post.GetProperty("postId").GetInt32(), Is.EqualTo(7));
+			Assert.That(post.GetProperty("content").GetString(), Is.EqualTo("Ciao!"));
+		});
+	}
+
+	[Test]
+	public async Task GetPost_ReturnsPostAndCommentsWithoutImageMetadata()
+	{
+		factory.Downstream.Body = """
+			{"id":7,"userId":42,"authorName":"tester","title":"Italian greetings","content":"Ciao!","forumCode":"italian","forumName":"Italian","createdAt":"2026-09-30T10:00:00Z","updatedAt":"2026-09-30T10:00:00Z","commentCount":1,"likeCount":3,"likedByViewer":false,"images":[{"id":1}],"comments":[{"id":9,"postId":7,"userId":43,"authorName":"learner","content":"Grazie!","createdAt":"2026-09-30T11:00:00Z","updatedAt":"2026-09-30T11:00:00Z","likeCount":1,"likedByViewer":false,"images":[]}],"commentsHasMore":false}
+			""";
+		await using var client = await factory.CreateMcpClientAsync("chat", factory.CreateUserToken());
+
+		var result = await client.CallToolAsync("chat_get_post", new Dictionary<string, object?> { ["postId"] = 7 });
+
+		Assert.That(result.IsError, Is.Not.True);
+		Assert.That(factory.Downstream.Requests.Single().RequestUri!.AbsolutePath, Is.EqualTo("/api/posts/7"));
+		var content = result.StructuredContent!.Value;
+		Assert.Multiple(() =>
+		{
+			Assert.That(content.GetProperty("comments")[0].GetProperty("content").GetString(), Is.EqualTo("Grazie!"));
+			Assert.That(content.TryGetProperty("images", out _), Is.False);
+		});
 	}
 
 	[Test]

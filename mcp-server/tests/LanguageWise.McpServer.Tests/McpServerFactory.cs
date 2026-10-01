@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using LanguageWise.McpServer.Security;
+using LanguageWise.McpServer.Tools.ChatDiscussion;
 using LanguageWise.McpServer.Tools.Docs;
 using LanguageWise.McpServer.Tools.MiniGames;
 using LanguageWise.McpServer.Tools.QuestsAchievements;
@@ -37,6 +38,7 @@ public sealed class McpServerFactory : WebApplicationFactory<Program>
 		builder.UseSetting("Auth:VerificationKeyPath", publicKeyPath);
 		builder.UseSetting("Services:QuizzesCourses", "http://quizzes.test");
 		builder.UseSetting("Services:MiniGames", "http://mini-games.test");
+		builder.UseSetting("Services:ChatDiscussion", "http://chat-discussion.test");
 		builder.UseSetting("Services:QuestsAchievements", "http://quests.test");
 		builder.UseSetting("Services:Rag", "http://rag.test");
 		builder.UseSetting("Rag:Enabled", RagEnabled ? "true" : "false");
@@ -45,6 +47,8 @@ public sealed class McpServerFactory : WebApplicationFactory<Program>
 			services.AddHttpClient(QuizzesCoursesTools.ServiceName)
 				.ConfigurePrimaryHttpMessageHandler(() => Downstream);
 			services.AddHttpClient(MiniGamesTools.ServiceName)
+				.ConfigurePrimaryHttpMessageHandler(() => Downstream);
+			services.AddHttpClient(ChatDiscussionTools.ServiceName)
 				.ConfigurePrimaryHttpMessageHandler(() => Downstream);
 			services.AddHttpClient(QuestsAchievementsTools.ServiceName)
 				.ConfigurePrimaryHttpMessageHandler(() => Downstream);

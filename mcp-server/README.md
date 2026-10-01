@@ -37,6 +37,7 @@ Windows may show a firewall prompt the first time; allow private networks so Doc
 | `Downstream:TimeoutSeconds` | `10` | Downstream API timeout |
 | `Services:QuizzesCourses` | `http://localhost:5003` | quizzes-courses-service API |
 | `Services:MiniGames` | `http://localhost:5001` | mini-games-service API |
+| `Services:ChatDiscussion` | `http://localhost:5002` | chat-discussion-service API |
 | `Services:QuestsAchievements` | `http://localhost:5004` | quests-achievements-notifications-service API |
 | `Services:Rag` | `http://localhost:8100` | RAG server; `docs_search` (offered in every scope) uses its general `POST /query` |
 
@@ -64,6 +65,9 @@ All tools are read-only, validate their inputs, time out after 10 s, cap results
 | `courses_get_flashcards` | `courseCode`, `lessonSlug` | `GET /api/courses/{code}/flashcard-decks/{slug}` |
 | `courses_get_my_vocabulary` | `courseCode` (optional) | `GET /api/me/vocabulary` |
 | `courses_get_my_milestones` | `limit` (1-50, default 10) | `GET /api/me/milestones`, plus `/api/courses`, `/lessons` and `/quizzes` to add names |
+| `chat_list_forums` | – | `GET /api/forums` |
+| `chat_search_posts` | `query`, `forumCode` (optional), `limit` (1-10) | `GET /api/posts` |
+| `chat_get_post` | `postId` | `GET /api/posts/{id}` including its comment preview |
 
 Quiz details (`GET /api/quizzes/{id}`) and every write endpoint are deliberately not exposed: the first can include answers, and tools must stay read-only.
 

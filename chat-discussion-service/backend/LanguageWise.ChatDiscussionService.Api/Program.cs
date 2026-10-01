@@ -28,6 +28,9 @@ builder.Services.AddHttpClient<AchievementEventsClient>(client =>
 });
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient(McpToolClient.HttpClientName, client =>
+    client.Timeout = TimeSpan.FromSeconds(builder.Configuration.GetValue("Mcp:TimeoutSeconds", 15)));
+builder.Services.AddSingleton<IMcpToolClient, McpToolClient>();
 builder.Services.AddHttpClient<IAssistantCompletionClient, GarryCompletionClient>(client =>
 {
     client.BaseAddress = new Uri((builder.Configuration["Services:Garry"] ?? "http://localhost:5010").TrimEnd('/') + "/");
