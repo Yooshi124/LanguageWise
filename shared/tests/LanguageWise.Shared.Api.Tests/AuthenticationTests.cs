@@ -162,16 +162,20 @@ public sealed class AuthenticationTests
             AppContext.BaseDirectory,
             $"shared-auth-test-key-{Guid.NewGuid():N}.pem");
         private readonly int? streakValue;
+        private readonly bool ragEnabled;
 
-        internal ApiFixture(int? streakValue = null)
+        internal ApiFixture(int? streakValue = null, bool ragEnabled = true)
         {
             this.streakValue = streakValue;
+            this.ragEnabled = ragEnabled;
             File.WriteAllText(signingKeyPath, signingKey.ExportRSAPrivateKeyPem());
         }
 
         internal RecordingAchievementsHandler AchievementsHandler { get; } = new();
 
         internal RecordingRagHandler RagHandler { get; } = new();
+
+        internal RecordingGarryHandler GarryHandler { get; } = new();
 
         internal HttpClient CreateCookieClient(string token)
         {
@@ -217,6 +221,7 @@ public sealed class AuthenticationTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseSetting("Auth:SigningKeyPath", signingKeyPath);
+            builder.UseSetting("Rag:Enabled", ragEnabled ? "true" : "false");
             builder.ConfigureAppConfiguration((_, configuration) =>
             {
                 configuration.AddInMemoryCollection(new Dictionary<string, string?>
@@ -240,6 +245,11 @@ public sealed class AuthenticationTests
                 services.AddSingleton(new RagClient(new HttpClient(RagHandler)
                 {
                     BaseAddress = new Uri("http://rag/")
+                }));
+                services.RemoveAll<GarryClient>();
+                services.AddSingleton(new GarryClient(new HttpClient(GarryHandler)
+                {
+                    BaseAddress = new Uri("http://garry/")
                 }));
             });
         }
@@ -276,6 +286,7 @@ public sealed class AuthenticationTests
         internal string? Path { get; private set; }
         internal string? RequestBody { get; private set; }
         internal HttpStatusCode StatusCode { get; set; } = HttpStatusCode.OK;
+        internal string Confidence { get; set; } = "high";
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -283,22 +294,55 @@ public sealed class AuthenticationTests
         {
             Path = request.RequestUri?.AbsolutePath;
             RequestBody = await request.Content!.ReadAsStringAsync(cancellationToken);
+            var results = new[]
+                {
+                    new
+                    {
+                        source = "leaderboard-analytics-service",
+                        heading = "For users",
+                        relevance = 0.565,
+                        text = "# leaderboard-analytics-service\n## For users\n\nGlobal analytics comparing you against other students."
+                    },
+                    new
+                    {
+                        source = "leaderboard-analytics-service",
+                        heading = "Rankings",
+                        relevance = 0.41,
+                        text = "Rankings refresh daily."
+                    }
+                }.Where(_ => Confidence != "insufficient").ToArray();
             return new HttpResponseMessage(StatusCode)
             {
                 Content = JsonContent.Create(new
                 {
-                    results = new[]
-                    {
-                        new
-                        {
-                            source = "leaderboard-analytics-service",
-                            heading = "For users",
-                            relevance = 0.565,
-                            text = "Global analytics comparing you against other students."
-                        }
-                    },
-                    resultCount = 1
+                    results,
+                    resultCount = results.Length,
+                    confidence = Confidence
                 })
+            };
+        }
+    }
+
+    internal sealed class RecordingGarryHandler : HttpMessageHandler
+    {
+        internal int RequestCount { get; private set; }
+        internal string? Authorization { get; private set; }
+        internal string? RequestBody { get; private set; }
+        internal HttpStatusCode StatusCode { get; set; } = HttpStatusCode.OK;
+        internal string Answer { get; set; } = "Compare yourself with other students [1]. Made up [9].";
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            Authorization = request.Headers.Authorization?.ToString();
+            RequestBody = await request.Content!.ReadAsStringAsync(cancellationToken);
+            var delta = JsonSerializer.Serialize(new { content = Answer });
+            return new HttpResponseMessage(StatusCode)
+            {
+                Content = new StringContent(
+                    $"event: delta\ndata: {delta}\n\nevent: done\ndata: {{\"reason\":\"stop\"}}\n\n")
             };
         }
     }

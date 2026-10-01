@@ -6,7 +6,8 @@ namespace LanguageWise.Shared.Api.Clients;
 
 public sealed record RagResult(string Source, string Heading, double Relevance, string Text);
 
-public sealed record RagQueryResponse(IReadOnlyList<RagResult> Results, int ResultCount);
+/// <param name="Confidence">high, medium, low, or insufficient, from the RAG server's best match.</param>
+public sealed record RagQueryResponse(IReadOnlyList<RagResult> Results, int ResultCount, string? Confidence);
 
 /// <summary>
 /// Client for the host RAG server's general endpoint (<c>POST /query</c>), which never returns
@@ -29,7 +30,7 @@ public sealed class RagClient(HttpClient httpClient)
         response.EnsureSuccessStatusCode();
 
         var payload = await response.Content.ReadFromJsonAsync<RagQueryResponse>(JsonOptions, cancellationToken);
-        return payload ?? new RagQueryResponse([], 0);
+        return payload ?? new RagQueryResponse([], 0, null);
     }
 
     // The RAG server expects snake_case for n_results; everything else matches its default casing.

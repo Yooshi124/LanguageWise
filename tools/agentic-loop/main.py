@@ -298,8 +298,11 @@ def run_repl(
                     console.print_error(str(exc))
                     continue
                 if not result.results:
-                    console.print_warning("No matching passages found.")
+                    console.print_warning(
+                        f"No matching passages found (confidence: {result.confidence})."
+                    )
                     continue
+                console.print_info(f"Confidence: {result.confidence}")
                 for rank, item in enumerate(result.results, start=1):
                     console.print_info(
                         f"[{rank}] {item.source} | {item.heading} "

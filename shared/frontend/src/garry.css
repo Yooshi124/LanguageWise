@@ -80,11 +80,20 @@
 .docs-search-form__submit:disabled { opacity: .5; cursor: not-allowed; }
 .docs-search-error { margin: 0; padding: 0 1.25rem 1.25rem; color: #d92d20; }
 .docs-search-empty { margin: 0; padding: 0 1.25rem 1.5rem; color: #98a2b3; }
-.docs-search-results { margin: 0; padding: 0 1.25rem 1.25rem; overflow-y: auto; list-style: none; }
-.docs-search-results__item { padding: .7rem 0; border-bottom: 1px solid #f1f2f6; }
+.docs-search-body { padding: 0 1.25rem 1.25rem; overflow-y: auto; }
+.docs-answer__confidence { display: inline-block; margin-bottom: .6rem; padding: .15rem .6rem; border-radius: 999px; font-size: .75rem; font-weight: 700; }
+.docs-answer__confidence--high { color: #067647; background: #dcfae6; }
+.docs-answer__confidence--medium { color: #93370d; background: #fef0c7; }
+.docs-answer__confidence--low { color: #b42318; background: #fee4e2; }
+.docs-answer__confidence--insufficient { color: #475467; background: #f2f4f7; }
+.docs-answer__sources { margin-top: 1rem; padding-top: .6rem; border-top: 1px solid #ececf1; }
+.docs-answer__sources h3 { margin: 0 0 .2rem; color: #1c2b45; font-size: .85rem; font-weight: 800; }
+.docs-search-results { margin: 0; padding: 0; list-style: none; }
+.docs-search-results__item { padding: .5rem 0; border-bottom: 1px solid #f1f2f6; }
 .docs-search-results__item:last-child { border-bottom: 0; }
-.docs-search-results__source { display: block; color: #4338ca; font-size: .78rem; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
-.docs-search-results__text { margin-top: .35rem; color: #475467; font-size: .9rem; line-height: 1.5; overflow-wrap: anywhere; }
+.docs-search-results__source { color: #4338ca; font-size: .78rem; font-weight: 700; letter-spacing: .02em; cursor: pointer; }
+.docs-search-results__item .docs-search-results__text { margin-top: .35rem; }
+.docs-search-results__text { color: #475467; font-size: .9rem; line-height: 1.5; overflow-wrap: anywhere; }
 .docs-search-results__text > :first-child { margin-top: 0; }
 .docs-search-results__text > :last-child { margin-bottom: 0; }
 .docs-search-results__text h1, .docs-search-results__text h2, .docs-search-results__text h3, .docs-search-results__text h4 { margin: .9em 0 .35em; color: #1c2b45; font-weight: 800; line-height: 1.25; }

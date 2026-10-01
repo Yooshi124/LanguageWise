@@ -36,6 +36,14 @@ builder.Services.AddHttpClient<RagClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(15);
 });
 
+var garryServiceUrl = builder.Configuration["Services:Garry"] ?? "http://localhost:5010";
+builder.Services.AddHttpClient<GarryClient>(client =>
+{
+    client.BaseAddress = new Uri(garryServiceUrl.TrimEnd('/') + "/");
+    // Local Ollama can take a while to load the model on the first question.
+    client.Timeout = TimeSpan.FromSeconds(120);
+});
+
 // Load Signing Key
 var signingKeyPath = builder.Configuration["Auth:SigningKeyPath"] ?? "/run/secrets/signing_key";
 var rsa = RSA.Create();
@@ -103,7 +111,7 @@ void IssueSessionCookie(HttpContext ctx, int userId, string username)
     });
 }
 
-// Each docs search runs a local embedding model, so limit how often one session can search.
+// Each docs answer runs a local embedding model and a Garry completion (limited to 10/min per user).
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -112,7 +120,7 @@ builder.Services.AddRateLimiter(options =>
             partitionKey: ReadSessionUser(context)?.Id.ToString() ?? "anonymous",
             factory: _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 20,
+                PermitLimit = 10,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0
             }));
@@ -187,17 +195,28 @@ app.MapPost("/api/logout", (HttpContext ctx) =>
     return Results.Ok();
 });
 
-// "Ask the docs" search for Garry on every feature. Proxies the RAG server's general endpoint,
-// which never returns TECHNICAL- (internal) passages.
-app.MapPost("/api/rag/query", async (
+// "Ask the docs" for Garry on every feature: a cited answer from the RAG server's general
+// endpoint (never TECHNICAL- passages), or a fixed insufficient-context reply without calling Garry.
+app.MapPost("/api/rag/answer", async (
     HttpContext ctx,
-    RagQueryApiRequest? request,
+    DocsAnswerApiRequest? request,
+    IConfiguration configuration,
     RagClient ragClient,
+    GarryClient garryClient,
     CancellationToken cancellationToken) =>
 {
     if (ReadSessionUser(ctx) is null)
     {
         return Results.Unauthorized();
+    }
+
+    // Rag:Enabled=false (as in CI) keeps the RAG server and Garry out of the request path.
+    if (!configuration.GetValue("Rag:Enabled", true))
+    {
+        return Results.Problem(
+            title: "Ask the docs is turned off on this server.",
+            statusCode: StatusCodes.Status503ServiceUnavailable,
+            extensions: new Dictionary<string, object?> { ["code"] = "rag_disabled" });
     }
 
     var query = request?.Query?.Trim();
@@ -209,9 +228,10 @@ app.MapPost("/api/rag/query", async (
         });
     }
 
+    RagQueryResponse retrieved;
     try
     {
-        return Results.Ok(await ragClient.QueryAsync(query, request!.NResults, cancellationToken));
+        retrieved = await ragClient.QueryAsync(query, DocsAnswers.PassageCount, cancellationToken);
     }
     catch (Exception exception) when (
         exception is HttpRequestException or System.Text.Json.JsonException
@@ -225,6 +245,44 @@ app.MapPost("/api/rag/query", async (
             detail: "Please try again.",
             statusCode: StatusCodes.Status502BadGateway);
     }
+
+    if (retrieved.Results.Count == 0
+        || retrieved.Confidence is null or DocsAnswers.InsufficientConfidence)
+    {
+        return Results.Ok(DocsAnswers.Insufficient());
+    }
+
+    string answer;
+    try
+    {
+        answer = await garryClient.CompleteAsync(
+            ctx.Request.Cookies["token"]!,
+            DocsAnswers.DomainRules,
+            DocsAnswers.BuildContext(retrieved.Results),
+            query,
+            cancellationToken);
+    }
+    catch (GarryException exception) when (exception.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+    {
+        return Results.Problem(
+            title: "Garry is answering too many questions right now.",
+            detail: "Please wait a minute and try again.",
+            statusCode: StatusCodes.Status429TooManyRequests);
+    }
+    catch (Exception exception) when (
+        exception is GarryException or HttpRequestException or System.Text.Json.JsonException
+        || (exception is TaskCanceledException && !cancellationToken.IsCancellationRequested))
+    {
+        app.Logger.LogWarning(
+            "Garry docs answer failed with error type {ErrorType}.",
+            exception.GetType().Name);
+        return Results.Problem(
+            title: "Garry couldn't write an answer right now.",
+            detail: "Please try again.",
+            statusCode: StatusCodes.Status502BadGateway);
+    }
+
+    return Results.Ok(DocsAnswers.Ground(answer, retrieved.Confidence, retrieved.Results));
 }).RequireRateLimiting(DocsSearchRateLimiterPolicy);
 
 app.MapPost("/api/users", async (
@@ -434,7 +492,7 @@ static async Task<bool> LooksLikeDeclaredFormatAsync(IFormFile file, Cancellatio
 
 internal sealed record LoginRequest(string Username, string Password);
 
-internal sealed record RagQueryApiRequest(string? Query, int? NResults);
+internal sealed record DocsAnswerApiRequest(string? Query);
 
 internal sealed record CreateAccountRequest(string? Username, string? Password);
 

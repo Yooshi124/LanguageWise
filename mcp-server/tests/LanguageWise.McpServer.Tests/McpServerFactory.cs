@@ -24,6 +24,8 @@ public sealed class McpServerFactory : WebApplicationFactory<Program>
 
 	public StubHttpMessageHandler Downstream { get; } = new();
 
+	public bool RagEnabled { get; init; } = true;
+
 	public McpServerFactory()
 	{
 		File.WriteAllText(publicKeyPath, signingKey.ExportSubjectPublicKeyInfoPem());
@@ -37,6 +39,7 @@ public sealed class McpServerFactory : WebApplicationFactory<Program>
 		builder.UseSetting("Services:MiniGames", "http://mini-games.test");
 		builder.UseSetting("Services:QuestsAchievements", "http://quests.test");
 		builder.UseSetting("Services:Rag", "http://rag.test");
+		builder.UseSetting("Rag:Enabled", RagEnabled ? "true" : "false");
 		builder.ConfigureServices(services =>
 		{
 			services.AddHttpClient(QuizzesCoursesTools.ServiceName)
