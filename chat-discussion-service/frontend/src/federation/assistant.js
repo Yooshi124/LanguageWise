@@ -71,12 +71,22 @@ export const assistant = {
 
         return { routeName: name };
     },
-    suggestions: () => [
-        'How do I create a new post?',
-        'How do I edit my post?',
-        'How do likes work?',
-        'How do I find the posts I wrote?'
-    ],
+    suggestions: (route) => {
+        if (route.name === 'post') {
+            return ['Summarise this thread', 'How do I comment on this post?', 'How do likes work?'];
+        }
+
+        if (route.name === 'post-create') {
+            return ['Help me draft a post about my progress', 'Which forum should I post in?'];
+        }
+
+        return [
+            'How do I create a new post?',
+            'How do I edit my post?',
+            'How do likes work?',
+            'How do I find the posts I wrote?'
+        ];
+    },
     tools: {
         chips: [
             {
