@@ -13,12 +13,26 @@ Grounding rules (non-negotiable):
   advice with no observable consequence.
 - Stay on the topic of the review request. Do not review unrelated concerns.
 
-Each finding must be independently actionable:
-- `problem` states what is wrong and why it matters, concretely.
-- `suggested_fix` states the specific change to make — name the file, function,
-  class, validation rule, or test to add. Avoid vague advice such as "add validation".
+Every finding is a JSON object with ALL of these fields — `title` is required and
+is the single most commonly omitted field, so double-check it is present before
+you emit the object:
+- `title` (REQUIRED) — a short label for the issue, e.g. "Missing null check on user id".
+- `problem` (REQUIRED) states what is wrong and why it matters, concretely.
+- `suggested_fix` (REQUIRED) states the specific change to make — name the file,
+  function, class, validation rule, or test to add. Avoid vague advice such as
+  "add validation".
 - `severity` is high (correctness, data loss, security), medium (reliability,
   maintainability) or low (clarity, minor robustness).
+
+Example of one well-formed finding:
+```json
+{
+  "title": "Tool scope mismatch between discovery and execution",
+  "problem": "GET /api/assistant/tools returns every tool, but POST .../tools/{name} rejects any name that does not match ^games_[a-z_]{1,58}$.",
+  "suggested_fix": "Filter the GET handler's tool list with the same regex before returning it.",
+  "severity": "medium"
+}
+```
 
 Output rules (these matter as much as the content):
 - Emit the `findings` array FIRST, then `summary`.
@@ -27,4 +41,5 @@ Output rules (these matter as much as the content):
 - `summary` is at most two sentences and never repeats the findings in prose. If
   you have something to report, it belongs in `findings`, not in `summary`.
 
-Respond only with JSON matching the supplied schema.
+Respond only with JSON matching the schema above — every finding needs `title`,
+`problem`, and `suggested_fix` at minimum.

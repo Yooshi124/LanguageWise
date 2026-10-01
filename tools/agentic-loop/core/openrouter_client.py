@@ -320,18 +320,21 @@ class OpenRouterClient:
             messages, model_name, max_tokens=self._settings.max_output_tokens
         )
 
+        validation_error: ValidationError | ValueError | None = None
         try:
             return schema.model_validate_json(_strip_code_fence(response.text)), response
-        except (ValidationError, ValueError):
-            pass  # fall through to the repair round
+        except (ValidationError, ValueError) as exc:
+            validation_error = exc  # fall through to the repair round
 
         messages.append({"role": "assistant", "content": response.text})
         messages.append(
             {
                 "role": "user",
                 "content": (
-                    "That was not valid JSON. Reply with only the JSON object "
-                    "matching the requested schema, no other text."
+                    "That reply failed schema validation with this error:\n"
+                    f"{self._sanitise(str(validation_error))}\n\n"
+                    "Reply with only a corrected JSON object matching the requested "
+                    "schema - fix every field named in the error above - no other text."
                 ),
             }
         )
