@@ -2,6 +2,7 @@ using LanguageWise.McpServer.Security;
 using LanguageWise.McpServer.Tools;
 using LanguageWise.McpServer.Tools.ChatDiscussion;
 using LanguageWise.McpServer.Tools.Docs;
+using LanguageWise.McpServer.Tools.LeaderboardAnalytics;
 using LanguageWise.McpServer.Tools.MiniGames;
 using LanguageWise.McpServer.Tools.QuestsAchievements;
 using LanguageWise.McpServer.Tools.QuizzesCourses;
@@ -35,6 +36,11 @@ builder.Services.AddHttpClient(ChatDiscussionTools.ServiceName, client =>
 builder.Services.AddHttpClient(QuestsAchievementsTools.ServiceName, client =>
 {
 	client.BaseAddress = new Uri((builder.Configuration["Services:QuestsAchievements"] ?? "http://localhost:5004").TrimEnd('/') + "/");
+	client.Timeout = downstreamTimeout;
+});
+builder.Services.AddHttpClient(LeaderboardAnalyticsTools.ServiceName, client =>
+{
+	client.BaseAddress = new Uri((builder.Configuration["Services:LeaderboardAnalytics"] ?? "http://localhost:5005").TrimEnd('/') + "/");
 	client.Timeout = downstreamTimeout;
 });
 builder.Services.AddHttpClient(DocsTools.ServiceName, client =>
