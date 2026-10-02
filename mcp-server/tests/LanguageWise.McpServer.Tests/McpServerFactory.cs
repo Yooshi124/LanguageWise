@@ -4,6 +4,7 @@ using System.Text;
 using LanguageWise.McpServer.Security;
 using LanguageWise.McpServer.Tools.ChatDiscussion;
 using LanguageWise.McpServer.Tools.Docs;
+using LanguageWise.McpServer.Tools.LeaderboardAnalytics;
 using LanguageWise.McpServer.Tools.MiniGames;
 using LanguageWise.McpServer.Tools.QuestsAchievements;
 using LanguageWise.McpServer.Tools.QuizzesCourses;
@@ -40,6 +41,7 @@ public sealed class McpServerFactory : WebApplicationFactory<Program>
 		builder.UseSetting("Services:MiniGames", "http://mini-games.test");
 		builder.UseSetting("Services:ChatDiscussion", "http://chat-discussion.test");
 		builder.UseSetting("Services:QuestsAchievements", "http://quests.test");
+		builder.UseSetting("Services:LeaderboardAnalytics", "http://leaderboard-analytics.test");
 		builder.UseSetting("Services:Rag", "http://rag.test");
 		builder.UseSetting("Rag:Enabled", RagEnabled ? "true" : "false");
 		builder.ConfigureServices(services =>
@@ -51,6 +53,8 @@ public sealed class McpServerFactory : WebApplicationFactory<Program>
 			services.AddHttpClient(ChatDiscussionTools.ServiceName)
 				.ConfigurePrimaryHttpMessageHandler(() => Downstream);
 			services.AddHttpClient(QuestsAchievementsTools.ServiceName)
+				.ConfigurePrimaryHttpMessageHandler(() => Downstream);
+			services.AddHttpClient(LeaderboardAnalyticsTools.ServiceName)
 				.ConfigurePrimaryHttpMessageHandler(() => Downstream);
 			services.AddHttpClient(DocsTools.ServiceName)
 				.ConfigurePrimaryHttpMessageHandler(() => Downstream);

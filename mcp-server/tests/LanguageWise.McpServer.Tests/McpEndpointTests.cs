@@ -121,12 +121,80 @@ public sealed class McpEndpointTests
 			Is.EquivalentTo(new[] { "quests_get_my_preferences", "quests_get_my_achievements", "docs_search" }));
 	}
 
-	[TestCase("leaderboard")]
-	public async Task ListTools_ForScopesWithoutOwnTools_OffersOnlyDocsSearch(string scope)
+	[Test]
+	public async Task ListTools_WithLeaderboardScope_ReturnsLeaderboardToolsAndDocsSearch()
 	{
-		await using var client = await factory.CreateMcpClientAsync(scope);
+		await using var client = await factory.CreateMcpClientAsync("leaderboard");
 		var tools = await client.ListToolsAsync();
-		Assert.That(tools.Select(t => t.Name), Is.EqualTo(new[] { "docs_search" }));
+		Assert.That(tools.Select(t => t.Name), Is.EquivalentTo(new[]
+		{
+			"leaderboard_get_my_language_rankings",
+			"leaderboard_get_my_lessons_completed_over_time",
+			"docs_search"
+		}));
+		Assert.That(tools.All(t => t.ProtocolTool.Annotations?.ReadOnlyHint == true), Is.True);
+	}
+
+	[Test]
+	public async Task GetMyLanguageRankings_UsesCallerTokenAndReturnsStructuredRankings()
+	{
+		const string path = "/api/my-language-rankings";
+		var token = factory.CreateUserToken();
+		factory.Downstream.BodiesByPath[path] = """[{"id":1,"userId":42,"language":"Italian","score":12,"rank":3,"updatedAt":"2026-09-30T12:00:00Z"}]""";
+		await using var client = await factory.CreateMcpClientAsync("leaderboard", token);
+
+		var result = await client.CallToolAsync("leaderboard_get_my_language_rankings");
+
+		var request = factory.Downstream.Requests.Single();
+		var ranking = result.StructuredContent!.Value[0];
+		Assert.Multiple(() =>
+		{
+			Assert.That(result.IsError, Is.Not.True);
+			Assert.That(request.RequestUri!.AbsoluteUri, Is.EqualTo("http://leaderboard-analytics.test/api/my-language-rankings"));
+			Assert.That(request.Headers.Authorization?.Parameter, Is.EqualTo(token));
+			Assert.That(ranking.GetProperty("userId").GetInt32(), Is.EqualTo(42));
+			Assert.That(ranking.GetProperty("language").GetString(), Is.EqualTo("Italian"));
+			Assert.That(ranking.GetProperty("score").GetInt32(), Is.EqualTo(12));
+			Assert.That(ranking.GetProperty("rank").GetInt32(), Is.EqualTo(3));
+		});
+	}
+
+	[Test]
+	public async Task GetMyLessonsCompletedOverTime_UsesCallerTokenAndReturnsStructuredSeries()
+	{
+		const string path = "/api/lessons-completed-over-time";
+		var token = factory.CreateUserToken();
+		factory.Downstream.BodiesByPath[path] = """{"userId":42,"from":"2026-09-01","to":"2026-09-30","series":[{"courseCode":"it","courseTitle":"Italian","points":[{"date":"2026-09-01","lessonsCompleted":2}]}]}""";
+		await using var client = await factory.CreateMcpClientAsync("leaderboard", token);
+
+		var result = await client.CallToolAsync("leaderboard_get_my_lessons_completed_over_time");
+
+		var request = factory.Downstream.Requests.Single();
+		var structured = result.StructuredContent!.Value;
+		var series = structured.GetProperty("series")[0];
+		var point = series.GetProperty("points")[0];
+		Assert.Multiple(() =>
+		{
+			Assert.That(result.IsError, Is.Not.True);
+			Assert.That(request.RequestUri!.AbsoluteUri, Is.EqualTo("http://leaderboard-analytics.test/api/lessons-completed-over-time"));
+			Assert.That(request.Headers.Authorization?.Parameter, Is.EqualTo(token));
+			Assert.That(structured.GetProperty("userId").GetInt32(), Is.EqualTo(42));
+			Assert.That(structured.GetProperty("from").GetString(), Is.EqualTo("2026-09-01"));
+			Assert.That(structured.GetProperty("to").GetString(), Is.EqualTo("2026-09-30"));
+			Assert.That(series.GetProperty("courseCode").GetString(), Is.EqualTo("it"));
+			Assert.That(point.GetProperty("date").GetString(), Is.EqualTo("2026-09-01"));
+			Assert.That(point.GetProperty("lessonsCompleted").GetInt32(), Is.EqualTo(2));
+		});
+	}
+
+	[Test]
+	public async Task LeaderboardTools_AreUnavailableOutsideLeaderboardScope()
+	{
+		await using var client = await factory.CreateMcpClientAsync("courses", factory.CreateUserToken());
+
+		Assert.ThrowsAsync<McpProtocolException>(async () =>
+			await client.CallToolAsync("leaderboard_get_my_language_rankings"));
+		Assert.That(factory.Downstream.Requests, Is.Empty);
 	}
 
 	[Test]
