@@ -108,7 +108,9 @@ function toolLabel(name: string, featureKey?: string) {
 async function runTool(chip: FeatureAssistantTool) {
   const tool = garry.tools.value.find((item) => item.name === chip.tool)
   if (!tool || chip.unavailable?.(route)) return
-  await garry.runTool(tool, chip.arguments(route))
+  const args = chip.arguments(route)
+  if (args === null) return
+  await garry.runTool(tool, args)
 }
 
 function render(content: string) {

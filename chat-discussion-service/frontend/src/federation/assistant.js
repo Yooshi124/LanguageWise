@@ -6,6 +6,10 @@ function searchTerm(route) {
     return typeof route.query.q === 'string' ? route.query.q.trim() : '';
 }
 
+function canSearchPosts(route) {
+    return route.name === 'forum' || route.name === 'my-posts';
+}
+
 function asRecord(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value) ? value : {};
 }
@@ -97,10 +101,14 @@ export const assistant = {
             {
                 tool: 'chat_search_posts',
                 label: 'Search posts',
-                arguments: (route) => route.name === 'forum'
-                    ? { query: searchTerm(route), forumCode: String(route.params.code ?? '') }
-                    : { query: searchTerm(route) },
-                unavailable: (route) => searchTerm(route) ? null : 'Search the forum first to use this tool.'
+                arguments: (route) => {
+                    const query = searchTerm(route) || (window.prompt('Search posts for…') ?? '').trim();
+                    if (!query) return null;
+                    return route.name === 'forum'
+                        ? { query, forumCode: String(route.params.code ?? '') }
+                        : { query };
+                },
+                unavailable: (route) => canSearchPosts(route) ? null : 'Open a forum or your posts to search.'
             },
             {
                 tool: 'chat_get_post',

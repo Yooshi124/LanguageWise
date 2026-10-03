@@ -16,7 +16,7 @@ export interface AssistantToolView {
 export interface FeatureAssistantTool {
   tool: string
   label: string
-  arguments: (route: RouteLocationNormalizedLoaded) => Record<string, unknown>
+  arguments: (route: RouteLocationNormalizedLoaded) => Record<string, unknown> | null
   /** Why the tool cannot run on this page, or null when it can. */
   unavailable?: (route: RouteLocationNormalizedLoaded) => string | null
 }
