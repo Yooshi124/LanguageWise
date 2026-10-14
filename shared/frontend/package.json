@@ -12,7 +12,7 @@
   "dependencies": {
     "@mdi/js": "7.4.47",
     "@module-federation/runtime": "2.9.0",
-    "@module-federation/vite": "1.21.2",
+    "@module-federation/vite": "1.23.5",
     "@tanstack/vue-query": "5.102.8",
     "dompurify": "3.4.14",
     "markdown-it": "14.1.0",
@@ -27,7 +27,7 @@
     "jsdom": "26.1.0",
     "typescript": "5.8.3",
     "vite": "7.3.6",
-    "vitest": "3.2.4",
+    "vitest": "3.2.7",
     "vue-tsc": "^3.0.4"
   }
 }
