@@ -72,8 +72,8 @@ class Observation:
 
 def _git(repo_root: Path, *args: str) -> str | None:
     try:
-        result = subprocess.run(
-            ["git", "-C", str(repo_root), *args],
+        result = subprocess.run(  # noqa: S603 - git argv built from internal constants only
+            ["git", "-C", str(repo_root), *args],  # noqa: S607 - git resolved from PATH by design
             capture_output=True,
             text=True,
             timeout=5,

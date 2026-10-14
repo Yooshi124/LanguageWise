@@ -211,7 +211,7 @@ class OpenRouterClient:
                 last_error = exc
                 if attempts >= self._settings.max_retries or not _is_retryable(exc):
                     break
-                delay = min(2 ** (attempts - 1), 8) + random.uniform(0, 0.5)
+                delay = min(2 ** (attempts - 1), 8) + random.uniform(0, 0.5)  # noqa: S311 - retry jitter, not crypto
                 logger.warning(
                     "OpenRouter call failed (attempt %s/%s): %s - retrying in %.1fs",
                     attempts,
@@ -246,7 +246,7 @@ class OpenRouterClient:
                 )
                 if _is_retryable_status(resp.status_code) and attempts < self._settings.max_retries:
                     last_error = error
-                    delay = min(2 ** (attempts - 1), 8) + random.uniform(0, 0.5)
+                    delay = min(2 ** (attempts - 1), 8) + random.uniform(0, 0.5)  # noqa: S311 - retry jitter, not crypto
                     logger.warning(
                         "OpenRouter returned HTTP %s (attempt %s/%s) - retrying in %.1fs",
                         resp.status_code,

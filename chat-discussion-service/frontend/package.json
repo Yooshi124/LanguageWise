@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@mdi/js": "7.4.47",
-    "@module-federation/vite": "1.21.2",
+    "@module-federation/vite": "1.23.5",
     "vue": "3.5.42",
     "vue-router": "4.6.4"
   },

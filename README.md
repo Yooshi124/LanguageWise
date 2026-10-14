@@ -124,6 +124,30 @@ chore: init
 
 Please don't commit API keys and `.env` files...thx 🙂
 
+## Pre-commit security checks
+
+Every commit runs these scans; the `pre-commit-security` workflow re-runs them in CI.
+
+| Hook | Checks |
+| --- | --- |
+| `ruff-check` | Python security rules (`S`, Bandit port) in `rag-server/` and `tools/agentic-loop/` |
+| `detect-secrets` | Every tracked file against the reviewed `.secrets.baseline` |
+| `pip-audit` | Known CVEs in the Python `requirements.txt` files |
+| `npm-audit` | High/critical CVEs in each frontend's production dependencies |
+| `dotnet-vulnerable` | High/critical CVEs in each `.slnx`, including transitive packages |
+
+Requires Python 3.10+, Node, and the .NET 10 SDK on `PATH`. Set up once per clone:
+
+```bash
+pipx install pre-commit   # or: pip install pre-commit
+pre-commit install
+pre-commit run --all-files
+```
+
+- A flagged false positive in `detect-secrets`: run `detect-secrets scan --baseline .secrets.baseline`, then `detect-secrets audit .secrets.baseline` and mark it, and commit the baseline.
+- A deliberate Ruff finding: add `# noqa: S###` with a short reason.
+- Skip one hook in an emergency only: `SKIP=npm-audit git commit ...` — CI still runs it.
+
 ## Notification email configuration
 
 The quests, achievements, and notifications service uses Ollama with
