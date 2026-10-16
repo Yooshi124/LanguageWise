@@ -7,7 +7,7 @@ This service tracks achievement progress, stores notification preferences and ev
 - PostgreSQL stores achievements, user progress, preferences, and notification history.
 - PostgREST exposes the service-owned `api` schema to the backend.
 - ASP.NET Core validates shared-service JWTs and owns event processing.
-- Ollama runs the official `gemma4:e4b` model and persists it in the `ollama-data` Docker volume.
+- OpenRouter generates email content using the configured model. Set `OPENROUTER_API_KEY` in the repository root `.env` file.
 - MailKit sends plain-text email through Gmail SMTP with STARTTLS.
 - nginx serves the federation entry and chunks; the Shared gateway proxies `/quests-and-achievements/api/*` to the backend.
 
@@ -39,7 +39,7 @@ From the repository root:
 docker compose up -d --build quests-achievements-notifications-service-frontend
 ```
 
-The first start downloads the Ollama image and `gemma4:e4b` model. The model initializer exits successfully after populating the persistent volume. Open [http://localhost:3000/quests-and-achievements/](http://localhost:3000/quests-and-achievements/) after the backend and frontend become healthy.
+Open [http://localhost:3000/quests-and-achievements/](http://localhost:3000/quests-and-achievements/) after the backend and frontend become healthy.
 
 Check status without displaying environment values:
 
@@ -118,7 +118,7 @@ Accepts JSON:
 A valid email is required. The record is upserted by authenticated user ID. Preferences control email delivery only; every accepted event still creates in-app notification history and updates achievement progress.
 
 Changing `notifyAll` from `false` to `true` creates a `notifications-enabled`
-notification with no associated achievement. The service uses Ollama to write a
+notification with no associated achievement. The service uses OpenRouter to write a
 welcome email describing every supported event and achievement notifications, then sends it to the saved
 address when SMTP is configured. Saving preferences while `notifyAll` is already
 enabled does not send another welcome.
@@ -169,7 +169,7 @@ A successful response includes all updated achievements, stored notification con
 }
 ```
 
-Ollama output is constrained to structured JSON, thinking is disabled, and generation is capped at 192 tokens. If generation fails or times out, the backend stores a deterministic fallback. SMTP failure is logged and returned as an email error without undoing the notification or progress.
+OpenRouter output is requested as JSON and generation is capped at 192 tokens. If generation fails or times out, the backend stores a deterministic fallback. SMTP failure is logged and returned as an email error without undoing the notification or progress.
 
 ## Verification
 
@@ -179,4 +179,4 @@ Run automated tests:
 dotnet test quests-achievements-notifications-service/LanguageWise.QuestsAchievementsNotificationsService.BE.slnx
 ```
 
-The suite covers JWT bearer/cookie authorization, validation, progress and attainment rules, notification filtering, repeated event processing, PostgREST persistence, structured Ollama output and fallback, and MailKit message construction without contacting Gmail.
+The suite covers JWT bearer/cookie authorization, validation, progress and attainment rules, notification filtering, repeated event processing, PostgREST persistence, structured OpenRouter output and fallback, and MailKit message construction without contacting Gmail.

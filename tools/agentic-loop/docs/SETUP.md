@@ -11,7 +11,7 @@ Everything you need to get the Agentic Loop running against this repository.
 | Python 3.10 or newer | `python --version`. Developed and verified on 3.14. |
 | pip | Ships with Python. `python -m pip --version` |
 | An OpenRouter API key | Same provider as the mini-games AI mode. See step 3. |
-| [Ollama](https://ollama.com), running locally | Hosts the mandatory Review Agent. See step 3b. |
+| OpenRouter account credit | The mandatory review pass also uses OpenRouter. |
 | GitHub personal access token (optional) | Only needed for the CI-failures mode; see step 3c. |
 | Git (optional) | Only used to record the branch and commit in the evidence log. |
 
@@ -45,7 +45,7 @@ Dependencies installed:
 - `python-dotenv` — loads `.env`
 - `pydantic` — validates the model's structured JSON replies
 - `rich` — console rendering
-- `requests` — talks to OpenRouter, the GitHub API, and the local Ollama review agent
+- `requests` — talks to OpenRouter and the GitHub API
 
 ---
 
@@ -64,34 +64,10 @@ model with more headroom.
 
 ---
 
-## 3b. Set up the Review Agent (Ollama + Gemma, local, mandatory)
-
-The Review Agent is not optional — every finding from the implementation agent
-(OpenRouter) is independently checked by a second, locally-hosted model before it
-reaches you. It never leaves your machine and needs no API key.
-
-1. Install Ollama: <https://ollama.com> (Windows, macOS, Linux).
-2. Make sure the Ollama service is running (it starts automatically after
-   install, or run `ollama serve`).
-3. Pull the review model:
-
-   ```powershell
-   ollama pull gemma4:e2b
-   ```
-
-   `gemma4:e2b` is a small, fast Gemma 4 build ("effective 2B" parameters) —
-   enough to sanity-check findings without slowing the loop down. A larger
-   variant (e.g. `gemma4:12b`) can be used instead by setting
-   `OLLAMA_REVIEW_MODEL` if you have the hardware and want sharper critiques.
-4. Verify it responds:
-
-   ```powershell
-   ollama run gemma4:e2b "reply with the word ready"
-   ```
-
-If Ollama is not running or the model is not pulled, the loop still starts, but
-any review round will stop with a clear error explaining what to install/pull —
-it will never silently show you unreviewed findings.
+The Review Agent is mandatory and uses the same OpenRouter API key. Configure
+`OPENROUTER_REVIEW_MODEL` to use a different model for the critique pass; when
+blank, it uses `OPENROUTER_MODEL`. Provider errors abort the round rather than
+silently showing unreviewed findings.
 
 ---
 
@@ -162,6 +138,7 @@ Open `.env` and paste your key:
 ```ini
 OPENROUTER_API_KEY=sk-or-...your-key-here
 OPENROUTER_MODEL=google/gemma-4-26b-a4b-it
+OPENROUTER_REVIEW_MODEL=
 ```
 
 That is the minimum. `.env` is listed in the repository's `.gitignore`, so your
@@ -183,6 +160,7 @@ key is never committed.
 | --- | --- | --- | --- |
 | `OPENROUTER_MODEL` | `google/gemma-4-26b-a4b-it` | Model used for analysis and planning. Any OpenRouter model id. | `anthropic/claude-sonnet-4` |
 | `OPENROUTER_SELECTION_MODEL` | falls back to `OPENROUTER_MODEL` | Model used to pick which files to read. A cheaper model is fine here. | `google/gemma-4-26b-a4b-it` |
+| `OPENROUTER_REVIEW_MODEL` | falls back to `OPENROUTER_MODEL` | Model used for the mandatory critique pass. Choose a different model for an independent second opinion. | `anthropic/claude-sonnet-4` |
 | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | API base URL. Only change for a compatible proxy. | `https://openrouter.ai/api/v1` |
 
 ### GitHub Actions integration
@@ -212,18 +190,9 @@ key is never committed.
 | `MCP_USER_TOKEN` | *(blank)* | Optional user JWT forwarded as `X-LanguageWise-User-Token` so per-user tools can run. | *(leave blank)* |
 | `MCP_REQUEST_TIMEOUT_SECONDS` | `30` | Per-request timeout against the MCP server. | `60` |
 
-### Review Agent (local, mandatory)
-
-| Variable | Default | Meaning | Example |
-| --- | --- | --- | --- |
-| `OLLAMA_HOST` | `http://localhost:11434` | Where the local Ollama daemon is listening. | `http://localhost:11434` |
-| `OLLAMA_REVIEW_MODEL` | `gemma4:e2b` | Ollama model tag used by the Review Agent. Must be pulled first (`ollama pull <tag>`). A bigger tag gives sharper critiques at the cost of speed. | `gemma4:12b` |
-| `OLLAMA_REQUEST_TIMEOUT_SECONDS` | `600` | Per-request timeout against Ollama. Local models can be slow, especially loading into memory on first use — 10 minutes gives it plenty of room. | `900` |
-| `OLLAMA_KEEP_ALIVE` | `30s` | Ollama's own `keep_alive` duration: how long it keeps the review model loaded in RAM after a call before unloading it. Short values stop the model staying resident in memory between rounds, which matters when rag-server/mcp-server are also running locally. `0` unloads immediately, `-1` never unloads. | `0` |
-
-There is no setting to disable the Review Agent — it always runs. If it cannot
-be reached, the round aborts with an explanation instead of silently showing
-unreviewed findings.
+The Review Agent cannot be disabled. It uses OpenRouter and the configured
+`OPENROUTER_REVIEW_MODEL`; if the call fails, the round aborts rather than
+silently showing unreviewed findings.
 
 ### Review scope
 
@@ -360,10 +329,8 @@ round, your prompt verbatim, and an ACCEPTED/REJECTED table.
 - In CI-failures mode, excerpts from failed GitHub Actions job logs are fetched
   from `api.github.com` and included in that same context. Your `GITHUB_TOKEN`
   is only ever sent to `api.github.com` and is redacted from all output.
-- The Review Agent runs entirely on your machine via Ollama — the same source
-  code and findings the implementation agent already saw are sent to it too,
-  but only ever to the local Ollama daemon; nothing leaves your machine for
-  that pass and no API key is involved.
+- The Review Agent uses OpenRouter. The same source code and findings the
+  implementation agent already saw are sent for the critique pass.
 - Files that look like secrets are never read or uploaded:
   `.env`, `*.env`, `.env.*`, `*.pem`, `*.key`, `*.pfx`, `*.p12`, `id_rsa*`,
   `secrets.*`, `credentials*`, `*.keystore`, `*.jks`.
@@ -394,10 +361,8 @@ round, your prompt verbatim, and an ACCEPTED/REJECTED table.
 | `No MCP API key is configured` | Neither `MCP_API_KEY` nor the key file (`mcp-server/.mcp-api-key`) exists. Run `pwsh mcp-server/scripts/New-McpApiKey.ps1` once per machine. |
 | `The MCP server rejected the shared API key (HTTP 401)` | The key does not match the server's. Re-check `MCP_API_KEY` / `MCP_API_KEY_PATH` against the file the server loads. |
 | `Tool '...' is not listed for scope '...'` | The probe tool belongs to another scope, or no tools exist yet for `MCP_TOOL_SCOPE`. Try `/mcp` to list what the scope exposes. |
-| `Could not reach the local review agent at http://localhost:11434 ...` | Ollama is not running. Install it from <https://ollama.com>, start it (`ollama serve`), and pull the model: `ollama pull gemma4:e2b`. The review agent cannot be disabled, so this stops the round until Ollama is reachable. |
-| `Ollama model '...' was not found` | The tag in `OLLAMA_REVIEW_MODEL` has not been pulled yet. Run `ollama pull <tag>`. |
-| `The local review agent (...) returned JSON that does not match CritiqueResult` | The local model produced malformed structured output — rare, but small models occasionally do this. Retry, or switch `OLLAMA_REVIEW_MODEL` to a slightly larger tag (e.g. `gemma4:12b`). |
-| The review agent drops findings that look valid | The critic prompts are deliberately keep-first and a wholesale rejection triggers a mandatory re-check pass. If a small local model still over-drops, switch `OLLAMA_REVIEW_MODEL` to a larger tag (e.g. `gemma4:12b`). |
+| The review agent returns malformed critique JSON | The model returned an invalid structured response. Check the configured `OPENROUTER_REVIEW_MODEL`, then retry. |
+| The review agent drops findings that look valid | The critic prompts are deliberately keep-first and a wholesale rejection triggers a mandatory re-check pass. Try a stronger model with `OPENROUTER_REVIEW_MODEL`. |
 | `MAX_TOTAL_CONTEXT_BYTES ... must be at least MAX_FILE_BYTES` | The two budgets contradict each other. Raise the total or lower the per-file cap. |
 | `Missing prompt template '...'` | A file was deleted from `prompts/`. Restore it from git. |
 | `Prompt '...' expects values for: X` | You added a `{{X}}` placeholder the code does not supply. See [HOW_IT_WORKS.md](HOW_IT_WORKS.md#customising-prompts). |

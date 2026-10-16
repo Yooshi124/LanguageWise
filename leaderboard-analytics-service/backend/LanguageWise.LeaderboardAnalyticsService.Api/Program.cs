@@ -21,11 +21,11 @@ builder.Services.AddHttpClient<QuizzesCoursesClient>(client =>
 });
 builder.Services.AddScoped<AnalyticsProfileService>();
 
-var ollamaServiceUrl = builder.Configuration["Services:Ollama"] ?? "http://localhost:11434";
-builder.Services.Configure<OllamaOptions>(builder.Configuration.GetSection("Ollama"));
-builder.Services.AddHttpClient<ISummaryGenerator, OllamaSummaryGenerator>(client =>
+builder.Services.Configure<OpenRouterOptions>(builder.Configuration.GetSection("OpenRouter"));
+builder.Services.AddHttpClient<ISummaryGenerator, OpenRouterSummaryGenerator>(client =>
 {
-    client.BaseAddress = new Uri(ollamaServiceUrl.TrimEnd('/') + "/");
+    client.BaseAddress = new Uri(
+        (builder.Configuration["OpenRouter:BaseUrl"] ?? "https://openrouter.ai/api/v1").TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(20);
 });
 
@@ -298,4 +298,3 @@ static bool TryGetIncomingBearerToken(HttpContext context, out string token)
     token = string.Empty;
     return false;
 }
-

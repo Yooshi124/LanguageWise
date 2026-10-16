@@ -33,7 +33,6 @@ from collectors.github_actions import GithubActionsError  # noqa: E402
 from core.mcp_client import McpClient, McpError  # noqa: E402
 from core.rag_client import RagClient, RagError  # noqa: E402
 from core import console, stages  # noqa: E402
-from core.ollama_client import OllamaClient  # noqa: E402
 from core.openrouter_client import OpenRouterClient  # noqa: E402
 from core.orchestrator import Orchestrator  # noqa: E402
 from core.prompt_registry import PromptError, PromptRegistry  # noqa: E402
@@ -140,7 +139,7 @@ def _quieten_third_party_logs(log_level: str) -> None:
 def session_details(settings: Settings, session_path: Path) -> dict[str, str]:
     return {
         "Model": settings.model,
-        "Review agent": f"{settings.ollama_review_model} (local, via Ollama - mandatory)",
+        "Review agent": f"{settings.review_model} (via OpenRouter - mandatory)",
         "Repo root": str(settings.repo_root),
         "Scope": str(settings.scope)
         + ("" if settings.scope_is_targeted else "  (whole repository)"),
@@ -398,7 +397,7 @@ def main(argv: list[str] | None = None) -> int:
             "Scope mode": "TARGETED_DIRECTORY" if settings.scope_is_targeted else "whole repository",
             "Analysis model": settings.model,
             "Selection model": settings.selection_model,
-            "Review model": f"{settings.ollama_review_model} (local, via Ollama - mandatory)",
+            "Review model": f"{settings.review_model} (via OpenRouter - mandatory)",
             "Started": format_timestamp(session.started_at),
         }
     )
@@ -412,7 +411,7 @@ def main(argv: list[str] | None = None) -> int:
         settings=settings,
         prompts=prompts,
         client=OpenRouterClient(settings),
-        review_client=OllamaClient(settings),
+        review_client=OpenRouterClient(settings),
         session=session,
         writer=writer,
     )

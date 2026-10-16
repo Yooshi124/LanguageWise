@@ -178,7 +178,7 @@ STAGE 6/6 - ADAPT           a plan is written for what you accepted
 
 ╭─ Agentic Loop - Rubber Duck Code Review ─────────────────────────────────╮
 │ Model          google/gemma-4-26b-a4b-it                                 │
-│ Review agent   gemma4:e2b (local, via Ollama - mandatory)                │
+│ Review agent   google/gemma-4-26b-a4b-it (OpenRouter - mandatory)         │
 │ Repo root      C:\Users\justi\source\repos\LanguageWise                  │
 │ Scope          C:\Users\justi\source\repos\LanguageWise  (whole repo)    │
 │ Evidence log   ...\Sessions\AgenticLoopSession6f2a...c91b.md             │
@@ -252,7 +252,7 @@ Nothing here comes from a model. These are facts both you and the agent can rely
 Implementation agent proposes findings; review agent critiques them.
 Implementation agent reading 6 file(s) (41208 bytes) with google/gemma-4-26b-a4b-it...
 Implementation agent proposed 4 finding(s).
-Review agent critiquing with gemma4:e2b (local, via Ollama)...
+Review agent critiquing with google/gemma-4-26b-a4b-it (OpenRouter)...
 
 1. Problem: Student records are inserted without any field validation, so a null
    student_name or a non-integer student_id reaches the database. (high)
@@ -461,7 +461,7 @@ stage headings in order, so the loop is auditable end to end:
 - **Scope mode:** TARGETED_DIRECTORY
 - **Analysis model:** google/gemma-4-26b-a4b-it
 - **Selection model:** google/gemma-4-26b-a4b-it
-- **Review model:** gemma4:e2b (local, via Ollama - mandatory)
+- **Review model:** google/gemma-4-26b-a4b-it (OpenRouter - mandatory)
 
 This is an evidence log. Each round below records the full loop: PLAN → ACT → OBSERVE → AGENT → HUMAN REVIEW → ADAPT.
 

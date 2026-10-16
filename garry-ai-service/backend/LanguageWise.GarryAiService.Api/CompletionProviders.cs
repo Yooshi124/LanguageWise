@@ -5,39 +5,24 @@ using System.Text.Json;
 
 namespace LanguageWise.GarryAiService.Api;
 
-public sealed class CompletionProviders(IHttpClientFactory clients, IConfiguration configuration, ILogger<CompletionProviders> logger)
+public sealed class CompletionProviders(IHttpClientFactory clients, IConfiguration configuration)
 {
     public async Task<ProviderStream> StartAsync(IReadOnlyList<ChatMessage> messages, CancellationToken cancellationToken)
     {
         var apiKey = configuration["OpenRouter:ApiKey"];
-        if (!string.IsNullOrWhiteSpace(apiKey))
+        if (string.IsNullOrWhiteSpace(apiKey))
         {
-            try
-            {
-                var model = configuration["OpenRouter:Model"] ?? "google/gemma-4-26b-a4b-it";
-                var maxTokens = configuration.GetValue("OpenRouter:MaxOutputTokens", 1024);
-                return await StartProviderAsync("openrouter", "chat/completions", new
-                {
-                    model,
-                    messages,
-                    stream = true,
-                    max_tokens = maxTokens
-                }, apiKey, cancellationToken);
-            }
-            catch (Exception exception) when (exception is HttpRequestException or ProviderException
-                || (exception is OperationCanceledException && !cancellationToken.IsCancellationRequested))
-            {
-                logger.LogWarning("OpenRouter could not start; trying Ollama: {ErrorType}", exception.GetType().Name);
-            }
+            throw new ProviderException(System.Net.HttpStatusCode.Unauthorized);
         }
-
-        return await StartProviderAsync("ollama", "api/chat", new
+        var model = configuration["OpenRouter:Model"] ?? "google/gemma-4-26b-a4b-it";
+        var maxTokens = configuration.GetValue("OpenRouter:MaxOutputTokens", 1024);
+        return await StartProviderAsync("openrouter", "chat/completions", new
         {
-            model = configuration["Ollama:Model"] ?? "gemma4:e4b",
+            model,
             messages,
             stream = true,
-            think = false
-        }, null, cancellationToken);
+            max_tokens = maxTokens
+        }, apiKey, cancellationToken);
     }
 
     private async Task<ProviderStream> StartProviderAsync(
@@ -63,7 +48,7 @@ public sealed class CompletionProviders(IHttpClientFactory clients, IConfigurati
 
         try
         {
-            return new ProviderStream(response, await response.Content.ReadAsStreamAsync(cancellationToken), provider);
+            return new ProviderStream(response, await response.Content.ReadAsStreamAsync(cancellationToken));
         }
         catch
         {
@@ -78,7 +63,7 @@ public sealed class ProviderException(System.Net.HttpStatusCode status) : Except
     public System.Net.HttpStatusCode Status { get; } = status;
 }
 
-public sealed class ProviderStream(HttpResponseMessage response, Stream body, string provider) : IAsyncDisposable
+public sealed class ProviderStream(HttpResponseMessage response, Stream body) : IAsyncDisposable
 {
     public async IAsyncEnumerable<(string Type, string Value)> ReadAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -88,23 +73,16 @@ public sealed class ProviderStream(HttpResponseMessage response, Stream body, st
         var done = false;
         while (await reader.ReadLineAsync(cancellationToken) is { } line)
         {
-            if (provider == "openrouter")
+            if (line.StartsWith("data:", StringComparison.Ordinal))
             {
-                if (line.StartsWith("data:", StringComparison.Ordinal))
-                {
-                    data.Add(line[5..].TrimStart());
-                }
-                if (line.Length != 0 || data.Count == 0)
-                {
-                    continue;
-                }
-                line = string.Join('\n', data);
-                data.Clear();
+                data.Add(line[5..].TrimStart());
             }
-            else if (line.Length == 0)
+            if (line.Length != 0 || data.Count == 0)
             {
                 continue;
             }
+            line = string.Join('\n', data);
+            data.Clear();
 
             if (line == "[DONE]")
             {
@@ -120,42 +98,23 @@ public sealed class ProviderStream(HttpResponseMessage response, Stream body, st
                 throw new InvalidDataException("Provider stream error");
             }
 
-            if (provider == "openrouter")
+            if (!root.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0)
             {
-                if (!root.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0)
-                {
-                    throw new InvalidDataException("Invalid provider response");
-                }
-                var choice = choices[0];
-                if (choice.TryGetProperty("delta", out var delta)
-                    && delta.TryGetProperty("content", out var content)
-                    && content.ValueKind == JsonValueKind.String && content.GetString() is { Length: > 0 } text)
-                {
-                    yield return ("delta", text);
-                }
-                if (choice.TryGetProperty("finish_reason", out var finish)
-                    && finish.ValueKind == JsonValueKind.String)
-                {
-                    done = true;
-                    yield return ("done", finish.GetString() ?? "stop");
-                    break;
-                }
+                throw new InvalidDataException("Invalid OpenRouter response");
             }
-            else
+            var choice = choices[0];
+            if (choice.TryGetProperty("delta", out var delta)
+                && delta.TryGetProperty("content", out var content)
+                && content.ValueKind == JsonValueKind.String && content.GetString() is { Length: > 0 } text)
             {
-                if (root.TryGetProperty("message", out var message)
-                    && message.TryGetProperty("content", out var content)
-                    && content.ValueKind == JsonValueKind.String && content.GetString() is { Length: > 0 } text)
-                {
-                    yield return ("delta", text);
-                }
-                if (root.TryGetProperty("done", out var ended) && ended.ValueKind == JsonValueKind.True)
-                {
-                    done = true;
-                    yield return ("done", root.TryGetProperty("done_reason", out var reason)
-                        ? reason.GetString() ?? "stop" : "stop");
-                    break;
-                }
+                yield return ("delta", text);
+            }
+            if (choice.TryGetProperty("finish_reason", out var finish)
+                && finish.ValueKind == JsonValueKind.String)
+            {
+                done = true;
+                yield return ("done", finish.GetString() ?? "stop");
+                break;
             }
         }
 

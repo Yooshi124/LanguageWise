@@ -1,14 +1,15 @@
 using System.Net.Http.Json;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using LanguageWise.LeaderboardAnalyticsService.Api.Models;
 using Microsoft.Extensions.Options;
 
 namespace LanguageWise.LeaderboardAnalyticsService.Api.Clients;
 
-public sealed class OllamaSummaryGenerator(
+public sealed class OpenRouterSummaryGenerator(
     HttpClient httpClient,
-    IOptions<OllamaOptions> options,
-    ILogger<OllamaSummaryGenerator> logger) : ISummaryGenerator
+    IOptions<OpenRouterOptions> options,
+    ILogger<OpenRouterSummaryGenerator> logger) : ISummaryGenerator
 {
     private const int MaximumSummaryLength = 1200;
     private static readonly string[] AllowedTrends = ["up", "down", "flat"];
@@ -27,7 +28,7 @@ public sealed class OllamaSummaryGenerator(
             {
                 model = options.Value.Model,
                 stream = false,
-                think = false,
+                max_tokens = 256,
                 messages = new object[]
                 {
                     new
@@ -41,36 +42,31 @@ public sealed class OllamaSummaryGenerator(
                         content = $"Course titles: {courseTitles}\nChart data (JSON): {chartJson}"
                     }
                 },
-                format = new
+                response_format = new
                 {
-                    type = "object",
-                    properties = new
-                    {
-                        summary = new { type = "string" },
-                        trend = new { type = "string", @enum = AllowedTrends },
-                        bestCourse = new { type = "string" }
-                    },
-                    required = new[] { "summary", "trend", "bestCourse" }
-                },
-                options = new
-                {
-                    temperature = 0.7,
-                    top_p = 0.95,
-                    top_k = 64,
-                    num_predict = 256
+                    type = "json_object"
                 }
             };
 
-            using var response = await httpClient.PostAsJsonAsync("api/chat", request, cancellationToken);
+            using var message = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
+            {
+                Content = JsonContent.Create(request)
+            };
+            if (!string.IsNullOrWhiteSpace(options.Value.ApiKey))
+            {
+                message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.Value.ApiKey);
+            }
+            using var response = await httpClient.SendAsync(message, cancellationToken);
             response.EnsureSuccessStatusCode();
-            var payload = await response.Content.ReadFromJsonAsync<OllamaChatResponse>(cancellationToken);
-            var generated = JsonSerializer.Deserialize<GeneratedSummary>(payload?.Message.Content ?? string.Empty, JsonOptions);
+            var payload = await response.Content.ReadFromJsonAsync<OpenRouterChatResponse>(cancellationToken);
+            var generated = JsonSerializer.Deserialize<GeneratedSummary>(
+                payload?.Choices.FirstOrDefault()?.Message.Content ?? string.Empty, JsonOptions);
 
             if (string.IsNullOrWhiteSpace(generated?.Summary)
                 || string.IsNullOrWhiteSpace(generated.Trend)
                 || string.IsNullOrWhiteSpace(generated.BestCourse))
             {
-                throw new JsonException("Ollama returned an incomplete summary.");
+                throw new JsonException("OpenRouter returned an incomplete summary.");
             }
 
             var trend = NormaliseTrend(generated.Trend);
@@ -85,7 +81,7 @@ public sealed class OllamaSummaryGenerator(
             !cancellationToken.IsCancellationRequested
             && exception is HttpRequestException or JsonException or TaskCanceledException)
         {
-            logger.LogWarning(exception, "Ollama summary generation failed; using the fallback template.");
+            logger.LogWarning(exception, "OpenRouter summary generation failed; using the fallback template.");
             return Fallback(chartData);
         }
     }
@@ -150,7 +146,8 @@ public sealed class OllamaSummaryGenerator(
     private static string Truncate(string value, int maximumLength) =>
         value.Length <= maximumLength ? value : value[..maximumLength];
 
-    private sealed record OllamaChatResponse(OllamaMessage Message);
-    private sealed record OllamaMessage(string Content);
+    private sealed record OpenRouterChatResponse(IReadOnlyList<OpenRouterChoice> Choices);
+    private sealed record OpenRouterChoice(OpenRouterMessage Message);
+    private sealed record OpenRouterMessage(string Content);
     private sealed record GeneratedSummary(string Summary, string Trend, string BestCourse);
 }

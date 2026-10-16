@@ -36,10 +36,6 @@ cd Tools\AgenticLoop
 pip install -r requirements.txt
 copy .env.example .env      # then paste your OpenRouter API key into it
 
-# The review agent runs locally and is mandatory — install Ollama and pull its model:
-#   https://ollama.com
-ollama pull gemma4:e2b
-
 python main.py
 
 # Or diagnose the latest failed GitHub Actions run against the code:
@@ -67,9 +63,8 @@ python main.py --mcp-validate
 - **Model:** OpenRouter chat completions, default `google/gemma-4-26b-a4b-it`
   (the same provider pattern as the mini-games AI mode), set in `.env`
 - **Scope:** the whole repository by default, or one directory via `TARGETED_DIRECTORY`
-- **Two agents, two models:** an implementation agent (OpenRouter) proposes findings; a
-  mandatory, local review agent (Gemma via Ollama) independently critiques them — it
-  cannot be disabled
+- **Two agents, configurable models:** an implementation agent proposes findings; a
+  mandatory OpenRouter review agent critiques them and cannot be disabled
 - **CI-failures mode:** `--ci-failures` pulls the latest failed GitHub Actions run
   and its test-log excerpts, then runs a round that diagnoses the root cause
   against the actual code

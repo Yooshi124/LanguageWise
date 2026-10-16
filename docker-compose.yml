@@ -10,7 +10,6 @@ volumes:
   chat-discussion-service-db-data:
   quests-achievements-notifications-service-db-data:
   mini-games-service-db-data:
-  ollama-data:
 
 # Generate using tools/gen-signing-key/gen-signing-key.ps1
 secrets:
@@ -23,45 +22,15 @@ secrets:
     file: ./mcp-server/.mcp-api-key
 
 services:
-  ollama:
-    container_name: ollama
-    image: ollama/ollama:0.33.1
-    gpus: all
-    environment:
-      OLLAMA_KEEP_ALIVE: -1
-    volumes:
-      - ollama-data:/root/.ollama
-    networks: [languagewise]
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-    restart: unless-stopped
-
-  ollama-model-init:
-    container_name: ollama-model-init
-    image: ollama/ollama:0.33.1
-    environment:
-      OLLAMA_HOST: http://ollama:11434
-    entrypoint: ["/bin/sh", "-c"]
-    command: ["ollama pull gemma4:e4b && ollama run gemma4:e4b \"\""]
-    networks: [languagewise]
-    depends_on:
-      ollama:
-        condition: service_healthy
-    restart: "no"
-
   garry-ai-service-backend:
     container_name: garry-ai-service-backend
     build:
       context: ./garry-ai-service/backend
-    env_file:
-      - path: ./garry-ai-service/backend/.env
-        required: false
     environment:
-      Services__Ollama: http://ollama:11434
-      Ollama__Model: gemma4:e4b
+      OpenRouter__ApiKey: ${OPENROUTER_API_KEY:-}
+      OpenRouter__BaseUrl: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      OpenRouter__Model: ${OPENROUTER_MODEL:-google/gemma-4-26b-a4b-it}
+      OpenRouter__MaxOutputTokens: ${OPENROUTER_MAX_OUTPUT_TOKENS:-1024}
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
       Mcp__Enabled: "true"
       Mcp__Endpoint: http://host.docker.internal:8200/mcp
@@ -78,9 +47,6 @@ services:
       timeout: 3s
       start_period: 15s
       retries: 6
-    depends_on:
-      ollama-model-init:
-        condition: service_completed_successfully
     restart: unless-stopped
 
   shared-db:
@@ -325,9 +291,10 @@ services:
         required: false
     environment:
       Services__Database: http://quests-achievements-notifications-service-db-api:3000
-      Services__Ollama: http://ollama:11434
       Services__Garry: http://garry-ai-service-backend:8080
-      Ollama__Model: gemma4:e4b
+      OpenRouter__ApiKey: ${OPENROUTER_API_KEY:-}
+      OpenRouter__BaseUrl: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      OpenRouter__Model: ${OPENROUTER_MODEL:-google/gemma-4-26b-a4b-it}
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
       Mcp__Enabled: "true"
       Mcp__Endpoint: http://host.docker.internal:8200/mcp
@@ -345,8 +312,6 @@ services:
         condition: service_started
       garry-ai-service-backend:
         condition: service_healthy
-      ollama-model-init:
-        condition: service_completed_successfully
     restart: unless-stopped
 
   quests-achievements-notifications-service-frontend:
@@ -368,9 +333,10 @@ services:
         required: false
     environment:
       Services__QuizzesCourses: http://quizzes-courses-service-backend:8080
-      Services__Ollama: http://ollama:11434
       Services__Garry: http://garry-ai-service-backend:8080
-      Ollama__Model: gemma4:e4b
+      OpenRouter__ApiKey: ${OPENROUTER_API_KEY:-}
+      OpenRouter__BaseUrl: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      OpenRouter__Model: ${OPENROUTER_MODEL:-google/gemma-4-26b-a4b-it}
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
     secrets:
       - signing_public_key
@@ -382,8 +348,6 @@ services:
         condition: service_healthy
       garry-ai-service-backend:
         condition: service_healthy
-      ollama-model-init:
-        condition: service_completed_successfully
     restart: unless-stopped
 
   leaderboard-analytics-service-frontend:

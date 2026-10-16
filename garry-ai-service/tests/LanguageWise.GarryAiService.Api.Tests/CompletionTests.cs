@@ -2,7 +2,6 @@ using System.Net;
 using System.Text;
 using LanguageWise.GarryAiService.Api;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace LanguageWise.GarryAiService.Api.Tests;
 
@@ -36,54 +35,30 @@ public sealed class CompletionTests
     }
 
     [Test]
-    public async Task Provider_FallsBackToOllamaOnOpenRouterFailure()
+    public void Provider_WhenOpenRouterRejects_DoesNotTryAnotherProvider()
     {
         var factory = new StubClients(HttpStatusCode.TooManyRequests);
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["OpenRouter:ApiKey"] = "test-key"
         }).Build();
-        var providers = new CompletionProviders(factory, config, NullLogger<CompletionProviders>.Instance);
-
-        await using var stream = await providers.StartAsync([new ChatMessage("user", "Hi")], CancellationToken.None);
-        var events = new List<(string Type, string Value)>();
-        await foreach (var item in stream.ReadAsync(CancellationToken.None))
-        {
-            events.Add(item);
-        }
-
-        Assert.That(factory.OpenRouterCalls, Is.EqualTo(1));
-        Assert.That(factory.OllamaCalls, Is.EqualTo(1));
-        Assert.That(events, Is.EqualTo(new[] { ("delta", "Hallo"), ("done", "stop") }));
-    }
-
-    [Test]
-    public async Task Provider_WithoutOpenRouterKey_UsesOllama()
-    {
-        var factory = new StubClients(HttpStatusCode.OK);
-        var providers = new CompletionProviders(factory, new ConfigurationBuilder().Build(),
-            NullLogger<CompletionProviders>.Instance);
-
-        await using var stream = await providers.StartAsync([new ChatMessage("user", "Hi")], CancellationToken.None);
-
-        Assert.That(factory.OpenRouterCalls, Is.Zero);
-        Assert.That(factory.OllamaCalls, Is.EqualTo(1));
-    }
-
-    [Test]
-    public void Provider_WhenBothProvidersRejects_FailsBeforeStreaming()
-    {
-        var factory = new StubClients(HttpStatusCode.ServiceUnavailable, HttpStatusCode.NotFound);
-        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["OpenRouter:ApiKey"] = "test-key"
-        }).Build();
-        var providers = new CompletionProviders(factory, config, NullLogger<CompletionProviders>.Instance);
+        var providers = new CompletionProviders(factory, config);
 
         Assert.ThrowsAsync<ProviderException>(async () =>
             await providers.StartAsync([new ChatMessage("user", "Hi")], CancellationToken.None));
         Assert.That(factory.OpenRouterCalls, Is.EqualTo(1));
-        Assert.That(factory.OllamaCalls, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void Provider_WithoutOpenRouterKey_RejectsWithoutContactingProvider()
+    {
+        var factory = new StubClients(HttpStatusCode.OK);
+        var providers = new CompletionProviders(factory, new ConfigurationBuilder().Build());
+
+        Assert.ThrowsAsync<ProviderException>(async () =>
+            await providers.StartAsync([new ChatMessage("user", "Hi")], CancellationToken.None));
+
+        Assert.That(factory.OpenRouterCalls, Is.Zero);
     }
 
     [Test]
@@ -91,9 +66,9 @@ public sealed class CompletionTests
     {
         using var response = new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new StringContent("{\"message\":{\"content\":\"Partial\"},\"done\":false}\n")
+            Content = new StringContent("data: {\"choices\":[{\"delta\":{\"content\":\"Partial\"}}]}\n\n")
         };
-        var stream = new ProviderStream(response, response.Content.ReadAsStream(), "ollama");
+        var stream = new ProviderStream(response, response.Content.ReadAsStream());
 
         Assert.ThrowsAsync<InvalidDataException>(async () =>
         {
@@ -104,26 +79,19 @@ public sealed class CompletionTests
         });
     }
 
-    private sealed class StubClients(
-        HttpStatusCode openRouterStatus,
-        HttpStatusCode ollamaStatus = HttpStatusCode.OK) : IHttpClientFactory
+    private sealed class StubClients(HttpStatusCode openRouterStatus) : IHttpClientFactory
     {
         public int OpenRouterCalls { get; private set; }
-        public int OllamaCalls { get; private set; }
 
         public HttpClient CreateClient(string name) => new(new Handler((_, _) =>
         {
-            if (name == "openrouter")
-            {
-                OpenRouterCalls++;
-                return new HttpResponseMessage(openRouterStatus);
-            }
-            OllamaCalls++;
-            return new HttpResponseMessage(ollamaStatus)
+            Assert.That(name, Is.EqualTo("openrouter"));
+            OpenRouterCalls++;
+            return new HttpResponseMessage(openRouterStatus)
             {
                 Content = new StringContent(
-                    "{\"message\":{\"content\":\"Hallo\"},\"done\":false}\n" +
-                    "{\"done\":true,\"done_reason\":\"stop\"}\n", Encoding.UTF8)
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"Hallo\"}}]}\n\n" +
+                    "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n", Encoding.UTF8)
             };
         })) { BaseAddress = new Uri("http://localhost/") };
     }

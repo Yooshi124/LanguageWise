@@ -18,10 +18,10 @@ namespace LanguageWise.GarryAiService.Api.Tests;
 public sealed class ToolLoopTests
 {
 	private const string ProgressToolCall = """
-		{"message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"courses_get_my_progress","arguments":{"courseCode":"it"}}}]},"done":true}
+		{"choices":[{"message":{"role":"assistant","content":"","tool_calls":[{"id":"call_progress","type":"function","function":{"name":"courses_get_my_progress","arguments":"{\"courseCode\":\"it\"}"}}]}}]}
 		""";
 	private const string FinalAnswer = """
-		{"message":{"role":"assistant","content":"You finished 1 of 2 lessons."},"done":true}
+		{"choices":[{"message":{"role":"assistant","content":"You finished 1 of 2 lessons."}}]}
 		""";
 
 	[Test]
@@ -82,10 +82,10 @@ public sealed class ToolLoopTests
 	public async Task DocsSearch_IsUsedButNeverShownAsToolEvent()
 	{
 		var docsCall = """
-			{"message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"docs_search","arguments":{"query":"notifications page"}}}]},"done":true}
+			{"choices":[{"message":{"role":"assistant","content":"","tool_calls":[{"id":"call_docs","type":"function","function":{"name":"docs_search","arguments":"{\"query\":\"notifications page\"}"}}]}}]}
 			""";
 		var citedAnswer = """
-			{"message":{"role":"assistant","content":"Use the master switch [1]. Ignore this [7]."},"done":true}
+			{"choices":[{"message":{"role":"assistant","content":"Use the master switch [1]. Ignore this [7]."}}]}
 			""";
 		using var fixture = new ToolFixture(docsCall, citedAnswer);
 		fixture.Mcp.ResultsByTool["docs_search"] = """
@@ -116,7 +116,7 @@ public sealed class ToolLoopTests
 	public async Task DocsSearch_WithInsufficientContext_SaysSoInFooter()
 	{
 		var docsCall = """
-			{"message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"docs_search","arguments":{"query":"pasta"}}}]},"done":true}
+			{"choices":[{"message":{"role":"assistant","content":"","tool_calls":[{"id":"call_docs","type":"function","function":{"name":"docs_search","arguments":"{\"query\":\"pasta\"}"}}]}}]}
 			""";
 		using var fixture = new ToolFixture(docsCall, FinalAnswer);
 		fixture.Mcp.ResultsByTool["docs_search"] = """{"confidence":"insufficient","passages":[]}""";
@@ -161,10 +161,10 @@ public sealed class ToolLoopTests
 	public async Task ToolLoop_IsCappedAtMaxRoundsAndCalls()
 	{
 		static string ThreeCalls(string a, string b, string c) => $$$$"""
-			{"message":{"role":"assistant","content":"","tool_calls":[
-			 {"function":{"name":"courses_get_my_progress","arguments":{"courseCode":"{{{{a}}}}"}}},
-			 {"function":{"name":"courses_get_my_progress","arguments":{"courseCode":"{{{{b}}}}"}}},
-			 {"function":{"name":"courses_get_my_progress","arguments":{"courseCode":"{{{{c}}}}"}}}]},"done":true}
+			{"choices":[{"message":{"role":"assistant","content":"","tool_calls":[
+			 {"id":"call_{{{{a}}}}","type":"function","function":{"name":"courses_get_my_progress","arguments":"{\"courseCode\":\"{{{{a}}}}\"}"}},
+			 {"id":"call_{{{{b}}}}","type":"function","function":{"name":"courses_get_my_progress","arguments":"{\"courseCode\":\"{{{{b}}}}\"}"}},
+			 {"id":"call_{{{{c}}}}","type":"function","function":{"name":"courses_get_my_progress","arguments":"{\"courseCode\":\"{{{{c}}}}\"}"}}]}}]}
 			""";
 		using var fixture = new ToolFixture(ThreeCalls("de", "fr", "it"), ThreeCalls("nl", "es", "pl"), ThreeCalls("en", "ja", "ko"), FinalAnswer);
 		using var client = fixture.CreateAuthorizedClient();
@@ -174,7 +174,7 @@ public sealed class ToolLoopTests
 
 		Assert.That(fixture.Mcp.Calls, Has.Count.EqualTo(GarryToolLoop.MaxToolCalls));
 		Assert.That(fixture.Provider.ToolRequests, Has.Count.EqualTo(GarryToolLoop.MaxRounds + 1));
-		Assert.That(fixture.Provider.ToolRequests[^1], Does.Not.Contain("\"tools\""));
+		Assert.That(fixture.Provider.ToolRequests[^1], Does.Contain("\"tool_choice\":\"none\""));
 		Assert.That(fixture.Provider.ToolRequests[^1], Does.Contain("Tool call limit reached."));
 		Assert.That(CountOccurrences(content, "event: tool"), Is.EqualTo(GarryToolLoop.MaxToolCalls + 1));
 		Assert.That(content, Does.Contain("Tool call limit reached."));
@@ -185,9 +185,9 @@ public sealed class ToolLoopTests
 	public async Task RepeatedToolCall_ReusesResultWithoutExtraEvent()
 	{
 		var twoSameCalls = """
-			{"message":{"role":"assistant","content":"","tool_calls":[
-			 {"function":{"name":"courses_list_courses","arguments":{}}},
-			 {"function":{"name":"courses_list_courses","arguments":{}}}]},"done":true}
+			{"choices":[{"message":{"role":"assistant","content":"","tool_calls":[
+			 {"id":"call_courses_1","type":"function","function":{"name":"courses_list_courses","arguments":"{}"}},
+			 {"id":"call_courses_2","type":"function","function":{"name":"courses_list_courses","arguments":"{}"}}]}}]}
 			""";
 		using var fixture = new ToolFixture(twoSameCalls, twoSameCalls, FinalAnswer);
 		using var client = fixture.CreateAuthorizedClient();
@@ -207,7 +207,7 @@ public sealed class ToolLoopTests
 	public async Task UnknownToolFromModel_IsNotCalled()
 	{
 		var unknown = """
-			{"message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"games_delete_everything","arguments":{}}}]},"done":true}
+			{"choices":[{"message":{"role":"assistant","content":"","tool_calls":[{"id":"call_unknown","type":"function","function":{"name":"games_delete_everything","arguments":"{}"}}]}}]}
 			""";
 		using var fixture = new ToolFixture(unknown, FinalAnswer);
 		using var client = fixture.CreateAuthorizedClient();
@@ -295,8 +295,7 @@ public sealed class ToolLoopTests
 		{
 			File.WriteAllText(keyPath, rsa.ExportSubjectPublicKeyInfoPem());
 			builder.UseSetting("Auth:VerificationKeyPath", keyPath);
-			builder.UseSetting("OpenRouter:ApiKey", "");
-			builder.UseSetting("Mcp:ToolProviders", "ollama");
+			builder.UseSetting("OpenRouter:ApiKey", "test-openrouter-key");
 			Mcp.Enabled = mcpEnabled;
 			builder.ConfigureServices(services =>
 			{
@@ -351,7 +350,7 @@ public sealed class ToolLoopTests
 					return new HttpResponseMessage(HttpStatusCode.OK)
 					{
 						Content = new StringContent(
-							"{\"message\":{\"content\":\"Legacy hello\"},\"done\":false}\n{\"done\":true,\"done_reason\":\"stop\"}\n",
+							"data: {\"choices\":[{\"delta\":{\"content\":\"Legacy hello\"}}]}\n\ndata: [DONE]\n\n",
 							Encoding.UTF8)
 					};
 				}
@@ -364,7 +363,7 @@ public sealed class ToolLoopTests
 				owner.replies.TryDequeue(out var reply);
 				return new HttpResponseMessage(HttpStatusCode.OK)
 				{
-					Content = new StringContent(reply ?? "{\"message\":{\"content\":\"\"},\"done\":true}", Encoding.UTF8, "application/json")
+					Content = new StringContent(reply ?? "{\"choices\":[{\"message\":{\"content\":\"\"}}]}", Encoding.UTF8, "application/json")
 				};
 			}
 		}

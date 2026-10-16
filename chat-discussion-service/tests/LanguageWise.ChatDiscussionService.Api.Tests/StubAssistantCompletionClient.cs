@@ -14,11 +14,11 @@ internal sealed class StubAssistantCompletionClient : IAssistantCompletionClient
     /// <summary>The two fragments <see cref="DefaultStream"/> streams, joined up.</summary>
     internal const string Answer = "Select the New post button, then Publish.";
 
-    /// <summary>Ollama's wire format: newline-delimited JSON, the last one done.</summary>
+    /// <summary>Garry's server-sent event stream format.</summary>
     private static readonly string DefaultStream = string.Concat(
-        "{\"message\":{\"role\":\"assistant\",\"content\":\"Select the New post button, \"},\"done\":false}\n",
-        "{\"message\":{\"role\":\"assistant\",\"content\":\"then Publish.\"},\"done\":false}\n",
-        "{\"message\":{\"role\":\"assistant\",\"content\":\"\"},\"done_reason\":\"stop\",\"done\":true}\n");
+        "event: delta\ndata: {\"content\":\"Select the New post button, \"}\n\n",
+        "event: delta\ndata: {\"content\":\"then Publish.\"}\n\n",
+        "event: done\ndata: {\"reason\":\"stop\"}\n\n");
 
     private readonly string providerStream;
 
@@ -52,7 +52,7 @@ internal sealed class FailingAssistantCompletionClient(System.Net.HttpStatusCode
         throw new AssistantProviderException("The model said no.", statusCode);
 }
 
-/// <summary>Stands in for Ollama not running at all.</summary>
+/// <summary>Stands in for an unavailable model provider.</summary>
 internal sealed class UnreachableAssistantCompletionClient : IAssistantCompletionClient
 {
     public Task<AssistantCompletionStream> StartCompletionAsync(

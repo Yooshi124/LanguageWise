@@ -17,8 +17,7 @@ public sealed class AssistantSseResultTests
             "event: done\ndata: {\"reason\":\"stop\"}\n\n";
         var completion = new AssistantCompletionStream(
             new HttpResponseMessage(),
-            new MemoryStream(Encoding.UTF8.GetBytes(garryStream)),
-            fromGarry: true);
+            new MemoryStream(Encoding.UTF8.GetBytes(garryStream)));
         var context = new DefaultHttpContext();
         using var body = new MemoryStream();
         context.Response.Body = body;
