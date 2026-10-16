@@ -22,7 +22,6 @@ from config.settings import Settings
 from core import console, stages
 from core.mcp_client import McpClient
 from core.models import Finding
-from core.ollama_client import OllamaClient, OllamaError
 from core.openrouter_client import OpenRouterClient, OpenRouterError
 from core.prompt_registry import PromptRegistry
 from core.rag_client import RagClient
@@ -96,7 +95,7 @@ class Orchestrator:
         settings: Settings,
         prompts: PromptRegistry,
         client: OpenRouterClient,
-        review_client: OllamaClient,
+        review_client: OpenRouterClient,
         session: SessionState,
         writer: SessionWriter,
         input_fn: InputFn | None = None,
@@ -346,8 +345,7 @@ class Orchestrator:
         console.print_info(f"Implementation agent proposed {len(proposed.findings)} finding(s).")
         if proposed.findings:
             console.print_info(
-                f"Review agent critiquing with {self.settings.ollama_review_model} "
-                "(local, via Ollama)..."
+                f"Review agent critiquing with {self.settings.review_model} via OpenRouter..."
             )
 
         try:
@@ -360,7 +358,7 @@ class Orchestrator:
                 prompts=self.prompts,
                 client=self.review_client,
             )
-        except OllamaError as exc:
+        except OpenRouterError as exc:
             self.writer.write_agent_stage(f"**Review agent failed:** {exc}")
             raise RoundAborted(stages.AGENT, f"review agent failed: {exc}") from exc
 

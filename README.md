@@ -150,9 +150,9 @@ pre-commit run --all-files
 
 ## Notification email configuration
 
-The quests, achievements, and notifications service uses Ollama with
-`gemma4:e4b` to compose notification emails. Docker Compose downloads the model
-into the persistent `ollama-data` volume on its first start.
+The quests, achievements, and notifications service uses OpenRouter to compose
+notification emails. Set `OPENROUTER_API_KEY` in the root `.env` file before
+starting the stack.
 
 Create `quests-achievements-notifications-service/backend/.env` with these
 values to enable Gmail SMTP for that backend only:
@@ -174,26 +174,27 @@ The authenticated SMTP username is always used as the sender address.
 Garry runs in a private container shared by all five assistant endpoints. Each
 feature backend verifies the signed-in user and supplies its authorized domain
 rules and current context; Garry adds the same personality everywhere and streams
-the reply. Garry tries OpenRouter first and falls back to the shared Ollama model
-when OpenRouter cannot start. The feature backends do not choose a provider. The
+the reply. Garry uses OpenRouter as its only model provider; if OpenRouter is
+unavailable, it does not try another model provider. The feature backends do not choose a provider. The
 browser keeps its existing assistant URLs and stores bounded transcripts in
 `sessionStorage`; chats are not written to the database.
 
-Copy the example environment file and add an OpenRouter API key:
+Copy the root example environment file and add an OpenRouter API key:
 
 ```powershell
-Copy-Item garry-ai-service\backend\.env.example garry-ai-service\backend\.env
+Copy-Item .env.example .env
 ```
 
 ```text
-OpenRouter__ApiKey=your-openrouter-api-key
+OPENROUTER_API_KEY=your-openrouter-api-key
 ```
 
-Docker Compose loads this ignored file only into Garry. The default OpenRouter
-model is `google/gemma-4-26b-a4b-it`; `OpenRouter__Model`,
-`OpenRouter__BaseUrl`, and `OpenRouter__MaxOutputTokens` can be overridden there. Without a key, Garry uses
-Ollama. If neither provider can start, the discussion assistant uses its help
-articles; other assistants report temporary unavailability. Garry applies one
+Docker Compose passes this ignored file's key to Garry, analytics, and
+notification email generation. The default OpenRouter model is `google/gemma-4-26b-a4b-it`; set
+`OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`, or `OPENROUTER_MAX_OUTPUT_TOKENS`
+in the root `.env` to override it. Without a key, Garry has no model provider.
+If OpenRouter cannot start, the discussion assistant uses its
+help articles; other assistants report temporary unavailability. Garry applies one
 10-request-per-minute limit per user across all five assistants. This limit is
 in memory, so Garry must remain a single replica unless a distributed limiter
 is introduced. Garry has no public port: the private Compose network is the

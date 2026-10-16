@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 
 namespace LanguageWise.QuestsAchievementsNotificationsService.Api.Tests;
 
-public sealed class OllamaEmailGeneratorTests
+public sealed class OpenRouterEmailGeneratorTests
 {
     private static readonly EmailContext Context = new(
         "Amber",
@@ -19,11 +19,9 @@ public sealed class OllamaEmailGeneratorTests
         ]);
 
     [Test]
-    public async Task GenerateAsync_ReturnsStructuredOllamaContent()
+    public async Task GenerateAsync_ReturnsStructuredOpenRouterContent()
     {
-        const string response = """
-            {"message":{"content":"{\"subject\":\"Course complete!\",\"body\":\"You unlocked Course Champion.\"}"}}
-            """;
+        const string response = """{"choices":[{"message":{"content":"{\"subject\":\"Course complete!\",\"body\":\"You unlocked Course Champion.\"}"}}]}""";
         var generator = CreateGenerator(HttpStatusCode.OK, response);
 
         var result = await generator.GenerateAsync(Context);
@@ -37,7 +35,7 @@ public sealed class OllamaEmailGeneratorTests
     }
 
     [Test]
-    public async Task GenerateAsync_WhenOllamaFails_ReturnsFallbackContent()
+    public async Task GenerateAsync_WhenOpenRouterFails_ReturnsFallbackContent()
     {
         var generator = CreateGenerator(HttpStatusCode.ServiceUnavailable, "{}");
 
@@ -101,17 +99,15 @@ public sealed class OllamaEmailGeneratorTests
     }
 
     [Test]
-    public async Task GenerateAsync_DisablesThinkingAndBoundsGeneratedTokens()
+    public async Task GenerateAsync_UsesJsonModeAndBoundsGeneratedTokens()
     {
-        const string response = """
-            {"message":{"content":"{\"subject\":\"Progress\",\"body\":\"Keep going.\"}"}}
-            """;
+        const string response = """{"choices":[{"message":{"content":"{\"subject\":\"Progress\",\"body\":\"Keep going.\"}"}}]}""";
         var handler = new StubHttpMessageHandler(HttpStatusCode.OK, response);
-        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://ollama/") };
-        var generator = new OllamaEmailGenerator(
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://openrouter.ai/api/v1/") };
+        var generator = new OpenRouterEmailGenerator(
             httpClient,
-            Options.Create(new OllamaOptions()),
-            NullLogger<OllamaEmailGenerator>.Instance);
+            Options.Create(new OpenRouterOptions { ApiKey = "test-key" }), // pragma: allowlist secret
+            NullLogger<OpenRouterEmailGenerator>.Instance);
 
         await generator.GenerateAsync(Context);
 
@@ -121,8 +117,10 @@ public sealed class OllamaEmailGeneratorTests
         var eventDetails = messages[1].GetProperty("content").GetString();
         Assert.Multiple(() =>
         {
-            Assert.That(request.RootElement.GetProperty("think").GetBoolean(), Is.False);
-            Assert.That(request.RootElement.GetProperty("options").GetProperty("num_predict").GetInt32(), Is.EqualTo(192));
+            Assert.That(handler.LastRequestUri, Is.EqualTo("https://openrouter.ai/api/v1/chat/completions"));
+            Assert.That(handler.LastAuthorization, Is.EqualTo("Bearer test-key"));
+            Assert.That(request.RootElement.GetProperty("max_tokens").GetInt32(), Is.EqualTo(192));
+            Assert.That(request.RootElement.GetProperty("response_format").GetProperty("type").GetString(), Is.EqualTo("json_object"));
             Assert.That(instructions, Does.Contain("English descriptions"));
             Assert.That(instructions, Does.Contain("highlight newly attained achievements"));
             Assert.That(eventDetails, Does.Contain("Learner name: Amber"));
@@ -134,16 +132,16 @@ public sealed class OllamaEmailGeneratorTests
         });
     }
 
-    private static OllamaEmailGenerator CreateGenerator(HttpStatusCode statusCode, string responseBody)
+    private static OpenRouterEmailGenerator CreateGenerator(HttpStatusCode statusCode, string responseBody)
     {
         var httpClient = new HttpClient(new StubHttpMessageHandler(statusCode, responseBody))
         {
-            BaseAddress = new Uri("http://ollama/")
+            BaseAddress = new Uri("https://openrouter.ai/api/v1/")
         };
 
-        return new OllamaEmailGenerator(
+        return new OpenRouterEmailGenerator(
             httpClient,
-            Options.Create(new OllamaOptions()),
-            NullLogger<OllamaEmailGenerator>.Instance);
+            Options.Create(new OpenRouterOptions { ApiKey = "test-key" }), // pragma: allowlist secret
+            NullLogger<OpenRouterEmailGenerator>.Instance);
     }
 }

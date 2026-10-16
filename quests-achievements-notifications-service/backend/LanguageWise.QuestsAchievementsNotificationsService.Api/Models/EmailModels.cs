@@ -8,9 +8,11 @@ public sealed record EmailContext(
     string Subject,
     IReadOnlyList<AchievementUpdate> Achievements);
 
-public sealed class OllamaOptions
+public sealed class OpenRouterOptions
 {
-    public string Model { get; set; } = "gemma4:e4b";
+    public string ApiKey { get; set; } = string.Empty;
+    public string BaseUrl { get; set; } = "https://openrouter.ai/api/v1";
+    public string Model { get; set; } = "google/gemma-4-26b-a4b-it";
 }
 
 public sealed class SmtpOptions

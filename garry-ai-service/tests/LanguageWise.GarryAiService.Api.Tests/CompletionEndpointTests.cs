@@ -68,7 +68,7 @@ public sealed class CompletionEndpointTests
     [Test]
     public async Task Completion_WhenProviderStreamTruncates_SendsErrorEventInsteadOfCrashing()
     {
-        using var fixture = new GarryFixture("{\"message\":{\"content\":\"Hello\"},\"done\":false}\n");
+        using var fixture = new GarryFixture("data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n");
         using var client = fixture.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
 
@@ -87,7 +87,7 @@ public sealed class CompletionEndpointTests
         canonicalContext = "{}"
     };
 
-    private sealed class GarryFixture(string? ollamaResponseBody = null) : WebApplicationFactory<Program>
+    private sealed class GarryFixture(string? openRouterResponseBody = null) : WebApplicationFactory<Program>
     {
         private readonly RSA rsa = RSA.Create(2048);
         private readonly string keyPath = Path.Combine(Path.GetTempPath(), $"garry-test-{Guid.NewGuid():N}.pem");
@@ -100,12 +100,12 @@ public sealed class CompletionEndpointTests
                 new Dictionary<string, string?>
                 {
                     ["Auth:VerificationKeyPath"] = keyPath,
-                    ["OpenRouter:ApiKey"] = ""
+                    ["OpenRouter:ApiKey"] = "test-key"
                 }));
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IHttpClientFactory>();
-                services.AddSingleton<IHttpClientFactory>(new OllamaFactory(ollamaResponseBody));
+                services.AddSingleton<IHttpClientFactory>(new OpenRouterFactory(openRouterResponseBody));
             });
         }
 
@@ -134,7 +134,7 @@ public sealed class CompletionEndpointTests
         }
     }
 
-    private sealed class OllamaFactory(string? responseBody = null) : IHttpClientFactory
+    private sealed class OpenRouterFactory(string? responseBody = null) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new(new Handler(responseBody))
         {
@@ -149,8 +149,8 @@ public sealed class CompletionEndpointTests
             {
                 Content = new StringContent(
                     responseBody ??
-                        "{\"message\":{\"content\":\"Hello\"},\"done\":false}\n" +
-                        "{\"done\":true,\"done_reason\":\"stop\"}\n", Encoding.UTF8)
+                        "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n" +
+                        "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n", Encoding.UTF8)
             });
     }
 }

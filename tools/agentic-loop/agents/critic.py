@@ -1,10 +1,7 @@
 """AGENT stage 4b: the Review Agent (critic).
 
-Runs on a separate, local model (Ollama + Gemma) so the human only sees
-suggestions that survive scrutiny by a genuinely independent second model. This
-pass is mandatory and cannot be disabled: if the local model is unreachable or
-misbehaves, `OllamaError` propagates so the caller aborts the round rather than
-silently showing unreviewed findings.
+The review pass uses a separately configurable OpenRouter model and is mandatory:
+provider errors propagate so the caller never silently shows unreviewed findings.
 """
 
 from __future__ import annotations
@@ -16,8 +13,7 @@ from collectors.file_reader import CodeBundle
 from collectors.repo_observer import Observation
 from config.settings import Settings
 from core.models import CritiqueResult, FindingSet
-from core.ollama_client import OllamaClient
-from core.openrouter_client import ModelResponse, dump_json
+from core.openrouter_client import ModelResponse, OpenRouterClient, dump_json
 from core.prompt_registry import PromptRegistry
 
 logger = logging.getLogger(__name__)
@@ -57,7 +53,7 @@ def critique(
     observation: Observation,
     settings: Settings,
     prompts: PromptRegistry,
-    client: OllamaClient,
+    client: OpenRouterClient,
 ) -> CritiqueOutcome:
     if not proposed.findings:
         return CritiqueOutcome(
@@ -80,7 +76,7 @@ def critique(
         prompt=task,
         schema=CritiqueResult,
         system_instruction=system,
-        model=settings.ollama_review_model,
+        model=settings.review_model,
     )
 
     if not result.findings and proposed.findings:
@@ -92,7 +88,7 @@ def critique(
             prompt=task + "\n" + RECHECK_INSTRUCTION,
             schema=CritiqueResult,
             system_instruction=system,
-            model=settings.ollama_review_model,
+            model=settings.review_model,
         )
         if recheck_response:
             recheck_response.attempts += response.attempts

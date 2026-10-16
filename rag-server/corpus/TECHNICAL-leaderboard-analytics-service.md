@@ -11,8 +11,8 @@ Internal reference for the agentic loop. Not for end-user access.
 - Domain models: `RankingData`, `LessonsCompletedModels`, `AiSummaryModels`.
 - Stateless — it has no database of its own and computes everything on the fly
   by calling quizzes-courses-service over HTTP (`Services__QuizzesCourses`).
-- Uses a local Ollama instance (`Services__Ollama`) and garry-ai-service
-  (`Services__Garry`) to generate natural-language performance summaries.
+- Uses OpenRouter to generate natural-language performance summaries and
+  garry-ai-service (`Services__Garry`) for the assistant endpoint.
 
 ## Database
 

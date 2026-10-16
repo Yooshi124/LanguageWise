@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using LanguageWise.QuestsAchievementsNotificationsService.Api.Models;
@@ -10,10 +11,10 @@ public interface IEmailContentGenerator
     Task<EmailContent> GenerateAsync(EmailContext context, CancellationToken cancellationToken = default);
 }
 
-public sealed class OllamaEmailGenerator(
+public sealed class OpenRouterEmailGenerator(
     HttpClient httpClient,
-    IOptions<OllamaOptions> options,
-    ILogger<OllamaEmailGenerator> logger) : IEmailContentGenerator
+    IOptions<OpenRouterOptions> options,
+    ILogger<OpenRouterEmailGenerator> logger) : IEmailContentGenerator
 {
     private const int MaximumSubjectLength = 120;
     private const int MaximumBodyLength = 4000;
@@ -32,7 +33,7 @@ public sealed class OllamaEmailGenerator(
             {
                 model = options.Value.Model,
                 stream = false,
-                think = false,
+                max_tokens = 192,
                 messages = new object[]
                 {
                     new
@@ -46,33 +47,29 @@ public sealed class OllamaEmailGenerator(
                         content = $"Learner name: {context.UserName}\nEvent description: {context.Subject}\nAchievement descriptions:\n{FormatAchievements(context.Achievements)}"
                     }
                 },
-                format = new
+                response_format = new
                 {
-                    type = "object",
-                    properties = new
-                    {
-                        subject = new { type = "string" },
-                        body = new { type = "string" }
-                    },
-                    required = new[] { "subject", "body" }
-                },
-                options = new
-                {
-                    temperature = 1.0,
-                    top_p = 0.95,
-                    top_k = 64,
-                    num_predict = 192
+                    type = "json_object"
                 }
             };
 
-            using var response = await httpClient.PostAsJsonAsync("api/chat", request, cancellationToken);
+            using var message = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
+            {
+                Content = JsonContent.Create(request)
+            };
+            if (!string.IsNullOrWhiteSpace(options.Value.ApiKey))
+            {
+                message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.Value.ApiKey);
+            }
+            using var response = await httpClient.SendAsync(message, cancellationToken);
             response.EnsureSuccessStatusCode();
-            var payload = await response.Content.ReadFromJsonAsync<OllamaChatResponse>(cancellationToken);
-            var generated = JsonSerializer.Deserialize<GeneratedEmail>(payload?.Message.Content ?? string.Empty, JsonOptions);
+            var payload = await response.Content.ReadFromJsonAsync<OpenRouterChatResponse>(cancellationToken);
+            var generated = JsonSerializer.Deserialize<GeneratedEmail>(
+                payload?.Choices.FirstOrDefault()?.Message.Content ?? string.Empty, JsonOptions);
 
             if (string.IsNullOrWhiteSpace(generated?.Subject) || string.IsNullOrWhiteSpace(generated.Body))
             {
-                throw new JsonException("Ollama returned an incomplete email.");
+                throw new JsonException("OpenRouter returned an incomplete email.");
             }
 
             return new EmailContent(
@@ -84,7 +81,7 @@ public sealed class OllamaEmailGenerator(
             !cancellationToken.IsCancellationRequested
             && exception is HttpRequestException or JsonException or TaskCanceledException)
         {
-            logger.LogWarning(exception, "Ollama email generation failed; using the fallback template.");
+            logger.LogWarning(exception, "OpenRouter email generation failed; using the fallback template.");
             return Fallback(context);
         }
     }
@@ -131,7 +128,8 @@ public sealed class OllamaEmailGenerator(
             ? body
             : $"Hi {userName}, {body}";
 
-    private sealed record OllamaChatResponse(OllamaMessage Message);
-    private sealed record OllamaMessage(string Content);
+    private sealed record OpenRouterChatResponse(IReadOnlyList<OpenRouterChoice> Choices);
+    private sealed record OpenRouterChoice(OpenRouterMessage Message);
+    private sealed record OpenRouterMessage(string Content);
     private sealed record GeneratedEmail(string Subject, string Body);
 }

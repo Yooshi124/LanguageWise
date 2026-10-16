@@ -17,12 +17,6 @@ TOOL_ROOT = Path(__file__).resolve().parent.parent
 # Same default model as the mini-games service OpenRouter setup.
 DEFAULT_MODEL = "google/gemma-4-26b-a4b-it"
 DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-DEFAULT_OLLAMA_HOST = "http://localhost:11434"
-DEFAULT_OLLAMA_REVIEW_MODEL = "gemma4:e2b"
-# Short-lived: Ollama otherwise keeps the full model resident in RAM for 5
-# minutes (its own default) after every call, which adds up across a session
-# that also has the rag-server and mcp-server running locally.
-DEFAULT_OLLAMA_KEEP_ALIVE = "30s"
 DEFAULT_RAG_BASE_URL = "http://localhost:8100"
 DEFAULT_RAG_N_RESULTS = 5
 DEFAULT_MCP_BASE_URL = "http://localhost:8200"
@@ -146,11 +140,8 @@ class Settings:
     api_key: str
     model: str
     selection_model: str
+    review_model: str
     openrouter_base_url: str
-    ollama_host: str
-    ollama_review_model: str
-    ollama_keep_alive: str
-    ollama_request_timeout_seconds: int
     github_token: str
     github_repo: str
     github_workflow: str
@@ -211,10 +202,7 @@ class Settings:
             "Model": self.model,
             "Selection model": self.selection_model,
             "OpenRouter base URL": self.openrouter_base_url,
-            "Review agent (mandatory, local)": (
-                f"{self.ollama_review_model} via Ollama at {self.ollama_host} "
-                f"(keep_alive={self.ollama_keep_alive})"
-            ),
+            "Review model": f"{self.review_model} via OpenRouter (mandatory)",
             "GitHub repository": self.github_repo or "auto-detect from git remote",
             "GitHub workflow": self.github_workflow or "(latest failed run)",
             "RAG server": self.rag_base_url,
@@ -283,18 +271,12 @@ def load_settings(
 
     model = get("OPENROUTER_MODEL") or DEFAULT_MODEL
     selection_model = get("OPENROUTER_SELECTION_MODEL") or model
+    review_model = get("OPENROUTER_REVIEW_MODEL") or model
     openrouter_base_url = get("OPENROUTER_BASE_URL") or DEFAULT_OPENROUTER_BASE_URL
     if "://" not in openrouter_base_url:
         raise ConfigError(
             f"OPENROUTER_BASE_URL must be an absolute URL, got '{openrouter_base_url}'."
         )
-    ollama_host = get("OLLAMA_HOST") or DEFAULT_OLLAMA_HOST
-    ollama_review_model = get("OLLAMA_REVIEW_MODEL") or DEFAULT_OLLAMA_REVIEW_MODEL
-    ollama_keep_alive = get("OLLAMA_KEEP_ALIVE") or DEFAULT_OLLAMA_KEEP_ALIVE
-    ollama_request_timeout_seconds = _int(
-        "OLLAMA_REQUEST_TIMEOUT_SECONDS", get("OLLAMA_REQUEST_TIMEOUT_SECONDS"), 600
-    )
-
     repo_root_raw = get("REPO_ROOT")
     if repo_root_raw:
         repo_root = Path(repo_root_raw).expanduser().resolve()
@@ -418,11 +400,8 @@ def load_settings(
         api_key=api_key,
         model=model,
         selection_model=selection_model,
+        review_model=review_model,
         openrouter_base_url=openrouter_base_url,
-        ollama_host=ollama_host,
-        ollama_review_model=ollama_review_model,
-        ollama_keep_alive=ollama_keep_alive,
-        ollama_request_timeout_seconds=ollama_request_timeout_seconds,
         github_token=github_token,
         github_repo=github_repo.strip("/"),
         github_workflow=github_workflow,

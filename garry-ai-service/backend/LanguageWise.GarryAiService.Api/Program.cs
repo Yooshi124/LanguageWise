@@ -14,11 +14,6 @@ builder.Services.AddHttpClient("openrouter", client =>
     client.BaseAddress = new Uri((builder.Configuration["OpenRouter:BaseUrl"] ?? "https://openrouter.ai/api/v1").TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(builder.Configuration.GetValue("OpenRouter:StartupTimeoutSeconds", 30));
 });
-builder.Services.AddHttpClient("ollama", client =>
-{
-    client.BaseAddress = new Uri((builder.Configuration["Services:Ollama"] ?? "http://localhost:11434").TrimEnd('/') + "/");
-    client.Timeout = Timeout.InfiniteTimeSpan;
-});
 builder.Services.AddHttpClient(McpToolHost.HttpClientName, client =>
 {
     client.Timeout = TimeSpan.FromSeconds(builder.Configuration.GetValue("Mcp:TimeoutSeconds", 15));

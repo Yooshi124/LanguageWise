@@ -83,8 +83,7 @@ def inline_schema_refs(schema: dict[str, Any]) -> dict[str, Any]:
     """Resolve `$ref`/`$defs` into a self-contained schema and pin field order.
 
     Pydantic emits `$defs` for nested models and enums; inlining keeps the schema
-    portable for backends that do not dereference local pointers (Ollama's
-    `format` parameter, among others).
+    portable for OpenRouter model providers that do not dereference local pointers.
 
     `propertyOrdering` is added to every object because models otherwise emit
     JSON keys in whatever order they like. When a long free-text field comes
