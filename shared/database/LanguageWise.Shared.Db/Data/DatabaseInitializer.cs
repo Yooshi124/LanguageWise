@@ -22,6 +22,7 @@ public sealed class DatabaseInitializer(string connectionString, string sqlDirec
         EnsureColumn(connection, "ProfilePictureContentType", "TEXT");
         EnsureColumn(connection, "ProfilePictureSizeBytes", "INTEGER");
         EnsureColumn(connection, "ProfilePictureUploadedAt", "TEXT");
+        EnsureColumn(connection, "IsAdmin", "INTEGER NOT NULL DEFAULT 0");
         logger.LogInformation("Schema applied to {ConnectionString}.", connectionString);
 
         Execute(connection, ReadSqlFile("seed.sql"));

@@ -5,3 +5,5 @@ INSERT OR IGNORE INTO Users (Username, Password) VALUES
     ('roan',    'password'),
     ('justin',  'password'),
     ('kyan',    'password');
+
+UPDATE Users SET IsAdmin = 1 WHERE Username = 'lachlan';

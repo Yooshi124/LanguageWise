@@ -42,7 +42,7 @@ app.MapPost("/api/users/verify", (LoginInput input, UserRepository users) =>
 
     var userId = users.Verify(input.Username, input.Password);
     return userId is not null
-        ? Results.Ok(new { authenticated = true, userId })
+        ? Results.Ok(new { authenticated = true, userId, isAdmin = users.IsAdmin(userId.Value) })
         : Results.Unauthorized();
 });
 

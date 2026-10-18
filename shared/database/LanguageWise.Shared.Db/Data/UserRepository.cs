@@ -31,6 +31,17 @@ public sealed class UserRepository(string connectionString)
         return result is long id ? (int)id : null;
     }
 
+    public bool IsAdmin(int userId)
+    {
+        using var connection = new SqliteConnection(connectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT IsAdmin FROM Users WHERE Id = $userId;";
+        command.Parameters.AddWithValue("$userId", userId);
+
+        return command.ExecuteScalar() is long isAdmin && isAdmin != 0;
+    }
+
     public UserAccountResult Create(string username, string password)
     {
         using var connection = new SqliteConnection(connectionString);

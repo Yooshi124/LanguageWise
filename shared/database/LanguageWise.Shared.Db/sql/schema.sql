@@ -11,5 +11,6 @@ CREATE TABLE IF NOT EXISTS Users (
     ProfilePictureFileName    TEXT,
     ProfilePictureContentType TEXT,
     ProfilePictureSizeBytes   INTEGER,
-    ProfilePictureUploadedAt  TEXT
+    ProfilePictureUploadedAt  TEXT,
+    IsAdmin       INTEGER NOT NULL DEFAULT 0
 );
