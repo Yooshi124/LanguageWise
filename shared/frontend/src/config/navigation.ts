@@ -9,6 +9,7 @@ export type AppIconName =
   | 'menu'
   | 'profile'
   | 'quests'
+  | 'settings'
 
 export interface ServiceNavigationItem {
   key: string
