@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+using Npgsql;
 
 namespace LanguageWise.QuizzesCoursesService.Db.Data;
 
@@ -21,9 +21,7 @@ public sealed class DatabaseInitializer(string connectionString, string sqlDirec
 
     public void Initialise()
     {
-        EnsureDatabaseDirectoryExists();
-
-        using var connection = new SqliteConnection(connectionString);
+        using var connection = new NpgsqlConnection(connectionString);
         connection.Open();
 
         var schemaPath = Path.Combine(sqlDirectory, "schema.sql");
@@ -63,13 +61,52 @@ public sealed class DatabaseInitializer(string connectionString, string sqlDirec
         try
         {
             using var transaction = connection.BeginTransaction();
+            Execute(connection, transaction, "LOCK TABLE SeedHistory IN EXCLUSIVE MODE;");
+            Execute(connection, transaction,
+                "LOCK TABLE Courses, Lessons, LessonVocabulary, Quizzes, QuizQuestions, QuizAttempts, QuizAnswers, Milestones IN SHARE ROW EXCLUSIVE MODE;");
 
             foreach (var seedPath in seedPaths)
             {
                 seedContext = seedPath;
+                if (Path.GetFileName(seedPath) == SeedManifest[^1])
+                {
+                    using var check = connection.CreateCommand();
+                    check.Transaction = transaction;
+                    check.CommandText = "SELECT EXISTS(SELECT 1 FROM SeedHistory WHERE Name = @name);";
+                    check.Parameters.AddWithValue("name", SeedManifest[^1]);
+                    if ((bool)check.ExecuteScalar()!)
+                    {
+                        continue;
+                    }
+                }
+
                 Execute(connection, transaction, File.ReadAllText(seedPath));
                 logger.LogInformation("Executed seed script {SeedScript}.", Path.GetFileName(seedPath));
             }
+
+            using (var record = connection.CreateCommand())
+            {
+                record.Transaction = transaction;
+                record.CommandText = "INSERT INTO SeedHistory (Name) VALUES (@name) ON CONFLICT DO NOTHING;";
+                record.Parameters.AddWithValue("name", SeedManifest[^1]);
+                record.ExecuteNonQuery();
+            }
+
+            Execute(connection, transaction,
+                """
+                DO $$
+                DECLARE identity_table text;
+                BEGIN
+                    FOREACH identity_table IN ARRAY ARRAY['courses', 'lessons', 'lessonvocabulary',
+                        'quizzes', 'quizquestions', 'quizattempts', 'quizanswers', 'milestones']
+                    LOOP
+                        EXECUTE format('SELECT setval(%L, GREATEST(COALESCE((SELECT MAX(id) FROM %I), 0),
+                            (SELECT last_value FROM %s)), true)',
+                            pg_get_serial_sequence(identity_table, 'id'), identity_table,
+                            pg_get_serial_sequence(identity_table, 'id'));
+                    END LOOP;
+                END $$;
+                """);
 
             seedContext = "committing seed transaction";
             transaction.Commit();
@@ -81,17 +118,6 @@ public sealed class DatabaseInitializer(string connectionString, string sqlDirec
                 "Seed initialization failed while processing {SeedContext}; the seed transaction was not committed.",
                 seedContext);
             throw;
-        }
-    }
-
-    private void EnsureDatabaseDirectoryExists()
-    {
-        var dataSource = new SqliteConnectionStringBuilder(connectionString).DataSource;
-        var directory = Path.GetDirectoryName(Path.GetFullPath(dataSource));
-
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
         }
     }
 
@@ -148,7 +174,7 @@ public sealed class DatabaseInitializer(string connectionString, string sqlDirec
     private static string FormatFileList(string[] fileNames) =>
         fileNames.Length == 0 ? "(none)" : string.Join(", ", fileNames);
 
-    private static void Execute(SqliteConnection connection, SqliteTransaction? transaction, string sql)
+    private static void Execute(NpgsqlConnection connection, NpgsqlTransaction? transaction, string sql)
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;

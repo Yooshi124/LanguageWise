@@ -1,0 +1,280 @@
+# AWS Deployment Plan
+
+Status: local PostgreSQL conversion is implemented and tested. AWS infrastructure remains planning only; no AWS resources have been changed.
+
+## 1. Recommendation and Decisions
+
+Use Terraform to manage AWS infrastructure and ECS task definitions, with GitHub Actions building images and deploying the tested commit after a PR merges into `master`. Existing workflows in this repository already target `master`, not `main`.
+
+Confirmed decisions:
+
+| Item | Decision |
+| --- | --- |
+| Region | **Asia Pacific (Sydney), `ap-southeast-2`**. |
+| Budget | **Maximum $100 USD/month**, for demonstrations only. Do not assume free-tier credits when costing. |
+| Compute and storage | **ECS Fargate plus RDS PostgreSQL**. SQLite-to-PostgreSQL conversion is migration step 1. |
+| Task size | **0.5 vCPU and 1 GiB RAM** per application task, initially one container and one replica per service. |
+| Public address | Browser-trusted **HTTPS** is required; an AWS-generated URL is acceptable. No domain purchase is required for the proposed CloudFront address. |
+| Initial data | Start with **seed data**. No migration of existing local users or progress. |
+| MCP and RAG | **Out of scope for now**. A teammate will containerize them; adding them to AWS is a later integration step. |
+| Demo controls | Provide **Demo Up** and **Demo Down** buttons through GitHub Actions, plus automatic expiry to avoid forgotten running resources. |
+
+Use **ECS on Fargate for application containers and RDS PostgreSQL for persistent relational data**. Keep Garry at one steady-state replica because its cross-feature rate limiter is in memory. Basic OpenRouter-backed AI stays in scope; live MCP tools and RAG-dependent features do not.
+
+This is not a direct translation of Compose. The four former SQLite database APIs now use PostgreSQL locally with their HTTP contracts preserved. AWS deployment still requires the remaining infrastructure and configuration work below. RDS is not a container and does not use the requested task sizing.
+
+**Important:** 0.5 vCPU/1 GiB is a valid Linux Fargate task size (`cpu = 512`, `memory = 1024`), not a guarantee that every workload fits. It applies to the whole task, including sidecars. RDS has its own instance sizing and billing. Any task-size exception requires approval after testing; future MCP/RAG tasks need their own sizing and cost review.
+
+### HTTPS Without Buying a Domain
+
+A domain is a readable address such as `demo.example.com`; HTTPS additionally requires a certificate valid for that address. We cannot obtain a normal public ACM certificate for AWS's shared `*.elb.amazonaws.com` ALB hostname, so merely switching an ALB URL to `https://` is not sufficient.
+
+Instead, use **CloudFront's default address**, for example `https://d123example.cloudfront.net`. AWS supplies the browser-trusted certificate for that hostname. No domain registration, Route 53 hosted zone, DNS edits, or custom ACM certificate are required. CloudFront forwards requests to an internal ALB through a VPC origin, then to the shared frontend gateway. Sydney supports CloudFront VPC origins.
+
+The browser connection is HTTPS. The proposed CloudFront-to-ALB hop is HTTP over private VPC-origin connectivity, not end-to-end TLS; do not describe it as encrypted on every hop. Requiring TLS at the ALB as well would need a separate certificate/origin design. Full demo teardown can change the CloudFront URL; Demo Up must always report the current URL.
+
+## 2. Current Deployment Inventory
+
+The root Compose file defines **19 containers**:
+
+| Group | Count | AWS treatment |
+| --- | ---: | --- |
+| Shared and five feature frontends | 6 | Initially retain nginx containers and the shared same-origin gateway. |
+| Shared and five feature backends, plus Garry | 7 | Private ECS services, initially one task each. |
+| Shared, mini-games, quizzes/courses, and chat PostgreSQL database APIs | 4 | Retain private API services; point their PostgreSQL connections at RDS. |
+| Shared PostgreSQL server hosting all five databases | 1 | Replace with RDS PostgreSQL; review PostgreSQL 18 compatibility and regional availability. |
+| Quests PostgREST database API | 1 | Retain privately, pointed at the quests database on RDS. |
+
+Two additional runtime dependencies are outside Compose and **excluded from this deployment**:
+
+- **MCP:** currently a host-run .NET service on port 8200. A teammate owns its containerization; do not provision its service, image repository, MCP key, or downstream configuration now.
+- **RAG:** currently a host-run Python/Chroma service on port 8100. A teammate owns its containerization; do not provision its service, image repository, model cache, or index now.
+
+With PostgreSQL moved to RDS and MCP/RAG excluded, the initial design has **18 application tasks plus one RDS instance**. Set `Mcp__Enabled=false` explicitly on all relevant tasks and omit MCP secrets. Add or verify an explicit RAG-disabled mode: the shared backend currently registers a RAG client even when no server exists, so simply removing an address is insufficient. Hide/disable unavailable docs-search and tool controls, or return a clear, immediate unavailable response without host-address attempts/timeouts. Basic Garry completions must still work. Keep these AWS changes independent of teammates' local Compose setup.
+
+Future MCP/RAG integration is a separate change and must revisit runtime sizing, demo controls, tests, and the $100 budget. Frontend consolidation or S3 static hosting is also deferred.
+
+## 3. Cost and Free-Tier Gate
+
+**Do this before provisioning. An AWS free-tier account does not make this stack free.** Eligibility depends on account creation date, plan, credits, region, and service. Check remaining credits and expiration in Billing; confirm whether the account's plan permits every required service and whether upgrading enables paid usage.
+
+Cost this deployment in **Sydney (`ap-southeast-2`)**, not US East. Eighteen tasks reserve 9 vCPUs and 18 GiB RAM while running. Continuous operation is incompatible with the $100/month limit; demonstrations must be time-limited and followed by full runtime teardown.
+
+Use this provisional monthly allocation, **not a verified AWS quote**:
+
+| Allocation | USD/month | Control |
+| --- | ---: | --- |
+| Active demo resources | $60 | Initially allow at most 40 billed runtime hours/month, provided the calculated all-in active rate is no more than $1.50/hour. Include startup, teardown, rollout overlap, RDS, ALB, task IPv4 addresses, and traffic. |
+| Retained foundation | $20 | Cap ECR images, logs, state versions, secrets, and control/cleanup automation; measure the idle bill. |
+| Contingency | $20 | Leave headroom for transfer, unexpected usage, and external OpenRouter charges; set provider usage limits separately. |
+| Total | **$100** | Lower the runtime-hour allowance if the actual estimate or idle cost exceeds its allocation. |
+
+Before provisioning, create a Sydney AWS Pricing Calculator estimate with exact Fargate, single-AZ RDS, storage, ALB, CloudFront, public IPv4, logging, and transfer choices. The $1.50/hour figure is an acceptance ceiling for the proposed allowance, not a claim about current prices. Count any other existing account resources against the same budget. Verify CloudFront plan/free-tier eligibility rather than assuming traffic is free; avoid a fixed-price plan that consumes the budget.
+
+Avoid NAT gateways and collections of paid interface endpoints for this small demo. Use public-subnet Fargate ENIs for outbound access, with tightly restricted inbound security groups; those IPv4 addresses are billed while allocated. RDS and the ALB remain private. If this tradeoff is unacceptable, recost private-task egress before proceeding rather than silently adding NAT.
+
+**Your steps:** enable root MFA, use a non-root administrative identity, and configure actual and forecast budget alerts at $25/$50/$75/$90. Approve the calculator estimate and starting runtime-hour allowance. Budgets/alerts are not hard spending caps and billing data can lag; automatic expiry and teardown are the primary safeguards. Credits may offset charges but must not justify an otherwise unaffordable design.
+
+## 4. Step-by-Step Implementation
+
+### Step 1: Convert SQLite to PostgreSQL Locally
+
+**Local status:** implemented and verified against PostgreSQL 18. Compose uses one server with five separately owned databases and restricted logins. Real-engine database/API tests, clean-volume seeding, non-destructive repeat startup, and persistence through application and PostgreSQL container replacement have been checked. Mini-games has no static seed and creates games through its existing API. Local setup and test commands are in the root README; AWS provisioning remains out of scope for this completed local change.
+
+**Implementation:** before AWS provisioning, port the shared, mini-games, quizzes/courses, and chat database APIs to PostgreSQL. Preserve their HTTP routes and DTOs so feature backends keep the same contracts. Update local development/CI database setup as needed without breaking teammates' workflows.
+
+1. Replace SQLite-specific connections, SQL, schema initializers, and seeds with PostgreSQL-compatible equivalents and versioned migrations.
+2. Test IDs/sequences, uniqueness, timestamps, transactions, case sensitivity, and repeatable seed initialization; do not assume SQL is portable.
+3. Use a local PostgreSQL instance with separate databases/roles for the five data owners, including quests, to rehearse the RDS layout.
+4. Start each database from empty storage and seed it. Existing local data will **not** be exported/imported. Reapplying migrations/seeds must not duplicate rows or wipe active-demo changes.
+5. Run database/API contract tests and the core signup/login, progress, forum, and achievements flows against PostgreSQL.
+
+**Your steps:** review the seed/demo accounts and confirm they contain no real personal data. No AWS console setup or database export is required for this step.
+
+**Exit check:** all five data owners work against PostgreSQL from a clean seeded environment, and data survives application container replacement.
+
+### Step 2: Inventory the Existing AWS Resources
+
+**You provide:** account ID, ECS cluster name/ARN, ECR repository name/URI, and GitHub repository owner/name. Confirm the existing resources are in `ap-southeast-2`; resources in another region need a deliberate adoption/recreation decision. These are identifiers, not secret keys. Do not send passwords, private keys, or API tokens in chat.
+
+**Implementation:** inspect the cluster's capacity providers, VPC/subnets, permissions, Fargate quotas, and the existing ECR repository. Merely creating a cluster does not create running capacity or task definitions. Check the regional Fargate on-demand vCPU quota: eighteen tasks require 9 vCPUs at steady state, plus migration/rollout headroom. Request an increase before deployment if necessary.
+
+Decide which existing resources Terraform will own. Import adopted resources into state rather than recreating them or accidentally managing them twice. One existing ECR repository can technically hold many tagged images; prefer one repository per custom image for clear permissions and lifecycle rules. Do not delete the existing repository or cluster without checking their use.
+
+**Exit check:** agreed inventory, resource ownership, region, architecture, and affordable cost estimate.
+
+### Step 3: Bootstrap Terraform and GitHub Authentication
+
+**Implementation:** add an `infra/` layout with separately owned foundation and disposable demo configurations/states. The retained foundation contains state storage, OIDC/IAM, ECR, secrets, a release/mode record, cleanup automation, and any adopted empty ECS cluster. The demo state owns the disposable VPC/network resources, CloudFront/VPC origin, ALB, RDS, discovery, and application services. Explicitly document cross-state outputs so destroying the demo cannot destroy the foundation. Pin Terraform/provider versions and commit the provider lock file. Keep local Compose development working independently.
+
+1. Bootstrap a private, encrypted, versioned S3 Terraform state bucket with public access blocked and native S3 state locking (`use_lockfile = true`, using a supporting Terraform version). The bucket must exist before the application configuration can use it as a backend.
+2. Keep bootstrap and application state separate. Protect state and backups: marking a value `sensitive` only hides display; it does not remove it from state.
+3. Create or reuse the account's GitHub OIDC provider and narrowly scoped deployment roles. Use short-lived credentials, not a long-lived AWS access key in GitHub.
+4. Restrict role trust to the exact repository and deployment context. For a GitHub environment named `aws-demo`, use its environment subject and restrict that environment to protected `master`; otherwise use the exact branch subject. Match the repository's actual OIDC subject format, including immutable owner/repository IDs where enabled. The audience must be `sts.amazonaws.com`.
+5. Separate read-only PR planning permissions from deployment permissions. Do not give untrusted fork PRs AWS credentials. Restrict `iam:PassRole` to the ECS roles actually used.
+
+**Your steps:** install AWS CLI and Terraform locally, authenticate through SSO or another short-lived method, run/review the one-time bootstrap under your administrative identity, and configure the GitHub environment and repository variables. Add branch protection/rulesets requiring PRs and passing checks on `master` and preventing routine direct pushes. Protect infrastructure/workflow changes through review.
+
+**Exit check:** a trusted workflow can assume the expected role with `aws sts get-caller-identity`, and Terraform can safely initialize and lock remote state.
+
+### Step 4: Provision RDS and Seed the Demo
+
+**Implementation:** apply the PostgreSQL work completed in step 1 to the disposable AWS demo environment.
+
+1. Provision one small **single-AZ** RDS PostgreSQL instance, not five instances, with separate databases and restricted roles for the five owners. Select an engine/version and instance class available in Sydney; test whether a burstable class such as `db.t4g.micro` has sufficient connections/memory, and monitor CPU credits. Do not promise it fits before testing. Keep it private in a database subnet group spanning two Availability Zones, restrict ingress, verify TLS, and encrypt storage. A two-zone subnet group is not a paid Multi-AZ database deployment.
+2. Run the versioned schema/seed process for all owners, including quests' PostgREST roles/grants. The current quests PostgreSQL 18 image initializes through `/docker-entrypoint-initdb.d`; RDS will not execute that directory automatically. Rotate the hard-coded development database credentials.
+3. Run migrations/seeds as an explicit one-off ECS task inside the VPC; GitHub starts it and checks its exit status without direct access to private RDS. Seed fresh databases on Demo Up, not every container restart or live deployment.
+4. Use backward-compatible schema changes during an active demo. A container rollback does not undo a schema change.
+5. Make this **demo-only** RDS instance disposable: normal Demo Down deletes it and its demo-created data, skips a final snapshot, and removes automated backups according to the explicit cleanup policy. Configure deletion protection accordingly and scope destructive permissions to this demo. Preserve seed/migration sources, not a growing collection of paid snapshots. Any preservation/export is a separate explicit operation.
+
+**Why not simply mount the Compose volumes?** Fargate's ordinary task storage is ephemeral, and Compose named volumes are not AWS storage resources. ECS-managed EBS volumes for service tasks do not provide a simple persistent reattachment of the same database disk across service replacements. EFS is network storage, not a safe drop-in assumption for SQLite locking/WAL; SQLite WAL requires processes on the same host. Do not base production persistence on it without a specifically validated design.
+
+**Your steps:** acknowledge that full Demo Down resets demo-created users/progress and that the next Demo Up starts from seeds. Approve the measured RDS size/cost; no local-data migration is planned.
+
+**Exit check:** data survives application/task replacement while the demo is active, API contract tests pass, and a fresh environment can be recreated from migrations/seeds after Demo Down. No database lives only in a task's writable layer.
+
+### Step 5: Define Networking, HTTPS, and Service Discovery
+
+**Implementation:** Terraform creates a VPC with DNS enabled, public egress subnets for tasks, private subnets for an **internal** Application Load Balancer and RDS, security groups, and ECS network configuration in Sydney. The ALB spans two Availability Zones. Add CloudFront with the default certificate/address and a VPC origin pointing at the ALB. Start with one task per service; this is not high availability just because the ALB spans two zones.
+
+- Expose only CloudFront to browsers. Allow the CloudFront VPC-origin service-managed security group to reach the internal ALB, and only the ALB to reach the shared gateway. Use an `ip` target group for Fargate and `/health` as the gateway health check. Meet VPC-origin prerequisites, including an attached internet gateway and available private-subnet IPv4 addresses. Do not recreate Compose's host port mappings as internet-facing ports.
+- Keep backend, database API, PostgREST, and Garry ingress restricted to their actual callers over private IPs, even though task ENIs have public addresses for egress. In particular, Garry's service-supplied rules rely on trusted internal callers, so do not broadly allow every task to call every port.
+- Use Cloud Map private DNS names, for example `shared-backend.languagewise.internal`, in application URLs and nginx upstreams. Configure nginx to use the VPC DNS resolver; its current `127.0.0.11` resolver is Docker-specific and will not work on ECS. Preserve runtime re-resolution when task IPs change.
+- Remove `host.docker.internal` dependencies from the AWS configuration. Explicitly disable MCP and RAG-dependent functionality until the teammate's services are ready; configure the remaining internal endpoints for AWS.
+- Use public-subnet task ENIs with public IPs for image pulls, AWS APIs, OpenRouter, and optional SMTP. Deny internet inbound access through security groups. Avoid NAT and paid interface endpoints in the initial budget; include per-address charges and enough subnet IPs for rollout/migration tasks.
+- Require browser HTTPS using CloudFront's default certificate and redirect policy. No custom domain, Route 53, or ACM setup is required. Preserve the external HTTPS scheme across the CloudFront/HTTP-origin/nginx chain; the current nginx `$scheme` would otherwise report HTTP. Trust forwarded headers only from the controlled proxy chain and verify secure authentication cookies.
+- Initially disable CloudFront caching for the whole app. Allow all required HTTP methods, forward cookies, query strings, and authorization headers correctly, and prevent caching of login responses, personalized APIs, federation manifests, or SSE. Static-asset caching can be optimized later. Preserve nginx rewrites, remote URLs, SPA fallback, and SSE no-buffering behavior; test CloudFront/ALB/nginx streaming timeouts together.
+
+**Your steps:** open the HTTPS URL printed by Demo Up. No domain purchase or DNS changes are needed. Approve the public-task-egress/private-ingress tradeoff before implementation.
+
+**Exit check:** HTTPS reaches the gateway, all five remotes load from the same origin, internal names resolve after a task replacement, and internal services/databases cannot be reached from the internet.
+
+### Step 6: Configure Images, Disabled Features, and Secrets
+
+**Implementation:** keep existing Dockerfiles/build contexts for the in-scope custom images. Do not add MCP/RAG Dockerfiles or deployment resources in this migration. Explicitly configure and test their disabled states, independently of local development settings. Pin/version third-party images such as PostgREST. Keep CPU architecture consistent between builds and task definitions; use Linux/x86_64 initially unless ARM compatibility and pricing are deliberately tested.
+
+Store OpenRouter, database, optional SMTP, and signing secrets in Secrets Manager or SSM Parameter Store, with least-privilege access. No MCP secret is needed while MCP is disabled. Publish the signing public key as configuration, but keep the private signing key restricted to the shared authentication backend. Use separate AWS-environment credentials rather than copying development secrets indiscriminately.
+
+**OpenRouter key: use AWS Secrets Manager, not GitHub Secrets, for the deployed app.**
+
+1. Terraform creates a secret resource named `languagewise/demo/openrouter-api-key` in `ap-southeast-2` in the retained foundation. Terraform manages its metadata/ARN only, not its value; do not create a Terraform-managed secret version or read the value through a Terraform data source.
+2. **Your step:** after bootstrap, enter the API key directly through the AWS Secrets Manager console as a plaintext secret value. Do not paste it into chat, commit it, or supply it as a workflow input. Use a dedicated demo key with an OpenRouter spending limit within the monthly budget.
+3. ECS task definitions reference the secret ARN in their `secrets` configuration under the environment variable name `OpenRouter__ApiKey`. Inject it only into the current consumers: `garry-ai-service-backend`, `quests-achievements-notifications-service-backend` (email generation), and `leaderboard-analytics-service-backend`. Other containers and browser bundles must not receive it.
+4. Grant the consuming tasks' execution roles `secretsmanager:GetSecretValue` only for that secret, plus narrowly scoped `kms:Decrypt` if a customer-managed encryption key is used. ECS retrieves the value when starting the containers; application task roles do not need secret-read access merely for this injection.
+5. GitHub Actions authenticates to AWS using OIDC and passes only the secret ARN into the deployment. Its deployment role does not need to read the key. Do not duplicate the key in GitHub Secrets or fetch/echo it in build/deploy jobs.
+6. Demo Down retains the secret so the next Demo Up needs no key re-entry. Include Secrets Manager storage/API charges in the retained-foundation budget. Rotation means updating the value securely in AWS and replacing/redeploying affected tasks; existing containers do not pick up changes automatically. Verify an authenticated AI request without logging the key.
+
+The app currently reads signing keys from file paths under `/run/secrets`. ECS secret injection supplies environment values, not Compose secret files. Either adapt the apps to supported secret configuration or add a carefully permissioned startup mechanism to materialize files without logging values. A secret-writing sidecar would share the task's resource budget. Never bake secrets into images or pass plaintext secrets through Terraform variables/resources that persist them in state. Create secret containers/ARNs with Terraform and populate values through a secure out-of-band process.
+
+**Your steps:** enter the real values directly in AWS through an approved secure method; do not commit `.env`, PEM files, Terraform state, or secret-bearing plan files. Confirm SMTP sending credentials, or leave email intentionally disabled. If using SES instead of Gmail, account for sandbox verification and production-access requirements.
+
+**Exit check:** every service starts with only the credentials it needs, and no secret is present in images, source, logs, or Terraform artifacts. Secret rotation includes a new deployment where required; injected secrets do not update running containers automatically.
+
+### Step 7: Create ECS Task Definitions and Services in Terraform
+
+**Implementation:** define a map of services with image digest, port, environment, secret ARNs, health check, and allowed dependencies. Generate task definitions/services from that map while retaining service-specific settings.
+
+For every application task, configure:
+
+- Fargate compatibility, `awsvpc` networking, Linux runtime/architecture, `cpu = 512`, and `memory = 1024`.
+- An execution role for ECR pulls, logs, and injected secrets, plus a separate minimal task role only where runtime AWS access is needed.
+- CloudWatch logs with bounded retention, explicit ECS container health checks, and service startup grace periods. ECS does not automatically adopt a Dockerfile `HEALTHCHECK`; port the actual probes into the task definition. Garry's Compose-level health check also needs to be declared explicitly.
+- Desired count 1 only while the demo is enabled, deployment timeout, and deployment circuit breaker with rollback for each service. A normal rolling deployment needs room for a second task and enough quota/subnet IPs during rollout. Normal Demo Down removes the runtime resources rather than merely setting desired count to zero.
+- RDS connections and internal DNS endpoints rather than Compose service names, host aliases, or startup ordering.
+
+Compose `depends_on` does not provide cross-service ordering in ECS. Bring up the data tier first and implement retry/backoff for temporary downstream unavailability. Liveness should not create circular dependency failures; use readiness and deployment checks to establish usable dependencies.
+
+**Exit check:** a manually triggered initial deployment reaches steady state and a deliberate unhealthy application release triggers rollback. Keep a manifest mapping each service to its deployed immutable image digest. Garry's in-memory rate limit resets on restart and can temporarily be split across tasks during a rolling deployment; strict continuity requires distributed state or an explicitly accepted stop-before-start outage.
+
+### Step 8: Add the Merge-to-AWS GitHub Workflow
+
+**Implementation:** add one authoritative deployment workflow, rather than allowing separate feature workflows to race on shared Terraform state.
+
+1. **PR checks:** formatting/validation, application tests, frontend builds, existing security checks, and a Terraform plan when safe credentials are available. Do not deploy PR code. Keep secret-bearing plan artifacts private and short-lived; never use privileged `pull_request_target` to execute untrusted PR code.
+2. **Trigger:** `push` to protected `master` after merge, plus `workflow_dispatch` for a controlled first deployment/recovery. Branch protection is what makes a push trigger mean "after PR merge". Do not use `pull_request: closed` to deploy an arbitrary PR head. Check the retained demo-mode record under the same deployment lock: if the demo is **up**, deploy automatically; if **down**, publish/store the tested release manifest but do not recreate runtime infrastructure. Demo Up deploys the latest successfully tested release. This intentionally prevents merges from waking an offline demo and spending money.
+3. **Validate the exact release SHA:** run or reuse trusted, SHA-matched test/build/security jobs as explicit dependencies. Existing independent `push` workflows are not automatically gates for the new deployment. Prefer reusable CI jobs or make deploy depend on its own required checks.
+4. **Build/publish:** first provision/import ECR repositories through the infrastructure preparation phase so the initial push has a destination. Build custom images from the existing directory-specific contexts, tag with the full commit SHA, push to their ECR repositories, and record immutable digests. Never deploy mutable `latest` tags. Initially build a complete release; optimize changed-service selection later.
+5. **Plan:** assume the deployment role through OIDC, run Terraform init/validate/plan with the exact image manifest, and review changes. Keep provider/app configuration owned by Terraform; do not also mutate task definitions using a competing ECS deploy action.
+6. **Apply:** apply that exact saved plan from the same release run, run compatible migrations in the agreed order, then roll services and wait for steady state. Split infrastructure preparation/migration/service rollout into deliberate phases if a schema prerequisite prevents a single apply.
+7. **Smoke test while up:** HTTPS gateway, signup/login, all feature pages/remotes, a durable write/read, course progress/achievements, and an authenticated basic streamed assistant response. Verify MCP/RAG-dependent features are disabled cleanly, without requests to a developer's machine. MCP tool/RAG success tests are deferred until those services join the deployment. Do not print tokens or user data in logs.
+8. **Report/recover:** publish release SHA, service health, and URL. ECS circuit breakers handle unhealthy task rollouts, not all functional smoke-test failures: explicitly redeploy the previous compatible image manifest if release smoke tests fail, and investigate schema compatibility before rollback.
+
+Use `permissions: contents: read` and `id-token: write` only in jobs that need AWS. Pin third-party actions to reviewed commit SHAs. Serialize deployments per environment with concurrency and `cancel-in-progress: false` so a newer merge cannot cancel an in-flight Terraform apply. Ensure queued runs cannot deploy an older release over a newer one.
+
+**Your steps:** choose whether production applies require GitHub environment approval. A fully automatic post-merge deployment must have no manual deployment approval gate; required PR review/checks remain the control. A demo can deploy automatically while a later production environment requires approval.
+
+**Exit check:** merge a harmless PR, observe a single tested release reach AWS, confirm the displayed SHA/manifest, and demonstrate recovery to the previous release.
+
+### Step 9: Add One-Click Demo Up/Down and Automatic Expiry
+
+**Implementation:** provide a GitHub Actions workflow with a **Run workflow** dropdown offering `up` and `down`. These are planned controls, not implemented commands yet. Keep the button defaults simple: Demo Up gets a two-hour lease; any extension is explicit and counts against the monthly allowance.
+
+| Control | Required behavior |
+| --- | --- |
+| **Demo Up** | Select the latest tested image manifest; record a startup deadline/lease before provisioning; apply the demo Terraform state; create RDS; run migrations/seeds; start the 18 services; wait for CloudFront/ECS readiness and smoke tests; report the HTTPS URL and expiry time. Repeated Up must not reseed/wipe a running demo. |
+| **Demo Down** | Mark the desired mode down first; destroy **only the disposable demo state**, including CloudFront/VPC origin, ALB, RDS, ECS services and task ENIs, discovery, and demo networking. Delete demo data/backups according to policy. Retain ECR, state, secrets, OIDC/IAM, cleanup automation, release record, and any adopted empty cluster. Report residual resources and any failed deletions. |
+| **Automatic expiry** | Use retained scheduled cleanup automation to invoke the same serialized Down operation when the lease expires or startup fails. Use short-lived authentication for any GitHub dispatch, not a long-lived personal access token. Make cleanup idempotent, retry failures, and alert if it cannot finish. A schedule alone is not a guarantee of timely deletion. |
+
+Use the same environment concurrency group and Terraform lock for merge deployment, Up, Down, and cleanup. A merge must not undo Down, and cleanup must not race an apply. Clear/retain lease state deliberately after failures so partially created resources are still eligible for cleanup. After teardown, independently check for surviving RDS instances/backups, load balancers, public IPs, endpoints/NAT, and tasks; do not report success just because ECS desired count is zero.
+
+**Timing/data tradeoff:** easy means a button, not instant startup. Allow tens of minutes or longer for RDS, CloudFront/VPC-origin creation, and service health; VPC-origin deployment alone can take about 15 minutes. Destruction can also take time. Rehearse and measure it, start well before presentations, and count transition time in the budget. A full teardown may produce a different URL and always resets demo-created data to seeds on recreation.
+
+Do not use RDS stop/start as the default Down implementation: stopped instances still charge for storage/backups and automatically restart after seven days; ALBs cannot simply be paused either. A faster, data-preserving pause can be added later only as a separately costed mode, not labeled "fully down".
+
+**Your steps:** in GitHub Actions, select **Demo Up**, wait for a successful run, and open its reported HTTPS URL. After presenting, select **Demo Down** and check cleanup success. Never assume closing the browser stops AWS charges. Demo data reset is intentional; export anything important explicitly before Down.
+
+**Exit check:** complete two Up/Down cycles; prove seed recreation, no duplicate initialization, cleanup after a failed Up, lease expiry, a merge while down that does not wake AWS, and a merge while up that deploys. Confirm the account's measured idle charges fit the foundation allowance.
+
+### Step 10: Rehearse the Demo and Establish Operations
+
+**Implementation:** rehearse seed-based recreation, compatible release rollback, task replacement, and automated expiry. Check real-browser federation/streaming and disabled MCP/RAG behavior. Add bounded-cost alarms for unhealthy targets, task crashes/OOM, error rates, RDS storage/connections/CPU credits, and spending. Apply short log retention and ECR lifecycle limits while preserving the current and previous compatible releases.
+
+**Your steps:** verify seeded user workflows, record who receives alerts, and choose a demo/shutdown owner. Check the current URL from the successful Up run rather than an old bookmark. Retained images, state, logs, and secrets still have small ongoing costs; review the bill and actual runtime hours weekly during demonstration months.
+
+**Exit check:** a repeatable seeded deployment, tested rollback and full teardown/recreation, successful automatic expiry, and a measured cost profile under the $100 allocation. One replica per service and single-AZ RDS are demonstration budget choices with downtime risk, not production availability guarantees.
+
+## 5. Risks and Launch Gates
+
+| Issue | Evidence / consequence | Required action |
+| --- | --- | --- |
+| Cost exceeds $100/month | 18 tasks plus RDS/networking cannot run continuously within this budget. | Sydney calculator estimate, bounded demo hours, automatic expiry, full runtime destruction, and idle-cost verification. |
+| SQLite persistence does not map to Fargate | Four .NET database APIs use SQLite and `/data` named volumes. | Convert locally to PostgreSQL as step 1, then seed RDS. |
+| Lost quests schema/seeds | Current PostgreSQL 18 Docker image runs initialization SQL; RDS does not consume the image. | Run tested schema/role/data migrations explicitly. |
+| MCP/RAG excluded for now | Both run outside Compose and use host addresses; teammate owns packaging. | Explicitly disable dependent features, avoid startup requirements/timeouts, and defer integration. |
+| Broken internal DNS and remotes | nginx uses Docker's `127.0.0.11` and Compose upstream names. | AWS DNS configuration plus replacement/remote-loading smoke tests. |
+| Missing signing files | Applications expect Compose-mounted signing files. | Implement/test cloud secret delivery before first app start; no MCP key is provisioned yet. |
+| Resource exhaustion / unavailable capacity | 18 steady-state tasks need 9 vCPUs, plus migrations/rollout capacity; RDS is shared. | Test task/RDS sizing and connection limits; request Sydney quota headroom. |
+| Authentication or streaming breaks | CloudFront adds method/header/cookie/cache and HTTPS-forwarding requirements. | HTTPS login, all feature APIs, personalized-data isolation, basic AI streaming, and disabled-feature tests before launch. |
+| "Down" still costs money | Zero tasks leaves ALB/RDS bills; stopped RDS restarts after seven days. | Destroy the disposable demo state, verify deletions, and budget retained foundation resources. |
+| Demo cannot start instantly | RDS and CloudFront/VPC-origin provisioning take time; complete teardown may change URL. | Measure warmup/cleanup, start ahead of presentations, and report the current URL. |
+| Demo data disappears after Down | RDS is intentionally deleted; seeds are the recovery source. | Document reset behavior; export explicitly before Down if needed. |
+| Test workflows do not gate deploy | Existing service workflows independently run on `master`. | Make exact-SHA release checks explicit deployment dependencies. |
+| Broken rollback after schema change | Task rollback cannot reverse database changes. | Backward-compatible migrations, backups, and a documented recovery decision. |
+| Scaling changes behavior | Garry's shared rate limit is in memory. | Keep one replica until distributed state is implemented. |
+| Email/AI unavailable | External OpenRouter/SMTP access needs egress, credentials, and provider allowance. | Test real outbound access and quotas without exposing credentials. |
+
+## 6. Suggested Delivery Order
+
+1. **First: convert SQLite to PostgreSQL locally**, preserving API contracts and starting from seeds. MCP/RAG containerization is not a prerequisite.
+2. Confirm the Sydney cost estimate fits $100/month at the agreed demo-hour allowance; obtain existing AWS/GitHub identifiers.
+3. Bootstrap retained state/OIDC/ECR/secrets/controls and adopt existing resources deliberately.
+4. Prove one CloudFront HTTPS-to-private-ALB-to-gateway/backend path on ECS at 0.5 vCPU/1 GiB, with seeded RDS.
+5. Add the remaining 18-task deployment, discovery, secrets, basic AI, and explicit MCP/RAG-disabled behavior.
+6. Add Up/Down, automatic expiry, and merge automation that respects offline mode; rehearse rollback and two full seeded recreation cycles before presenting.
+
+Do not begin by manually creating all task definitions in the console. Once the design decisions are settled, Terraform should create and revise them consistently.
+
+## References
+
+- [Fargate task CPU and memory combinations](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html)
+- [Fargate pricing](https://aws.amazon.com/fargate/pricing/) and [AWS Pricing Calculator](https://calculator.aws/)
+- [AWS Free Tier](https://aws.amazon.com/free/) and [Fargate service quotas](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/service-quotas.html)
+- [ECS service discovery](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/service-discovery.html)
+- [ECS container health checks](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/healthcheck.html)
+- [ECS EBS volume considerations](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/ebs-volumes.html)
+- [SQLite WAL limitations](https://sqlite.org/wal.html)
+- [GitHub OIDC with AWS](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws)
+- [Terraform S3 backend and state locking](https://developer.hashicorp.com/terraform/language/backend/s3)
+- [CloudFront default-domain HTTPS and AWS-provided certificate](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-https-viewers-to-cloudfront.html)
+- [CloudFront VPC origins, prerequisites, and supported regions](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-vpc-origins.html)
+- [RDS stop/start charges and seven-day automatic restart](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_StopInstance.html)

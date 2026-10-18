@@ -6,17 +6,15 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Http.Json;
 
 const string ServiceName = "mini-games-service-db";
-const string PublicCatalogError = "The SQLite catalog health check failed.";
+const string PublicCatalogError = "The database catalog health check failed.";
 
 var builder = WebApplication.CreateBuilder(args);
 
-// The database file lives on a named Docker volume so it survives container restarts.
-var databasePath = builder.Configuration["Database:Path"] ?? "data/mini-games-service.db";
-var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+var connectionString = builder.Configuration["Database:ConnectionString"];
+if (string.IsNullOrWhiteSpace(connectionString))
 {
-    DataSource = databasePath,
-    ForeignKeys = true
-}.ToString();
+    throw new InvalidOperationException("Database:ConnectionString must be configured.");
+}
 
 builder.Services.AddSingleton(new GameRepository(connectionString));
 builder.Services.AddSingleton(new GameAttemptRepository(connectionString));
@@ -46,7 +44,7 @@ app.MapGet("/health", (GameRepository gameRepository, GameAttemptRepository atte
             endpoints = endpointDataSource.Endpoints.Count
         });
     }
-    catch (Exception exception)
+    catch (Exception)
     {
         return Results.Problem(PublicCatalogError, statusCode: 500);
     }

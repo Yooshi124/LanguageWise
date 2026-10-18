@@ -437,10 +437,11 @@ Polish long words grow through endings. **Konstantynopolitańczykowianeczka** is
 
 **Chrząszcz** is famous from a Polish tongue twister. Say it in chunks rather than treating its consonants as one sound.')
 )
-INSERT OR IGNORE INTO Lessons (CourseId, Slug, Title, SortOrder, ContentMarkdown)
+INSERT INTO Lessons (CourseId, Slug, Title, SortOrder, ContentMarkdown)
 SELECT c.Id, s.Slug, s.Title, s.SortOrder, s.ContentMarkdown
 FROM LessonSeeds s
-INNER JOIN Courses c ON c.Code = 'pl';
+INNER JOIN Courses c ON c.Code = 'pl'
+ON CONFLICT DO NOTHING;
 
 WITH VocabularySeeds (LessonSlug, VocabularyJson) AS (
     VALUES
@@ -465,11 +466,12 @@ WITH VocabularySeeds (LessonSlug, VocabularyJson) AS (
     ('long-words', '{"words":[{"word":"konstantynopolitańczykowianeczka","meaning":"young female resident of Constantinople"},{"word":"najnieprawdopodobniej","meaning":"most probably"},{"word":"czterdziestoczterolatek","meaning":"forty-four-year-old man"},{"word":"niepodległościowy","meaning":"independence-related"},{"word":"przeintelektualizowany","meaning":"over-intellectualized"}]}'),
     ('funny-unusual-words', '{"words":[{"word":"chrząszcz","meaning":"beetle; famous for its consonant cluster"},{"word":"źdźbło","meaning":"blade of grass"},{"word":"szczęśliwy","meaning":"happy"},{"word":"przepraszam","meaning":"sorry"},{"word":"żółw","meaning":"turtle"}]}')
 )
-INSERT OR IGNORE INTO LessonVocabulary (LessonId, VocabularyJson)
+INSERT INTO LessonVocabulary (LessonId, VocabularyJson)
 SELECT l.Id, s.VocabularyJson
 FROM VocabularySeeds s
 INNER JOIN Courses c ON c.Code = 'pl'
-INNER JOIN Lessons l ON l.CourseId = c.Id AND l.Slug = s.LessonSlug;
+INNER JOIN Lessons l ON l.CourseId = c.Id AND l.Slug = s.LessonSlug
+ON CONFLICT DO NOTHING;
 
 WITH QuizSeeds (LessonSlug, Title) AS (
     VALUES
@@ -494,11 +496,12 @@ WITH QuizSeeds (LessonSlug, Title) AS (
     ('long-words', 'Long Words Quiz'),
     ('funny-unusual-words', 'Funny and Unusual Words Quiz')
 )
-INSERT OR IGNORE INTO Quizzes (LessonId, Title)
+INSERT INTO Quizzes (LessonId, Title)
 SELECT l.Id, s.Title
 FROM QuizSeeds s
 INNER JOIN Courses c ON c.Code = 'pl'
-INNER JOIN Lessons l ON l.CourseId = c.Id AND l.Slug = s.LessonSlug;
+INNER JOIN Lessons l ON l.CourseId = c.Id AND l.Slug = s.LessonSlug
+ON CONFLICT DO NOTHING;
 
 WITH QuestionSeeds (LessonSlug, SortOrder, Content, Type, QuestionData, CorrectAnswer) AS (
     VALUES
@@ -703,9 +706,10 @@ WITH QuestionSeeds (LessonSlug, SortOrder, Content, Type, QuestionData, CorrectA
     ('funny-unusual-words', 9, 'Type the Polish term for “sorry”.', 'free_text', '{}', 'przepraszam'),
     ('funny-unusual-words', 10, 'Type the Polish term for “turtle”.', 'free_text', '{}', 'żółw')
 )
-INSERT OR IGNORE INTO QuizQuestions (QuizId, SortOrder, Content, Type, QuestionData, CorrectAnswer)
+INSERT INTO QuizQuestions (QuizId, SortOrder, Content, Type, QuestionData, CorrectAnswer)
 SELECT q.Id, s.SortOrder, s.Content, s.Type, s.QuestionData, s.CorrectAnswer
 FROM QuestionSeeds s
 INNER JOIN Courses c ON c.Code = 'pl'
 INNER JOIN Lessons l ON l.CourseId = c.Id AND l.Slug = s.LessonSlug
-INNER JOIN Quizzes q ON q.LessonId = l.Id;
+INNER JOIN Quizzes q ON q.LessonId = l.Id
+ON CONFLICT DO NOTHING;

@@ -463,12 +463,13 @@ Adjectives agree: **stanco** for a man and *stanca* for a woman.'),
 
 **Pantofolaio** comes from *pantofola* (“slipper”) and is affectionate only in a friendly tone. An **abbiocco** is the sleepy feeling after a large meal.')
 )
-INSERT OR IGNORE INTO Lessons (CourseId, Slug, Title, SortOrder, ContentMarkdown)
+INSERT INTO Lessons (CourseId, Slug, Title, SortOrder, ContentMarkdown)
 SELECT c.Id, s.Slug, s.Title, s.SortOrder, content.ContentMarkdown
 FROM Courses c
 INNER JOIN LessonContentSeeds content ON content.CourseCode = c.Code
 INNER JOIN LessonSeeds s ON s.Slug = content.LessonSlug
-WHERE c.Code = 'it';
+WHERE c.Code = 'it'
+ON CONFLICT DO NOTHING;
 
 -- Construct one ordered vocabulary JSON document for each Italian lesson.
 WITH WordSeeds (CourseCode, LessonSlug, Position, Word, Meaning) AS (
@@ -574,25 +575,27 @@ WITH WordSeeds (CourseCode, LessonSlug, Position, Word, Meaning) AS (
     ('it', 'funny-unusual-words', 4, 'magari', 'if only; perhaps, depending on context'),
     ('it', 'funny-unusual-words', 5, 'passeggiata', 'a leisurely walk')
 )
-INSERT OR IGNORE INTO LessonVocabulary (LessonId, VocabularyJson)
-SELECT l.Id, json_object('words', json((
-    SELECT json_group_array(json_object('word', ordered.Word, 'meaning', ordered.Meaning))
+INSERT INTO LessonVocabulary (LessonId, VocabularyJson)
+SELECT l.Id, json_build_object('words', (
+    SELECT json_agg(json_build_object('word', ordered.Word, 'meaning', ordered.Meaning) ORDER BY ordered.Position)
     FROM (
-        SELECT Word, Meaning
+        SELECT Word, Meaning, Position
         FROM WordSeeds
         WHERE CourseCode = c.Code AND LessonSlug = l.Slug
         ORDER BY Position
     ) ordered
-)))
+))
 FROM Lessons l
 INNER JOIN Courses c ON c.Id = l.CourseId
-WHERE c.Code = 'it';
+WHERE c.Code = 'it'
+ON CONFLICT DO NOTHING;
 
-INSERT OR IGNORE INTO Quizzes (LessonId, Title)
+INSERT INTO Quizzes (LessonId, Title)
 SELECT l.Id, l.Title || ' Quiz'
 FROM Lessons l
 INNER JOIN Courses c ON c.Id = l.CourseId
-WHERE c.Code = 'it';
+WHERE c.Code = 'it'
+ON CONFLICT DO NOTHING;
 
 WITH QuestionSeeds (CourseCode, LessonSlug, SortOrder, Content, Type, QuestionData, CorrectAnswer) AS (
     VALUES
@@ -797,10 +800,11 @@ WITH QuestionSeeds (CourseCode, LessonSlug, SortOrder, Content, Type, QuestionDa
     ('it', 'funny-unusual-words', 9, 'Translate into Italian: “My uncle is a homebody: he happily stays at home.”', 'free_text', '{}', 'Mio zio è un pantofolaio: resta volentieri a casa.'),
     ('it', 'funny-unusual-words', 10, 'Translate into Italian: “After lunch I sprawl comfortably on the sofa.”', 'free_text', '{}', 'Dopo pranzo mi spaparanzo sul divano.')
 )
-INSERT OR IGNORE INTO QuizQuestions
+INSERT INTO QuizQuestions
     (QuizId, SortOrder, Content, Type, QuestionData, CorrectAnswer)
 SELECT q.Id, s.SortOrder, s.Content, s.Type, s.QuestionData, s.CorrectAnswer
 FROM QuestionSeeds s
 INNER JOIN Courses c ON c.Code = 'it' AND c.Code = s.CourseCode
 INNER JOIN Lessons l ON l.CourseId = c.Id AND l.Slug = s.LessonSlug
-INNER JOIN Quizzes q ON q.LessonId = l.Id;
+INNER JOIN Quizzes q ON q.LessonId = l.Id
+ON CONFLICT DO NOTHING;

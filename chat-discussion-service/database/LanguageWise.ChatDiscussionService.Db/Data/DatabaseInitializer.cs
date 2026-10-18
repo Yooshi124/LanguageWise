@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+using Npgsql;
 
 namespace LanguageWise.ChatDiscussionService.Db.Data;
 
@@ -10,30 +10,20 @@ public sealed class DatabaseInitializer(string connectionString, string sqlDirec
 {
     public void Initialise()
     {
-        EnsureDatabaseDirectoryExists();
-
-        using var connection = new SqliteConnection(connectionString);
+        using var connection = new NpgsqlConnection(connectionString);
         connection.Open();
+        using var transaction = connection.BeginTransaction();
 
-        Execute(connection, ReadSqlFile("schema.sql"));
-        logger.LogInformation("Schema applied to {ConnectionString}.", connectionString);
+        Execute(connection, transaction, "SELECT pg_advisory_xact_lock(hashtext(current_schema()), 0);");
+        Execute(connection, transaction, ReadSqlFile("schema.sql"));
 
-        if (CountForums(connection) == 0)
+        var seeded = CountForums(connection, transaction) == 0;
+        if (seeded)
         {
-            Execute(connection, ReadSqlFile("seed.sql"));
-            logger.LogInformation("Seeded {Count} forums.", CountForums(connection));
+            Execute(connection, transaction, ReadSqlFile("seed.sql"));
         }
-    }
-
-    private void EnsureDatabaseDirectoryExists()
-    {
-        var dataSource = new SqliteConnectionStringBuilder(connectionString).DataSource;
-        var directory = Path.GetDirectoryName(Path.GetFullPath(dataSource));
-
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
+        transaction.Commit();
+        logger.LogInformation("Discussion schema applied. Seed data inserted: {Seeded}.", seeded);
     }
 
     private string ReadSqlFile(string fileName)
@@ -48,16 +38,18 @@ public sealed class DatabaseInitializer(string connectionString, string sqlDirec
         return File.ReadAllText(path);
     }
 
-    private static void Execute(SqliteConnection connection, string sql)
+    private static void Execute(NpgsqlConnection connection, NpgsqlTransaction transaction, string sql)
     {
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = sql;
         command.ExecuteNonQuery();
     }
 
-    private static long CountForums(SqliteConnection connection)
+    private static long CountForums(NpgsqlConnection connection, NpgsqlTransaction transaction)
     {
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "SELECT COUNT(*) FROM Forums;";
         return Convert.ToInt64(command.ExecuteScalar());
     }

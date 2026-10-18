@@ -4,6 +4,7 @@ using LanguageWise.ChatDiscussionService.Db.Clients;
 using LanguageWise.ChatDiscussionService.Db.Data;
 using LanguageWise.ChatDiscussionService.Db.Models;
 using Microsoft.Extensions.Logging.Abstractions;
+using LanguageWise.Testing;
 
 namespace LanguageWise.ChatDiscussionService.Db.Tests;
 
@@ -12,21 +13,21 @@ public sealed class AuthorNameSyncTests
 {
     private const int LachlanUserId = 2;
 
-    private string databasePath = null!;
+    private PostgresTestDatabase database = null!;
     private string connectionString = null!;
     private DiscussionRepository repository = null!;
 
     [SetUp]
     public void SetUp()
     {
-        databasePath = TestDatabase.NewPath();
-        connectionString = TestDatabase.ConnectionStringFor(databasePath);
+        database = new PostgresTestDatabase();
+        connectionString = database.ConnectionString;
         TestDatabase.Initialise(connectionString);
         repository = new DiscussionRepository(connectionString);
     }
 
     [TearDown]
-    public void TearDown() => TestDatabase.Delete(databasePath);
+    public void TearDown() => database?.Dispose();
 
     [Test]
     public void GetAuthorIds_ReturnsEachPostAndCommentAuthorOnce()

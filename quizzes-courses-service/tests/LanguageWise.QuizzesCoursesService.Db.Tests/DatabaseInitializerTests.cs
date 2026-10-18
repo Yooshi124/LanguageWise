@@ -1,5 +1,6 @@
 using LanguageWise.QuizzesCoursesService.Db.Data;
-using Microsoft.Data.Sqlite;
+using Npgsql;
+using LanguageWise.Testing;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace LanguageWise.QuizzesCoursesService.Db.Tests;
@@ -72,7 +73,7 @@ public sealed class DatabaseInitializerTests
             INSERT INTO MissingSeedTarget (Value) VALUES ('force rollback');
             """);
 
-        var exception = Assert.Throws<SqliteException>(sandbox.Initialise);
+        var exception = Assert.Throws<PostgresException>(sandbox.Initialise);
 
         Assert.Multiple(() =>
         {
@@ -87,10 +88,11 @@ public sealed class DatabaseInitializerTests
             Assert.That(sandbox.Scalar("SELECT COUNT(*) FROM LessonVocabulary;"), Is.Zero);
             Assert.That(sandbox.Scalar("SELECT COUNT(*) FROM Quizzes;"), Is.Zero);
             Assert.That(sandbox.Scalar("SELECT COUNT(*) FROM QuizQuestions;"), Is.Zero);
+            Assert.That(sandbox.Scalar("SELECT COUNT(*) FROM SeedHistory;"), Is.Zero);
             Assert.That(
                 sandbox.Scalar("SELECT COUNT(*) FROM Lessons WHERE Slug = 'rollback-probe';"),
                 Is.Zero);
-            Assert.That(sandbox.RowCount("PRAGMA foreign_key_check;"), Is.Zero);
+            Assert.That(sandbox.Scalar("SELECT COUNT(*) FROM pg_constraint WHERE connamespace = current_schema()::regnamespace AND contype = 'f' AND NOT convalidated;"), Is.Zero);
         });
     }
 
@@ -261,11 +263,11 @@ public sealed class DatabaseInitializerTests
         sandbox.ReplaceSeed(
             sampleSeed,
             """
-            INSERT OR IGNORE INTO Milestones (UserId, LessonId, CompletedAt)
+            INSERT INTO Milestones (UserId, LessonId, CompletedAt)
             SELECT 1, Lessons.Id, '2026-01-01T00:00:00.0000000+00:00'
             FROM Lessons
             JOIN Courses ON Courses.Id = Lessons.CourseId
-            WHERE Courses.Code = 'de';
+            WHERE Courses.Code = 'de' ON CONFLICT DO NOTHING;
             """);
         sandbox.Initialise();
 
@@ -282,6 +284,7 @@ public sealed class DatabaseInitializerTests
             Is.EqualTo(20));
 
         sandbox.RestoreSeed(sampleSeed);
+        sandbox.Scalar("DELETE FROM SeedHistory RETURNING 1;");
         sandbox.Initialise();
 
         Assert.Multiple(() =>
@@ -309,28 +312,107 @@ public sealed class DatabaseInitializerTests
         });
     }
 
+    [Test]
+    public void Initialise_SynchronizesEveryIdentityAfterExplicitSeedIdsAndNeverRewindsAllocation()
+    {
+        using var sandbox = SqlSandbox.Create();
+        foreach (var fileName in ExpectedSeedManifest)
+        {
+            sandbox.ReplaceSeed(fileName, "SELECT 1;");
+        }
+
+        sandbox.ReplaceSeed("00-courses.sql",
+            """
+            INSERT INTO Courses (Id, Code, Title) VALUES (5000, 'de', 'German') ON CONFLICT DO NOTHING;
+            INSERT INTO Lessons (Id, CourseId, Slug, Title, SortOrder, ContentMarkdown)
+            VALUES (5000, 5000, 'seed', 'Seed', 1, '') ON CONFLICT DO NOTHING;
+            INSERT INTO LessonVocabulary (Id, LessonId, VocabularyJson)
+            VALUES (5000, 5000, '{"words":[]}') ON CONFLICT DO NOTHING;
+            INSERT INTO Quizzes (Id, LessonId, Title) VALUES (5000, 5000, 'Seed quiz') ON CONFLICT DO NOTHING;
+            INSERT INTO QuizQuestions (Id, QuizId, SortOrder, Content, Type, QuestionData, CorrectAnswer)
+            VALUES (5000, 5000, 1, 'Seed question', 'free_text', '{}', 'answer') ON CONFLICT DO NOTHING;
+            INSERT INTO QuizAttempts (Id, UserId, QuizId, TotalQuestions, StartedAt)
+            VALUES (5000, 64, 5000, 1, '2026-10-18T00:00:00Z') ON CONFLICT DO NOTHING;
+            INSERT INTO QuizAnswers (Id, AttemptId, QuestionId, StudentResponse, IsCorrect, AnsweredAt)
+            VALUES (5000, 5000, 5000, 'answer', true, '2026-10-18T00:00:00Z') ON CONFLICT DO NOTHING;
+            INSERT INTO Milestones (Id, UserId, LessonId, CompletedAt)
+            VALUES (5000, 64, 5000, '2026-10-18T00:00:00Z') ON CONFLICT DO NOTHING;
+            """);
+
+        sandbox.Initialise();
+        sandbox.Initialise();
+
+        var insertions = new[]
+        {
+            "INSERT INTO Courses (Code, Title) VALUES ('fr', 'French') RETURNING Id;",
+            "INSERT INTO Lessons (CourseId, Slug, Title, SortOrder, ContentMarkdown) VALUES (5000, 'new', 'New', 2, '') RETURNING Id;",
+            "INSERT INTO LessonVocabulary (LessonId, VocabularyJson) SELECT Id, '{}' FROM Lessons WHERE Slug = 'new' RETURNING Id;",
+            "INSERT INTO Quizzes (LessonId, Title) SELECT Id, 'New' FROM Lessons WHERE Slug = 'new' RETURNING Id;",
+            "INSERT INTO QuizQuestions (QuizId, SortOrder, Content, Type, QuestionData, CorrectAnswer) VALUES (5000, 2, 'New', 'free_text', '{}', 'answer') RETURNING Id;",
+            "INSERT INTO QuizAttempts (UserId, QuizId, TotalQuestions, StartedAt) VALUES (64, 5000, 1, '2026-10-18T01:00:00Z') RETURNING Id;",
+            "INSERT INTO QuizAnswers (AttemptId, QuestionId, StudentResponse, IsCorrect, AnsweredAt) SELECT 5000, Id, 'answer', true, '2026-10-18T01:00:00Z' FROM QuizQuestions WHERE SortOrder = 2 RETURNING Id;",
+            "INSERT INTO Milestones (UserId, QuizId, CompletedAt) VALUES (64, 5000, '2026-10-18T01:00:00Z') RETURNING Id;"
+        };
+
+        foreach (var sql in insertions)
+        {
+            Assert.That(sandbox.Scalar(sql), Is.GreaterThan(5000));
+        }
+
+        var allocated = sandbox.Scalar("SELECT nextval(pg_get_serial_sequence('quizattempts', 'id'));");
+        sandbox.Initialise();
+        Assert.That(sandbox.Scalar("SELECT nextval(pg_get_serial_sequence('quizattempts', 'id'));"), Is.GreaterThan(allocated));
+    }
+
+    [Test]
+    public async Task Initialise_WaitsForLiveInsertBeforeSynchronizingIdentities()
+    {
+        using var sandbox = SqlSandbox.Create();
+        sandbox.Initialise();
+        File.WriteAllText(Path.Combine(sandbox.SqlDirectory, "schema.sql"), "SELECT 1;");
+        using var writer = new NpgsqlConnection(sandbox.ConnectionString);
+        writer.Open();
+        using var transaction = writer.BeginTransaction();
+        using var insert = writer.CreateCommand();
+        insert.Transaction = transaction;
+        insert.CommandText =
+            "INSERT INTO QuizAttempts (UserId, QuizId, TotalQuestions, StartedAt) SELECT 99, Id, 1, '2026-10-18T00:00:00Z' FROM Quizzes ORDER BY Id LIMIT 1 RETURNING Id;";
+        var insertedId = Convert.ToInt64(insert.ExecuteScalar());
+
+        var initialization = Task.Run(sandbox.Initialise);
+        bool blocked;
+        try
+        {
+            blocked = SpinWait.SpinUntil(() => sandbox.Scalar(
+                "SELECT COUNT(*) FROM pg_locks WHERE relation = 'quizattempts'::regclass AND mode = 'ShareRowExclusiveLock' AND NOT granted;") > 0,
+                TimeSpan.FromSeconds(10));
+        }
+        finally
+        {
+            transaction.Commit();
+            await initialization;
+        }
+
+        Assert.That(blocked, Is.True, "Initialization must wait for live inserts before resetting sequences.");
+        Assert.That(sandbox.Scalar("SELECT nextval(pg_get_serial_sequence('quizattempts', 'id'));"), Is.GreaterThan(insertedId));
+    }
+
     private sealed class SqlSandbox : IDisposable
     {
         private readonly string rootDirectory;
+        private readonly PostgresTestDatabase database = new();
 
         private SqlSandbox(string rootDirectory)
         {
             this.rootDirectory = rootDirectory;
             SqlDirectory = Path.Combine(rootDirectory, "sql");
             SeedsDirectory = Path.Combine(SqlDirectory, "seeds");
-            DatabasePath = Path.Combine(rootDirectory, "database.db");
-            ConnectionString = new SqliteConnectionStringBuilder
-            {
-                DataSource = DatabasePath,
-                ForeignKeys = true
-            }.ToString();
+            ConnectionString = database.ConnectionString;
         }
 
         public string SqlDirectory { get; }
 
         public string SeedsDirectory { get; }
-
-        public string DatabasePath { get; }
 
         public string ConnectionString { get; }
 
@@ -385,9 +467,9 @@ public sealed class DatabaseInitializerTests
             using var connection = Open();
             using var command = connection.CreateCommand();
             command.CommandText =
-                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = $name);";
-            command.Parameters.AddWithValue("$name", tableName);
-            return Convert.ToInt64(command.ExecuteScalar()) == 1;
+                "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = lower(@name));";
+            command.Parameters.AddWithValue("@name", tableName);
+            return (bool)command.ExecuteScalar()!;
         }
 
         public long Scalar(string sql)
@@ -432,7 +514,7 @@ public sealed class DatabaseInitializerTests
 
         public void Dispose()
         {
-            SqliteConnection.ClearAllPools();
+            database.Dispose();
 
             if (Directory.Exists(rootDirectory))
             {
@@ -440,9 +522,9 @@ public sealed class DatabaseInitializerTests
             }
         }
 
-        private SqliteConnection Open()
+        private NpgsqlConnection Open()
         {
-            var connection = new SqliteConnection(ConnectionString);
+            var connection = new NpgsqlConnection(ConnectionString);
             connection.Open();
             return connection;
         }

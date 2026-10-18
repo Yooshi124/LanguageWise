@@ -3,12 +3,8 @@ const string ServiceName = "shared-db";
 
 var builder = WebApplication.CreateBuilder(args);
 
-// The database file lives on a named Docker volume so it survives container restarts.
-var databasePath = builder.Configuration["Database:Path"] ?? "data/shared.db";
-var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
-{
-    DataSource = databasePath
-}.ToString();
+var connectionString = builder.Configuration["Database:ConnectionString"]
+    ?? throw new InvalidOperationException("Database:ConnectionString must be configured.");
 
 builder.Services.AddSingleton(new UserRepository(connectionString));
 builder.Services.AddSingleton(new ImageStore(builder.Configuration["Images:Path"] ?? "data/images"));

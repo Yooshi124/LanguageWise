@@ -31,8 +31,8 @@ export const serviceMappings: readonly ServiceMapping[] = [
     gateway: '/',
     frontend: 'localhost:3000 -> shared-frontend:80',
     backend: 'localhost:5000 -> shared-backend:8080',
-    database: 'localhost:6000 -> shared-db:8080',
-    technology: 'SQLite',
+    database: 'localhost:6000 -> shared-db-api:8080 -> shared-db:5432',
+    technology: 'PostgreSQL',
   },
   {
     service: 'Mini Games',
@@ -40,7 +40,7 @@ export const serviceMappings: readonly ServiceMapping[] = [
     frontend: 'Gateway -> mini-games-service-frontend:80',
     backend: 'localhost:5001 -> mini-games-service-backend:8080',
     database: 'localhost:6005 -> mini-games-service-db:8080',
-    technology: 'SQLite',
+    technology: 'PostgreSQL',
   },
   {
     service: 'Discussion Forum',
@@ -48,7 +48,7 @@ export const serviceMappings: readonly ServiceMapping[] = [
     frontend: 'localhost:3002 and gateway -> chat-discussion-service-frontend:80',
     backend: 'localhost:5002 -> chat-discussion-service-backend:8080',
     database: 'localhost:6002 -> chat-discussion-service-db:8080',
-    technology: 'SQLite',
+    technology: 'PostgreSQL',
   },
   {
     service: 'Quizzes & Courses',
@@ -56,7 +56,7 @@ export const serviceMappings: readonly ServiceMapping[] = [
     frontend: 'Gateway -> quizzes-courses-service-frontend:80',
     backend: 'localhost:5003 -> quizzes-courses-service-backend:8080',
     database: 'localhost:6003 -> quizzes-courses-service-db:8080',
-    technology: 'SQLite',
+    technology: 'PostgreSQL',
   },
   {
     service: 'Achievements & Notifications',

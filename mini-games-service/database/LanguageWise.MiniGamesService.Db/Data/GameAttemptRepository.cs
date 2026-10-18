@@ -1,5 +1,5 @@
 using LanguageWise.MiniGamesService.Db.Models;
-using Microsoft.Data.Sqlite;
+using Npgsql;
 
 namespace LanguageWise.MiniGamesService.Db.Data;
 
@@ -12,8 +12,8 @@ public sealed class GameAttemptRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = $"{SelectColumns} WHERE UserId = $userId ORDER BY StartedAt DESC;";
-        command.Parameters.AddWithValue("$userId", userId);
+        command.CommandText = $"{SelectColumns} WHERE UserId = @userId ORDER BY StartedAt DESC;";
+        command.Parameters.AddWithValue("userId", userId);
 
         var attempts = new List<GameAttempt>();
         using var reader = command.ExecuteReader();
@@ -29,8 +29,8 @@ public sealed class GameAttemptRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = $"{SelectColumns} WHERE GameId = $gameId ORDER BY StartedAt;";
-        command.Parameters.AddWithValue("$gameId", gameId);
+        command.CommandText = $"{SelectColumns} WHERE GameId = @gameId ORDER BY StartedAt;";
+        command.Parameters.AddWithValue("gameId", gameId);
 
         var attempts = new List<GameAttempt>();
         using var reader = command.ExecuteReader();
@@ -46,8 +46,8 @@ public sealed class GameAttemptRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = $"{SelectColumns} WHERE Id = $id;";
-        command.Parameters.AddWithValue("$id", id);
+        command.CommandText = $"{SelectColumns} WHERE Id = @id;";
+        command.Parameters.AddWithValue("id", id);
 
         using var reader = command.ExecuteReader();
         return reader.Read() ? Map(reader) : null;
@@ -57,9 +57,9 @@ public sealed class GameAttemptRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = $"{SelectColumns} WHERE GameId = $gameId AND UserId = $userId ORDER BY StartedAt DESC LIMIT 1;";
-        command.Parameters.AddWithValue("$gameId", gameId);
-        command.Parameters.AddWithValue("$userId", userId);
+        command.CommandText = $"{SelectColumns} WHERE GameId = @gameId AND UserId = @userId ORDER BY StartedAt DESC LIMIT 1;";
+        command.Parameters.AddWithValue("gameId", gameId);
+        command.Parameters.AddWithValue("userId", userId);
 
         using var reader = command.ExecuteReader();
         return reader.Read() ? Map(reader) : null;
@@ -74,12 +74,12 @@ public sealed class GameAttemptRepository(string connectionString)
         command.CommandText =
             """
             INSERT INTO GameAttempts (GameId, UserId, StartedAt)
-            VALUES ($gameId, $userId, $startedAt)
+            VALUES (@gameId, @userId, @startedAt)
             RETURNING Id, GameId, UserId, Score, IsWon, IsComplete, AttemptCount, StartedAt, CompletedAt, TimeSpentSeconds;
             """;
-        command.Parameters.AddWithValue("$gameId", gameId);
-        command.Parameters.AddWithValue("$userId", userId);
-        command.Parameters.AddWithValue("$startedAt", startedAt);
+        command.Parameters.AddWithValue("gameId", gameId);
+        command.Parameters.AddWithValue("userId", userId);
+        command.Parameters.AddWithValue("startedAt", startedAt);
 
         using var reader = command.ExecuteReader();
         reader.Read();
@@ -94,33 +94,33 @@ public sealed class GameAttemptRepository(string connectionString)
         var setClauses = new List<string>();
         if (score.HasValue)
         {
-            setClauses.Add("Score = $score");
-            command.Parameters.AddWithValue("$score", score.Value);
+            setClauses.Add("Score = @score");
+            command.Parameters.AddWithValue("score", score.Value);
         }
         if (isWon.HasValue)
         {
-            setClauses.Add("IsWon = $isWon");
-            command.Parameters.AddWithValue("$isWon", isWon.Value ? 1 : 0);
+            setClauses.Add("IsWon = @isWon");
+            command.Parameters.AddWithValue("isWon", isWon.Value);
         }
         if (isComplete.HasValue)
         {
-            setClauses.Add("IsComplete = $isComplete");
-            command.Parameters.AddWithValue("$isComplete", isComplete.Value ? 1 : 0);
+            setClauses.Add("IsComplete = @isComplete");
+            command.Parameters.AddWithValue("isComplete", isComplete.Value);
         }
         if (attemptCount.HasValue)
         {
-            setClauses.Add("AttemptCount = $attemptCount");
-            command.Parameters.AddWithValue("$attemptCount", attemptCount.Value);
+            setClauses.Add("AttemptCount = @attemptCount");
+            command.Parameters.AddWithValue("attemptCount", attemptCount.Value);
         }
         if (!string.IsNullOrEmpty(completedAt))
         {
-            setClauses.Add("CompletedAt = $completedAt");
-            command.Parameters.AddWithValue("$completedAt", completedAt);
+            setClauses.Add("CompletedAt = @completedAt");
+            command.Parameters.AddWithValue("completedAt", completedAt);
         }
         if (timeSpentSeconds.HasValue)
         {
-            setClauses.Add("TimeSpentSeconds = $timeSpentSeconds");
-            command.Parameters.AddWithValue("$timeSpentSeconds", timeSpentSeconds.Value);
+            setClauses.Add("TimeSpentSeconds = @timeSpentSeconds");
+            command.Parameters.AddWithValue("timeSpentSeconds", timeSpentSeconds.Value);
         }
 
         if (setClauses.Count == 0)
@@ -128,12 +128,12 @@ public sealed class GameAttemptRepository(string connectionString)
             return GetById(id);
         }
 
-        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("id", id);
         command.CommandText =
             $"""
             UPDATE GameAttempts
             SET {string.Join(", ", setClauses)}
-            WHERE Id = $id
+            WHERE Id = @id
             RETURNING Id, GameId, UserId, Score, IsWon, IsComplete, AttemptCount, StartedAt, CompletedAt, TimeSpentSeconds;
             """;
 
@@ -145,8 +145,8 @@ public sealed class GameAttemptRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM GameAttempts WHERE Id = $id;";
-        command.Parameters.AddWithValue("$id", id);
+        command.CommandText = "DELETE FROM GameAttempts WHERE Id = @id;";
+        command.Parameters.AddWithValue("id", id);
 
         return command.ExecuteNonQuery() > 0;
     }
@@ -160,21 +160,21 @@ public sealed class GameAttemptRepository(string connectionString)
         return Convert.ToInt64(command.ExecuteScalar());
     }
 
-    private SqliteConnection Open()
+    private NpgsqlConnection Open()
     {
-        var connection = new SqliteConnection(connectionString);
+        var connection = new NpgsqlConnection(connectionString);
         connection.Open();
         return connection;
     }
 
-    private static GameAttempt Map(SqliteDataReader reader) =>
+    private static GameAttempt Map(NpgsqlDataReader reader) =>
         new(
             reader.GetInt32(0),
             reader.GetInt32(1),
             reader.GetInt32(2),
             reader.GetInt32(3),
-            reader.GetInt32(4) == 1,
-            reader.GetInt32(5) == 1,
+            reader.GetBoolean(4),
+            reader.GetBoolean(5),
             reader.GetInt32(6),
             reader.GetString(7),
             reader.IsDBNull(8) ? null : reader.GetString(8),
