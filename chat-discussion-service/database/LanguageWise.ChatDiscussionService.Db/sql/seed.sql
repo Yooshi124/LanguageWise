@@ -51,3 +51,7 @@ INSERT INTO Likes (Id, UserId, PostId, CommentId, CreatedAt) VALUES
     (7, 2, NULL, 4,    '2026-02-13T12:20:00Z');
 
 -- Images are deliberately not seeded: a row is only meaningful beside the file it names.
+SELECT setval(pg_get_serial_sequence('forums', 'id'), (SELECT MAX(Id) FROM Forums));
+SELECT setval(pg_get_serial_sequence('posts', 'id'), (SELECT MAX(Id) FROM Posts));
+SELECT setval(pg_get_serial_sequence('comments', 'id'), (SELECT MAX(Id) FROM Comments));
+SELECT setval(pg_get_serial_sequence('likes', 'id'), (SELECT MAX(Id) FROM Likes));

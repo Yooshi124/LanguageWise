@@ -437,11 +437,12 @@ Dutch compounds are written together: **meervoudige + persoonlijkheids + stoorni
 
 **Gezellig** combines warmth, comfort, and company; English has no one exact equivalent. **Uitwaaien** is getting fresh air in the wind.')
 )
-INSERT OR IGNORE INTO Lessons (CourseId, Slug, Title, SortOrder, ContentMarkdown)
+INSERT INTO Lessons (CourseId, Slug, Title, SortOrder, ContentMarkdown)
 SELECT c.Id, s.Slug, s.Title, s.SortOrder, s.ContentMarkdown
 FROM Courses c
 CROSS JOIN LessonSeeds s
-WHERE c.Code = 'nl';
+WHERE c.Code = 'nl'
+ON CONFLICT DO NOTHING;
 
 WITH VocabularySeeds (LessonSlug, VocabularyJson) AS (
     VALUES
@@ -466,17 +467,19 @@ WITH VocabularySeeds (LessonSlug, VocabularyJson) AS (
     ('long-words', '{"words":[{"word":"meervoudigepersoonlijkheidsstoornis","meaning":"multiple personality disorder"},{"word":"arbeidsongeschiktheidsverzekering","meaning":"disability insurance"},{"word":"aansprakelijkheidsverzekering","meaning":"liability insurance"},{"word":"kindercarnavalsoptocht","meaning":"children’s carnival parade"},{"word":"hottentottententententoonstelling","meaning":"a playful classic compound"}]}'),
     ('funny-unusual-words', '{"words":[{"word":"gezellig","meaning":"cozy and sociable"},{"word":"uitwaaien","meaning":"to clear one’s head in the wind"},{"word":"voorpret","meaning":"anticipatory enjoyment"},{"word":"uitbuiken","meaning":"to relax after a big meal"},{"word":"niksen","meaning":"deliberately doing nothing"}]}')
 )
-INSERT OR IGNORE INTO LessonVocabulary (LessonId, VocabularyJson)
+INSERT INTO LessonVocabulary (LessonId, VocabularyJson)
 SELECT l.Id, s.VocabularyJson
 FROM VocabularySeeds s
 INNER JOIN Courses c ON c.Code = 'nl'
-INNER JOIN Lessons l ON l.CourseId = c.Id AND l.Slug = s.LessonSlug;
+INNER JOIN Lessons l ON l.CourseId = c.Id AND l.Slug = s.LessonSlug
+ON CONFLICT DO NOTHING;
 
-INSERT OR IGNORE INTO Quizzes (LessonId, Title)
+INSERT INTO Quizzes (LessonId, Title)
 SELECT l.Id, l.Title || ' Quiz'
 FROM Courses c
 INNER JOIN Lessons l ON l.CourseId = c.Id
-WHERE c.Code = 'nl';
+WHERE c.Code = 'nl'
+ON CONFLICT DO NOTHING;
 
 WITH QuestionSeeds (LessonSlug, SortOrder, Content, Type, QuestionData, CorrectAnswer) AS (
     VALUES
@@ -681,9 +684,10 @@ WITH QuestionSeeds (LessonSlug, SortOrder, Content, Type, QuestionData, CorrectA
     ('funny-unusual-words', 9, 'Type the verb for deliberately doing nothing.', 'free_text', '{}', 'niksen'),
     ('funny-unusual-words', 10, 'Type the sentence “At our home it is cozy and sociable.”', 'free_text', '{}', 'Bij ons thuis is het gezellig.')
 )
-INSERT OR IGNORE INTO QuizQuestions (QuizId, SortOrder, Content, Type, QuestionData, CorrectAnswer)
+INSERT INTO QuizQuestions (QuizId, SortOrder, Content, Type, QuestionData, CorrectAnswer)
 SELECT q.Id, s.SortOrder, s.Content, s.Type, s.QuestionData, s.CorrectAnswer
 FROM QuestionSeeds s
 INNER JOIN Courses c ON c.Code = 'nl'
 INNER JOIN Lessons l ON l.CourseId = c.Id AND l.Slug = s.LessonSlug
-INNER JOIN Quizzes q ON q.LessonId = l.Id;
+INNER JOIN Quizzes q ON q.LessonId = l.Id
+ON CONFLICT DO NOTHING;

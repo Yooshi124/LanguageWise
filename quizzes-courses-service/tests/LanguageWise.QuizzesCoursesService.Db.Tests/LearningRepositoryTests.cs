@@ -1,7 +1,8 @@
 using System.Text.Json;
 using LanguageWise.QuizzesCoursesService.Db.Data;
 using LanguageWise.QuizzesCoursesService.Db.Models;
-using Microsoft.Data.Sqlite;
+using Npgsql;
+using LanguageWise.Testing;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace LanguageWise.QuizzesCoursesService.Db.Tests;
@@ -35,7 +36,7 @@ public sealed class LearningRepositoryTests
         "funny-unusual-words"
     ];
 
-    private string databasePath = null!;
+    private PostgresTestDatabase database = null!;
     private string connectionString = null!;
     private string sqlDirectory = null!;
     private CatalogRepository catalog = null!;
@@ -44,14 +45,8 @@ public sealed class LearningRepositoryTests
     [SetUp]
     public void SetUp()
     {
-        databasePath = Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
-            $"languagewise-learning-{Guid.NewGuid():N}.db");
-        connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = databasePath,
-            ForeignKeys = true
-        }.ToString();
+        database = new PostgresTestDatabase();
+        connectionString = database.ConnectionString;
         sqlDirectory = Path.Combine(
             FindRepositoryRoot(),
             "quizzes-courses-service",
@@ -67,11 +62,7 @@ public sealed class LearningRepositoryTests
     [TearDown]
     public void TearDown()
     {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(databasePath))
-        {
-            File.Delete(databasePath);
-        }
+        database.Dispose();
     }
 
     [Test]
@@ -168,8 +159,8 @@ public sealed class LearningRepositoryTests
 
         using var duplicateQuiz = connection.CreateCommand();
         duplicateQuiz.CommandText =
-            "INSERT INTO Quizzes (LessonId, Title) VALUES ($lessonId, 'Duplicate');";
-        duplicateQuiz.Parameters.AddWithValue("$lessonId", quiz.LessonId);
+            "INSERT INTO Quizzes (LessonId, Title) VALUES (@lessonId, 'Duplicate');";
+        duplicateQuiz.Parameters.AddWithValue("@lessonId", quiz.LessonId);
 
         using var duplicateOrder = connection.CreateCommand();
         duplicateOrder.CommandText =
@@ -177,14 +168,14 @@ public sealed class LearningRepositoryTests
             INSERT INTO QuizQuestions
                 (QuizId, SortOrder, Content, Type, QuestionData, CorrectAnswer)
             VALUES
-                ($quizId, 1, 'Duplicate', 'free_text', '{}', 'answer');
+                (@quizId, 1, 'Duplicate', 'free_text', '{}', 'answer');
             """;
-        duplicateOrder.Parameters.AddWithValue("$quizId", quiz.Id);
+        duplicateOrder.Parameters.AddWithValue("@quizId", quiz.Id);
 
         Assert.Multiple(() =>
         {
-            Assert.Throws<SqliteException>(() => duplicateQuiz.ExecuteNonQuery());
-            Assert.Throws<SqliteException>(() => duplicateOrder.ExecuteNonQuery());
+            Assert.Throws<PostgresException>(() => duplicateQuiz.ExecuteNonQuery());
+            Assert.Throws<PostgresException>(() => duplicateOrder.ExecuteNonQuery());
         });
     }
 
@@ -264,10 +255,10 @@ public sealed class LearningRepositoryTests
         {
             Assert.That(result.Error?.Code, Is.EqualTo("invalid_response"));
             Assert.That(
-                Scalar("SELECT COUNT(*) FROM QuizAnswers WHERE AttemptId = $id;", attempt.Id),
+                Scalar("SELECT COUNT(*) FROM QuizAnswers WHERE AttemptId = @id;", attempt.Id),
                 Is.Zero);
             Assert.That(
-                Scalar("SELECT COUNT(*) FROM QuizAttempts WHERE Id = $id AND CompletedAt IS NOT NULL;", attempt.Id),
+                Scalar("SELECT COUNT(*) FROM QuizAttempts WHERE Id = @id AND CompletedAt IS NOT NULL;", attempt.Id),
                 Is.Zero);
         });
     }
@@ -300,7 +291,7 @@ public sealed class LearningRepositoryTests
             Assert.That(submitted.IsSuccess, Is.True);
             Assert.That(submittedAgain.Error?.Code, Is.EqualTo("attempt_complete"));
             Assert.That(
-                Scalar("SELECT COUNT(*) FROM QuizAnswers WHERE AttemptId = $id;", attempt.Id),
+                Scalar("SELECT COUNT(*) FROM QuizAnswers WHERE AttemptId = @id;", attempt.Id),
                 Is.EqualTo(10));
         });
     }
@@ -324,10 +315,10 @@ public sealed class LearningRepositoryTests
             Assert.That(firstReview.Passed, Is.True);
             Assert.That(secondReview.Score, Is.EqualTo(10));
             Assert.That(
-                Scalar("SELECT COUNT(*) FROM QuizAttempts WHERE UserId = 15 AND QuizId = $id;", quiz.Id),
+                Scalar("SELECT COUNT(*) FROM QuizAttempts WHERE UserId = 15 AND QuizId = @id;", quiz.Id),
                 Is.EqualTo(2));
             Assert.That(
-                Scalar("SELECT COUNT(*) FROM Milestones WHERE UserId = 15 AND QuizId = $id;", quiz.Id),
+                Scalar("SELECT COUNT(*) FROM Milestones WHERE UserId = 15 AND QuizId = @id;", quiz.Id),
                 Is.EqualTo(1));
         });
     }
@@ -345,7 +336,7 @@ public sealed class LearningRepositoryTests
         var failedReview = learning.SubmitAttempt(failedAttempt.Id, 16, failingAnswers).Value!;
         var progressAfterFailure = learning.GetCourseProgress("de", 16).Value!;
         var milestoneAfterFailure = Scalar(
-            "SELECT COUNT(*) FROM Milestones WHERE UserId = 16 AND QuizId = $id;",
+            "SELECT COUNT(*) FROM Milestones WHERE UserId = 16 AND QuizId = @id;",
             quiz.Id);
         var passedAttempt = learning.StartAttempt(quiz.Id, 16).Value!;
         var passedReview = learning.SubmitAttempt(
@@ -511,6 +502,58 @@ public sealed class LearningRepositoryTests
         });
     }
 
+    [Test]
+    public async Task SubmitAttempt_WhenConcurrent_RecordsOneSubmissionAndReturnsCompletionConflict()
+    {
+        var quiz = GetQuiz("greetings");
+        var attempt = learning.StartAttempt(quiz.Id, 61).Value!;
+        var answers = CorrectAnswers(quiz);
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var submissions = Enumerable.Range(0, 2).Select(_ => Task.Run(async () =>
+        {
+            await start.Task;
+            return learning.SubmitAttempt(attempt.Id, 61, answers);
+        })).ToArray();
+
+        start.SetResult();
+        var results = await Task.WhenAll(submissions);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(results.Count(result => result.IsSuccess), Is.EqualTo(1));
+            Assert.That(results.Single(result => !result.IsSuccess).Error?.Code, Is.EqualTo("attempt_complete"));
+            Assert.That(Scalar("SELECT COUNT(*) FROM QuizAnswers WHERE AttemptId = @id;", attempt.Id), Is.EqualTo(10));
+            Assert.That(Scalar("SELECT COUNT(*) FROM Milestones WHERE UserId = 61 AND QuizId = @id;", quiz.Id), Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public void Initialisation_PreservesSubmittedAnswersNewProgressAndDeletedDemoMilestones()
+    {
+        var quiz = GetQuiz("greetings");
+        var attempt = learning.StartAttempt(quiz.Id, 1).Value!;
+        var submitted = learning.SubmitAttempt(attempt.Id, 1, CorrectAnswers(quiz));
+        var lesson = catalog.GetLessons("de")[0];
+        learning.UncompleteLesson(lesson.Id, 1);
+        learning.CompleteLesson(lesson.Id, 62);
+        var answersBefore = Scalar("SELECT COUNT(*) FROM QuizAnswers;");
+        var attemptsBefore = Scalar("SELECT COUNT(*) FROM QuizAttempts;");
+
+        Initialise();
+        Initialise();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(submitted.Value?.Score, Is.EqualTo(10));
+            Assert.That(Scalar("SELECT COUNT(*) FROM QuizAnswers;"), Is.EqualTo(answersBefore));
+            Assert.That(Scalar("SELECT COUNT(*) FROM QuizAttempts;"), Is.EqualTo(attemptsBefore));
+            Assert.That(Scalar("SELECT COUNT(*) FROM QuizAnswers WHERE AttemptId = @id AND IsCorrect;", attempt.Id), Is.EqualTo(10));
+            Assert.That(Scalar("SELECT COUNT(*) FROM Milestones WHERE UserId = 1 AND LessonId = @id;", lesson.Id), Is.Zero);
+            Assert.That(Scalar("SELECT COUNT(*) FROM Milestones WHERE UserId = 62 AND LessonId = @id;", lesson.Id), Is.EqualTo(1));
+            Assert.That(learning.GetStartedCoursesProgress(62).Value!.Single().CourseCode, Is.EqualTo("de"));
+        });
+    }
+
     private void Initialise() =>
         new DatabaseInitializer(
             connectionString,
@@ -585,9 +628,9 @@ public sealed class LearningRepositoryTests
                             OR COUNT(DISTINCT question.SortOrder) <> 10
                             OR MIN(question.SortOrder) <> 1
                             OR MAX(question.SortOrder) <> 10
-                            OR SUM(question.Type = 'multiple_choice') <> 4
-                            OR SUM(question.Type = 'word_ordering') <> 3
-                            OR SUM(question.Type = 'free_text') <> 3
+                            OR COUNT(*) FILTER (WHERE question.Type = 'multiple_choice') <> 4
+                            OR COUNT(*) FILTER (WHERE question.Type = 'word_ordering') <> 3
+                            OR COUNT(*) FILTER (WHERE question.Type = 'free_text') <> 3
                     );
                     """),
                 Is.Zero);
@@ -596,10 +639,9 @@ public sealed class LearningRepositoryTests
                     """
                     SELECT COUNT(*)
                     FROM LessonVocabulary
-                    WHERE json_valid(VocabularyJson) = 0
-                       OR json_type(VocabularyJson) <> 'object'
-                       OR COALESCE(json_type(VocabularyJson, '$.words'), '') <> 'array'
-                       OR json_array_length(VocabularyJson, '$.words') NOT BETWEEN 5 AND 10;
+                          WHERE json_typeof(VocabularyJson::json) <> 'object'
+                              OR COALESCE(json_typeof(VocabularyJson::json -> 'words'), '') <> 'array'
+                              OR json_array_length(VocabularyJson::json -> 'words') NOT BETWEEN 5 AND 10;
                     """),
                 Is.Zero);
             Assert.That(
@@ -607,12 +649,11 @@ public sealed class LearningRepositoryTests
                     """
                     SELECT COUNT(*)
                     FROM QuizQuestions
-                    WHERE json_valid(QuestionData) = 0
-                       OR json_type(QuestionData) <> 'object';
+                          WHERE json_typeof(QuestionData::json) <> 'object';
                     """),
                 Is.Zero);
             Assert.That(
-                RowCount("PRAGMA foreign_key_check;"),
+                Scalar("SELECT COUNT(*) FROM pg_constraint WHERE connamespace = current_schema()::regnamespace AND contype = 'f' AND NOT convalidated;"),
                 Is.Zero);
             Assert.That(
                 Scalar(
@@ -630,7 +671,7 @@ public sealed class LearningRepositoryTests
                     WHERE question.Type = 'multiple_choice'
                       AND NOT EXISTS (
                           SELECT 1
-                          FROM json_each(question.QuestionData, '$.options')
+                          FROM json_array_elements_text(question.QuestionData::json -> 'options')
                           WHERE value = question.CorrectAnswer
                       );
                     """),
@@ -753,10 +794,10 @@ public sealed class LearningRepositoryTests
             """
             SELECT Id, CorrectAnswer
             FROM QuizQuestions
-            WHERE QuizId = $quizId
+            WHERE QuizId = @quizId
             ORDER BY SortOrder;
             """;
-        command.Parameters.AddWithValue("$quizId", quiz.Id);
+        command.Parameters.AddWithValue("@quizId", quiz.Id);
 
         var responses = new List<QuizResponse>();
         using var reader = command.ExecuteReader();
@@ -779,9 +820,9 @@ public sealed class LearningRepositoryTests
         answers[index] = new QuizResponse(questionId, response);
     }
 
-    private SqliteConnection Open()
+    private NpgsqlConnection Open()
     {
-        var connection = new SqliteConnection(connectionString);
+        var connection = new NpgsqlConnection(connectionString);
         connection.Open();
         return connection;
     }
@@ -797,12 +838,11 @@ public sealed class LearningRepositoryTests
         command.CommandText =
             $"""
              INSERT INTO Milestones (UserId, {targetColumn}, CompletedAt)
-             VALUES ($userId, $targetId, $completedAt);
-             SELECT last_insert_rowid();
+             VALUES (@userId, @targetId, @completedAt) RETURNING Id;
              """;
-        command.Parameters.AddWithValue("$userId", userId);
-        command.Parameters.AddWithValue("$targetId", targetId);
-        command.Parameters.AddWithValue("$completedAt", completedAt.ToString("O"));
+        command.Parameters.AddWithValue("@userId", userId);
+        command.Parameters.AddWithValue("@targetId", targetId);
+        command.Parameters.AddWithValue("@completedAt", completedAt.ToString("O"));
         return Convert.ToInt32(command.ExecuteScalar());
     }
 
@@ -813,7 +853,7 @@ public sealed class LearningRepositoryTests
         command.CommandText = sql;
         if (id is not null)
         {
-            command.Parameters.AddWithValue("$id", id.Value);
+            command.Parameters.AddWithValue("@id", id.Value);
         }
 
         return Convert.ToInt64(command.ExecuteScalar());
@@ -840,9 +880,9 @@ public sealed class LearningRepositoryTests
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText =
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = $name);";
-        command.Parameters.AddWithValue("$name", tableName);
-        return Convert.ToInt64(command.ExecuteScalar()) == 1;
+            "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = lower(@name));";
+        command.Parameters.AddWithValue("@name", tableName);
+        return (bool)command.ExecuteScalar()!;
     }
 
     private static string FindRepositoryRoot()

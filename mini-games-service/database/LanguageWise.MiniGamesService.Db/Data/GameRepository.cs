@@ -1,7 +1,7 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using LanguageWise.MiniGamesService.Db.Models;
-using Microsoft.Data.Sqlite;
+using Npgsql;
+using NpgsqlTypes;
 
 namespace LanguageWise.MiniGamesService.Db.Data;
 
@@ -21,10 +21,10 @@ public sealed class GameRepository(string connectionString)
             SELECT DISTINCT Games.Id, Games.GameType, Games.CourseCode, Games.Solution, Games.Words, Games.Difficulty, Games.CreatedAt, Games.ExpiresAt
             FROM Games
             INNER JOIN GameAttempts ON GameAttempts.GameId = Games.Id
-            WHERE GameAttempts.UserId = $userId
+            WHERE GameAttempts.UserId = @userId
             ORDER BY Games.CreatedAt DESC;
             """;
-        command.Parameters.AddWithValue("$userId", userId);
+        command.Parameters.AddWithValue("userId", userId);
 
         var games = new List<Game>();
         using var reader = command.ExecuteReader();
@@ -40,8 +40,8 @@ public sealed class GameRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = $"{SelectColumns} WHERE Id = $id;";
-        command.Parameters.AddWithValue("$id", id);
+        command.CommandText = $"{SelectColumns} WHERE Id = @id;";
+        command.Parameters.AddWithValue("id", id);
 
         using var reader = command.ExecuteReader();
         return reader.Read() ? Map(reader) : null;
@@ -58,16 +58,16 @@ public sealed class GameRepository(string connectionString)
         command.CommandText =
             """
             INSERT INTO Games (GameType, CourseCode, Solution, Words, Difficulty, CreatedAt, ExpiresAt)
-            VALUES ($gameType, $courseCode, $solution, $words, $difficulty, $createdAt, $expiresAt)
+            VALUES (@gameType, @courseCode, @solution, @words, @difficulty, @createdAt, @expiresAt)
             RETURNING Id, GameType, CourseCode, Solution, Words, Difficulty, CreatedAt, ExpiresAt;
             """;
-        command.Parameters.AddWithValue("$gameType", gameType);
-        command.Parameters.AddWithValue("$courseCode", courseCode);
-        command.Parameters.AddWithValue("$solution", solution);
-        command.Parameters.AddWithValue("$words", wordsJson);
-        command.Parameters.AddWithValue("$difficulty", difficulty);
-        command.Parameters.AddWithValue("$createdAt", createdAt);
-        command.Parameters.AddWithValue("$expiresAt", expiresAt ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("gameType", gameType);
+        command.Parameters.AddWithValue("courseCode", courseCode);
+        command.Parameters.AddWithValue("solution", solution);
+        command.Parameters.AddWithValue("words", NpgsqlDbType.Jsonb, wordsJson);
+        command.Parameters.AddWithValue("difficulty", difficulty);
+        command.Parameters.AddWithValue("createdAt", createdAt);
+        command.Parameters.AddWithValue("expiresAt", NpgsqlDbType.Text, expiresAt ?? (object)DBNull.Value);
 
         using var reader = command.ExecuteReader();
         reader.Read();
@@ -78,8 +78,8 @@ public sealed class GameRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM Games WHERE Id = $id;";
-        command.Parameters.AddWithValue("$id", id);
+        command.CommandText = "DELETE FROM Games WHERE Id = @id;";
+        command.Parameters.AddWithValue("id", id);
 
         return command.ExecuteNonQuery() > 0;
     }
@@ -89,8 +89,8 @@ public sealed class GameRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM Games WHERE ExpiresAt IS NOT NULL AND ExpiresAt < $now;";
-        command.Parameters.AddWithValue("$now", utcNow.ToString("O"));
+        command.CommandText = "DELETE FROM Games WHERE ExpiresAt IS NOT NULL AND ExpiresAt < @now;";
+        command.Parameters.AddWithValue("now", utcNow.ToString("O"));
 
         return command.ExecuteNonQuery();
     }
@@ -104,14 +104,14 @@ public sealed class GameRepository(string connectionString)
         return Convert.ToInt64(command.ExecuteScalar());
     }
 
-    private SqliteConnection Open()
+    private NpgsqlConnection Open()
     {
-        var connection = new SqliteConnection(connectionString);
+        var connection = new NpgsqlConnection(connectionString);
         connection.Open();
         return connection;
     }
 
-    private static Game Map(SqliteDataReader reader)
+    private static Game Map(NpgsqlDataReader reader)
     {
         var wordsJson = reader.GetString(4);
         var wordsElement = JsonSerializer.Deserialize<JsonElement>(wordsJson);

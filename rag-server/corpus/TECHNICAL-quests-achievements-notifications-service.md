@@ -18,7 +18,7 @@ Internal reference for the agentic loop. Not for end-user access.
 ## Database
 
 - PostgreSQL 18, database `quests_achievements_notifications`, fronted by a
-  PostgREST container (`quests-achievements-notifications-service-db-api`,
+  PostgREST container (`quests-achievements-notifications-service-db`,
   internal port `3000`) — the API talks to PostgREST rather than the database
   directly.
 - Key tables: `achievements` (achievement_id, name, description, image,
