@@ -2,23 +2,21 @@ using System.Text.Json;
 
 namespace LanguageWise.GarryAiService.Api;
 
-public sealed class ToolCompletionResult(
+public sealed class GarryCompletionResult(
 	CompletionRequest request,
 	string? userToken,
-	GarryToolLoop toolLoop,
-	CompletionProviders providers,
+	GarryAgentPipeline pipeline,
 	ILoggerFactory loggerFactory) : IResult
 {
 	private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
 	public async Task ExecuteAsync(HttpContext context)
 	{
-		var logger = loggerFactory.CreateLogger<ToolCompletionResult>();
+		var logger = loggerFactory.CreateLogger<GarryCompletionResult>();
 		var cancellationToken = context.RequestAborted;
-		string? answer = null;
 		try
 		{
-			answer = await toolLoop.RunAsync(request, userToken, async toolEvent =>
+			var answer = await pipeline.RunAsync(request, userToken, async toolEvent =>
 			{
 				StartStream(context.Response);
 				await SendAsync(context.Response, "tool", new
@@ -29,48 +27,43 @@ public sealed class ToolCompletionResult(
 					result = toolEvent.Result
 				}, cancellationToken);
 			}, cancellationToken);
+			StartStream(context.Response);
+			await SendAsync(context.Response, "delta", new { content = answer }, cancellationToken);
+			await SendAsync(context.Response, "done", new { reason = "stop" }, cancellationToken);
 		}
 		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
 		{
 			return;
 		}
-		catch (Exception exception)
-		{
-			logger.LogWarning("Tool loop failed; answering without tools: {ErrorType}", exception.GetType().Name);
-		}
-
-		if (!string.IsNullOrWhiteSpace(answer))
-		{
-			StartStream(context.Response);
-			await SendAsync(context.Response, "delta", new { content = answer }, cancellationToken);
-			await SendAsync(context.Response, "done", new { reason = "stop" }, cancellationToken);
-			return;
-		}
-
-		ProviderStream completion;
-		try
-		{
-			completion = await providers.StartAsync(request.BuildMessages(), cancellationToken);
-		}
 		catch (Exception exception) when (exception is HttpRequestException or ProviderException
 			|| (exception is OperationCanceledException && !cancellationToken.IsCancellationRequested))
 		{
-			logger.LogWarning("Both assistant providers could not start: {ErrorType}", exception.GetType().Name);
+			logger.LogWarning("Garry agent pipeline could not complete: {ErrorType}", exception.GetType().Name);
 			if (!context.Response.HasStarted)
 			{
 				context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
 				return;
 			}
-			await SendAsync(context.Response, "error", new
-			{
-				message = "Garry's response was interrupted. Please try again.",
-				code = "provider_stream_error"
-			}, cancellationToken);
+			await SendErrorAsync(context.Response, cancellationToken);
+		}
+		catch (IOException) when (cancellationToken.IsCancellationRequested)
+		{
 			return;
 		}
-
-		await new CompletionResult(completion, loggerFactory.CreateLogger<CompletionResult>()).ExecuteAsync(context);
+		catch (Exception exception) when (exception is IOException or InvalidDataException or JsonException or InvalidOperationException)
+		{
+			logger.LogWarning("Garry agent response ended unexpectedly: {ErrorType}", exception.GetType().Name);
+			StartStream(context.Response);
+			await SendErrorAsync(context.Response, cancellationToken);
+		}
 	}
+
+	private static Task SendErrorAsync(HttpResponse response, CancellationToken cancellationToken) =>
+		SendAsync(response, "error", new
+		{
+			message = "Garry's response was interrupted. Please try again.",
+			code = "provider_stream_error"
+		}, cancellationToken);
 
 	private static void StartStream(HttpResponse response)
 	{

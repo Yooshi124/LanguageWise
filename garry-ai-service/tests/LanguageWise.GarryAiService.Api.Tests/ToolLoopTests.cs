@@ -25,7 +25,7 @@ public sealed class ToolLoopTests
 		""";
 
 	[Test]
-	public async Task WithoutToolScope_UsesLegacyStreamingPath()
+	public async Task WithoutToolScope_UsesAllAgentsWithoutTools()
 	{
 		using var fixture = new ToolFixture();
 		using var client = fixture.CreateAuthorizedClient();
@@ -37,6 +37,7 @@ public sealed class ToolLoopTests
 		Assert.That(content, Does.Contain("event: delta"));
 		Assert.That(content, Does.Not.Contain("event: tool"));
 		Assert.That(fixture.Mcp.Connections, Is.Empty);
+		Assert.That(fixture.Provider.StreamRequests, Has.Count.EqualTo(3));
 	}
 
 	[Test]
@@ -62,6 +63,16 @@ public sealed class ToolLoopTests
 		var secondRound = fixture.Provider.ToolRequests[1];
 		Assert.That(secondRound, Does.Contain("\"role\":\"tool\""));
 		Assert.That(secondRound, Does.Contain("untrusted data"));
+		Assert.Multiple(() =>
+		{
+			Assert.That(fixture.Provider.StreamRequests, Has.Count.EqualTo(2));
+			Assert.That(fixture.Provider.StreamRequests[0], Does.Contain("planner agent"));
+			Assert.That(fixture.Provider.ToolRequests[0], Does.Contain("worker agent"));
+			Assert.That(fixture.Provider.ToolRequests[0], Does.Contain("Private task plan"));
+			Assert.That(fixture.Provider.StreamRequests[1], Does.Contain("reviewer agent"));
+			Assert.That(fixture.Provider.StreamRequests[1], Does.Contain("lessonsCompleted"));
+			Assert.That(content, Does.Not.Contain("Private task plan"));
+		});
 	}
 
 	[Test]
@@ -130,6 +141,56 @@ public sealed class ToolLoopTests
 	}
 
 	[Test]
+	public async Task DocsSources_AreBuiltFromReviewedCitationsNotWorkerDraft()
+	{
+		var docsCall = """
+			{"choices":[{"message":{"role":"assistant","content":"","tool_calls":[{"id":"call_docs","type":"function","function":{"name":"docs_search","arguments":"{\"query\":\"courses\"}"}}]}}]}
+			""";
+		var draft = """{"choices":[{"message":{"role":"assistant","content":"Private draft [1]."}}]}""";
+		using var fixture = new ToolFixture(docsCall, draft);
+		fixture.Mcp.ResultsByTool["docs_search"] = """
+			{"confidence":"high","passages":[
+			 {"source":"old-source","heading":"First","text":"First passage."},
+			 {"source":"reviewed-source","heading":"Second","text":"Second passage."}]}
+			""";
+		fixture.Provider.ReviewedAnswer = "Corrected answer [2].";
+		using var client = fixture.CreateAuthorizedClient();
+
+		using var response = await client.PostAsJsonAsync("/api/completions", Request("courses"));
+		var content = await response.Content.ReadAsStringAsync();
+
+		Assert.Multiple(() =>
+		{
+			Assert.That(content, Does.Contain("Corrected answer [2]."));
+			Assert.That(content, Does.Contain("- [2] reviewed-source"));
+			Assert.That(content, Does.Not.Contain("old-source"));
+			Assert.That(content, Does.Not.Contain("Private draft"));
+			Assert.That(fixture.Provider.StreamRequests[^1], Does.Contain("Second passage."));
+			Assert.That(content, Does.Contain("**Confidence:** High"));
+		});
+	}
+
+	[Test]
+	public async Task ReviewerFailureAfterToolEvent_EmitsErrorAndNeverDraft()
+	{
+		using var fixture = new ToolFixture(ProgressToolCall, FinalAnswer);
+		fixture.Provider.ReviewerStatus = HttpStatusCode.ServiceUnavailable;
+		using var client = fixture.CreateAuthorizedClient();
+
+		using var response = await client.PostAsJsonAsync("/api/completions", Request("courses"));
+		var content = await response.Content.ReadAsStringAsync();
+
+		Assert.Multiple(() =>
+		{
+			Assert.That(content, Does.Contain("event: tool"));
+			Assert.That(content, Does.Contain("event: error"));
+			Assert.That(content, Does.Not.Contain("event: delta"));
+			Assert.That(content, Does.Not.Contain("event: done"));
+			Assert.That(content, Does.Not.Contain("You finished"));
+		});
+	}
+
+	[Test]
 	public async Task WithoutDocsSearch_AnswerHasNoSourcesFooter()
 	{
 		using var fixture = new ToolFixture(ProgressToolCall, FinalAnswer);
@@ -155,6 +216,7 @@ public sealed class ToolLoopTests
 		Assert.That(content, Does.Contain("event: delta"));
 		Assert.That(content, Does.Not.Contain("event: tool"));
 		Assert.That(fixture.Provider.ToolRequests, Is.Empty);
+		Assert.That(fixture.Provider.StreamRequests, Has.Count.EqualTo(3));
 	}
 
 	[Test]
@@ -220,7 +282,7 @@ public sealed class ToolLoopTests
 	}
 
 	[Test]
-	public async Task WhenProviderToolCallFails_FallsBackToStreaming()
+	public async Task WhenProviderToolCallFails_StillRunsWorkerAndReviewer()
 	{
 		using var fixture = new ToolFixture();
 		fixture.Provider.ToolStatus = HttpStatusCode.BadRequest;
@@ -231,6 +293,9 @@ public sealed class ToolLoopTests
 
 		Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
 		Assert.That(content, Does.Contain("event: delta"));
+		Assert.That(fixture.Provider.StreamRequests, Has.Count.EqualTo(3));
+		Assert.That(fixture.Provider.StreamRequests[1], Does.Contain("Live tools are unavailable"));
+		Assert.That(fixture.Provider.StreamRequests[2], Does.Contain("reviewer agent"));
 	}
 
 	[TestCase("Courses")]
@@ -247,7 +312,7 @@ public sealed class ToolLoopTests
 	}
 
 	[Test]
-	public async Task WhenMcpDisabled_ToolScopeUsesLegacyPath()
+	public async Task WhenMcpDisabled_ToolScopeStillUsesAllAgents()
 	{
 		using var fixture = new ToolFixture(mcpEnabled: false);
 		using var client = fixture.CreateAuthorizedClient();
@@ -257,6 +322,22 @@ public sealed class ToolLoopTests
 
 		Assert.That(content, Does.Contain("event: delta"));
 		Assert.That(fixture.Mcp.Connections, Is.Empty);
+		Assert.That(fixture.Provider.StreamRequests, Has.Count.EqualTo(3));
+	}
+
+	[Test]
+	public async Task WhenMcpHasNoTools_StillUsesAllAgents()
+	{
+		using var fixture = new ToolFixture();
+		fixture.Mcp.NoTools = true;
+		using var client = fixture.CreateAuthorizedClient();
+
+		using var response = await client.PostAsJsonAsync("/api/completions", Request("courses"));
+		var content = await response.Content.ReadAsStringAsync();
+
+		Assert.That(content, Does.Contain("event: done"));
+		Assert.That(fixture.Provider.StreamRequests, Has.Count.EqualTo(3));
+		Assert.That(fixture.Provider.ToolRequests, Is.Empty);
 	}
 
 	private static object Request(string? toolScope) => new
@@ -336,7 +417,10 @@ public sealed class ToolLoopTests
 		private readonly ConcurrentQueue<string> replies = new(toolReplies);
 
 		public List<string> ToolRequests { get; } = [];
+		public List<string> StreamRequests { get; } = [];
 		public HttpStatusCode ToolStatus { get; set; } = HttpStatusCode.OK;
+		public HttpStatusCode ReviewerStatus { get; set; } = HttpStatusCode.OK;
+		public string? ReviewedAnswer { get; set; }
 
 		public HttpClient CreateClient(string name) => new(new Handler(this)) { BaseAddress = new Uri("http://localhost/") };
 
@@ -347,11 +431,26 @@ public sealed class ToolLoopTests
 				var body = await request.Content!.ReadAsStringAsync(cancellationToken);
 				if (body.Contains("\"stream\":true", StringComparison.Ordinal))
 				{
+					owner.StreamRequests.Add(body);
+					using var payload = JsonDocument.Parse(body);
+					var messages = payload.RootElement.GetProperty("messages").EnumerateArray().ToArray();
+					var prompt = messages[1].GetProperty("content").GetString();
+					var text = prompt == GarryAgent.PlannerPrompt ? "Private task plan" : "Worker draft";
+					if (prompt == GarryAgent.ReviewerPrompt)
+					{
+						if (owner.ReviewerStatus != HttpStatusCode.OK)
+						{
+							return new HttpResponseMessage(owner.ReviewerStatus);
+						}
+						var draft = messages.Single(message =>
+							message.GetProperty("content").GetString()!.StartsWith("Worker draft (", StringComparison.Ordinal))
+							.GetProperty("content").GetString()!;
+						text = owner.ReviewedAnswer ?? draft[(draft.IndexOf('\n') + 1)..];
+					}
+					var delta = JsonSerializer.Serialize(new { choices = new[] { new { delta = new { content = text } } } });
 					return new HttpResponseMessage(HttpStatusCode.OK)
 					{
-						Content = new StringContent(
-							"data: {\"choices\":[{\"delta\":{\"content\":\"Legacy hello\"}}]}\n\ndata: [DONE]\n\n",
-							Encoding.UTF8)
+						Content = new StringContent($"data: {delta}\n\ndata: [DONE]\n\n", Encoding.UTF8)
 					};
 				}
 
@@ -373,6 +472,7 @@ public sealed class ToolLoopTests
 	{
 		public bool Enabled { get; set; } = true;
 		public bool FailToConnect { get; set; }
+		public bool NoTools { get; set; }
 		public List<(string Scope, string? UserToken)> Connections { get; } = [];
 		public List<(string Name, IReadOnlyDictionary<string, JsonElement> Arguments)> Calls { get; } = [];
 		public Dictionary<string, string> ResultsByTool { get; } = [];
@@ -393,6 +493,7 @@ public sealed class ToolLoopTests
 
 			public Task<IReadOnlyList<McpToolDefinition>> ListToolsAsync(CancellationToken cancellationToken) =>
 				Task.FromResult<IReadOnlyList<McpToolDefinition>>(
+				owner.NoTools ? [] :
 				[
 					new("courses_list_courses", "Lists courses", Schema),
 					new("courses_get_my_progress", "Gets progress", Schema),
