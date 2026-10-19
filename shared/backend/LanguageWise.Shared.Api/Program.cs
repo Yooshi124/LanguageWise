@@ -197,6 +197,47 @@ app.MapPost("/api/logout", (HttpContext ctx) =>
     return Results.Ok();
 });
 
+// Settings are global, so any signed-in user may read them but only admins may change them.
+app.MapGet("/api/admin-settings", async (
+    HttpContext ctx,
+    UsersClient usersClient,
+    CancellationToken cancellationToken) =>
+{
+    if (ReadSessionUser(ctx) is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    return Results.Ok(await usersClient.GetAdminSettingsAsync(cancellationToken));
+});
+
+app.MapPut("/api/admin-settings/{name}", async (
+    string name,
+    UpdateAdminSettingRequest? body,
+    HttpContext ctx,
+    UsersClient usersClient,
+    CancellationToken cancellationToken) =>
+{
+    var user = ReadSessionUser(ctx);
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!user.IsAdmin)
+    {
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+
+    if (body is null)
+    {
+        return Results.BadRequest();
+    }
+
+    var updated = await usersClient.SetAdminSettingAsync(name, body.IsEnabled, cancellationToken);
+    return updated is null ? Results.NotFound() : Results.Ok(updated);
+});
+
 // "Ask the docs" for Garry on every feature: a cited answer from the RAG server's general
 // endpoint (never TECHNICAL- passages), or a fixed insufficient-context reply without calling Garry.
 app.MapPost("/api/rag/answer", async (
@@ -495,6 +536,8 @@ static async Task<bool> LooksLikeDeclaredFormatAsync(IFormFile file, Cancellatio
 internal sealed record LoginRequest(string Username, string Password);
 
 internal sealed record DocsAnswerApiRequest(string? Query);
+
+internal sealed record UpdateAdminSettingRequest(bool IsEnabled);
 
 internal sealed record CreateAccountRequest(string? Username, string? Password);
 

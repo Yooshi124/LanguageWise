@@ -13,3 +13,9 @@ SELECT setval(pg_get_serial_sequence('users', 'id'),
     GREATEST((SELECT MAX(Id) FROM Users), (SELECT last_value FROM users_id_seq)), true);
 
 UPDATE Users SET IsAdmin = TRUE WHERE Username = 'lachlan';
+
+INSERT INTO AdminSettings (Name, IsEnabled) VALUES
+    ('AIMode', FALSE),
+    ('RAG',    FALSE),
+    ('MCP',    FALSE)
+ON CONFLICT DO NOTHING;
