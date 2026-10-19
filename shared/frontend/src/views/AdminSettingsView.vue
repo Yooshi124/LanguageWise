@@ -1,29 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
+import { useAdminSettings } from '../composables/useAdminSettings'
 
-interface AdminSetting {
-  name: string
-  isEnabled: boolean
-}
-
-const settings = ref<Record<string, boolean>>({ AIMode: false, MCP: false, RAG: false })
+const adminSettings = useAdminSettings()
+const settings = adminSettings.settings
+const aiMode = adminSettings.aiMode
 const loading = ref(true)
 const saving = ref(false)
 const error = ref('')
 
-const aiMode = computed(() => settings.value.AIMode === true)
-
 async function load() {
   try {
-    const response = await fetch('/api/admin-settings', {
-      credentials: 'same-origin',
-      headers: { Accept: 'application/json' },
-    })
-    if (!response.ok) {
-      throw new Error(`Unable to load settings (${response.status} ${response.statusText})`)
-    }
-    const stored: AdminSetting[] = await response.json()
-    settings.value = Object.fromEntries(stored.map((setting) => [setting.name, setting.isEnabled]))
+    await adminSettings.load()
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Unable to load settings.'
   } finally {

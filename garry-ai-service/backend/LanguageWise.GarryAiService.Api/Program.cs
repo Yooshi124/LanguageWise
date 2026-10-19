@@ -18,6 +18,12 @@ builder.Services.AddHttpClient(McpToolHost.HttpClientName, client =>
 {
     client.Timeout = TimeSpan.FromSeconds(builder.Configuration.GetValue("Mcp:TimeoutSeconds", 15));
 });
+builder.Services.AddHttpClient(AdminSwitches.HttpClientName, client =>
+{
+    client.BaseAddress = new Uri((builder.Configuration["Services:Database"] ?? "http://localhost:6000").TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromSeconds(5);
+});
+builder.Services.AddSingleton<IAdminSwitches, AdminSwitches>();
 builder.Services.AddScoped<CompletionProviders>();
 builder.Services.AddSingleton<IMcpToolHost, McpToolHost>();
 builder.Services.AddScoped<GarryToolLoop>();
@@ -67,6 +73,7 @@ app.MapPost("/api/completions", async (
     HttpContext context,
     CompletionProviders providers,
     GarryToolLoop toolLoop,
+    IAdminSwitches adminSwitches,
     ILoggerFactory loggerFactory,
     CancellationToken cancellationToken) =>
 {
@@ -75,7 +82,17 @@ app.MapPost("/api/completions", async (
         return Results.BadRequest();
     }
 
-    if (request!.ToolScope is not null && toolLoop.IsAvailable)
+    var switches = await adminSwitches.GetAsync(cancellationToken);
+    if (!switches.AiMode)
+    {
+        return Results.Problem(
+            title: "Garry is turned off.",
+            detail: "An administrator has turned off AI features.",
+            statusCode: StatusCodes.Status503ServiceUnavailable,
+            extensions: new Dictionary<string, object?> { ["code"] = "ai_disabled" });
+    }
+
+    if (request!.ToolScope is not null && switches.Mcp && toolLoop.IsAvailable)
     {
         var authorization = context.Request.Headers.Authorization.ToString();
         var userToken = authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? authorization[7..].Trim() : null;

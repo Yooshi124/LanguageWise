@@ -259,6 +259,21 @@ public sealed class ToolLoopTests
 		Assert.That(fixture.Mcp.Connections, Is.Empty);
 	}
 
+	[Test]
+	public async Task WhenMcpSwitchedOff_ToolScopeUsesLegacyPath()
+	{
+		using var fixture = new ToolFixture(ProgressToolCall, FinalAnswer);
+		fixture.Switches.State = new AdminSwitchState(AiMode: true, Mcp: false, Rag: true);
+		using var client = fixture.CreateAuthorizedClient();
+
+		using var response = await client.PostAsJsonAsync("/api/completions", Request("courses"));
+		var content = await response.Content.ReadAsStringAsync();
+
+		Assert.That(content, Does.Contain("event: delta"));
+		Assert.That(content, Does.Not.Contain("event: tool"));
+		Assert.That(fixture.Mcp.Connections, Is.Empty);
+	}
+
 	private static object Request(string? toolScope) => new
 	{
 		message = "How am I going?",
@@ -280,6 +295,7 @@ public sealed class ToolLoopTests
 		}
 
 		public FakeMcpHost Mcp { get; } = new();
+		public StubAdminSwitches Switches { get; } = new();
 		public ScriptedProvider Provider { get; } = new(toolReplies);
 		public string Token { get; private set; } = "";
 
@@ -303,6 +319,8 @@ public sealed class ToolLoopTests
 				services.AddSingleton<IHttpClientFactory>(Provider);
 				services.RemoveAll<IMcpToolHost>();
 				services.AddSingleton<IMcpToolHost>(Mcp);
+				services.RemoveAll<IAdminSwitches>();
+				services.AddSingleton<IAdminSwitches>(Switches);
 			});
 		}
 

@@ -244,6 +244,7 @@ app.MapPost("/api/rag/answer", async (
     HttpContext ctx,
     DocsAnswerApiRequest? request,
     IConfiguration configuration,
+    UsersClient usersClient,
     RagClient ragClient,
     GarryClient garryClient,
     CancellationToken cancellationToken) =>
@@ -254,7 +255,8 @@ app.MapPost("/api/rag/answer", async (
     }
 
     // Rag:Enabled=false (as in CI) keeps the RAG server and Garry out of the request path.
-    if (!configuration.GetValue("Rag:Enabled", true))
+    if (!configuration.GetValue("Rag:Enabled", true)
+        || !await IsRagSwitchedOnAsync(usersClient, app.Logger, cancellationToken))
     {
         return Results.Problem(
             title: "Ask the docs is turned off on this server.",
@@ -514,6 +516,24 @@ app.MapDelete("/api/users/{userId:int}/profile-picture", async (
 });
 
 app.Run();
+
+static async Task<bool> IsRagSwitchedOnAsync(UsersClient usersClient, ILogger logger, CancellationToken cancellationToken)
+{
+    try
+    {
+        var settings = await usersClient.GetAdminSettingsAsync(cancellationToken);
+        return settings.Any(setting => setting.Name == "AIMode" && setting.IsEnabled)
+            && settings.Any(setting => setting.Name == "RAG" && setting.IsEnabled);
+    }
+    catch (Exception exception) when (
+        exception is HttpRequestException or System.Text.Json.JsonException
+        || (exception is TaskCanceledException && !cancellationToken.IsCancellationRequested))
+    {
+        // Fail closed: RAG stays off until the switches can be read.
+        logger.LogWarning("Could not read admin settings: {ErrorType}.", exception.GetType().Name);
+        return false;
+    }
+}
 
 // The storage key is dropped: the browser addresses the picture by user ID.
 static ProfilePictureDetail ToProfilePictureDetail(ProfilePicture picture) => new(

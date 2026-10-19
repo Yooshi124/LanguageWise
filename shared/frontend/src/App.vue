@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import AppIcon from './components/AppIcon.vue'
 import AppSidebar from './components/AppSidebar.vue'
 import GarryAssistant from './components/GarryAssistant.vue'
+import { useAdminSettings } from './composables/useAdminSettings'
 import { useAuth } from './composables/useAuth'
 import { featureAssistants } from './federation/featureAssistants'
 import HostErrorView from './views/HostErrorView.vue'
@@ -11,6 +12,7 @@ import HostLoadingView from './views/HostLoadingView.vue'
 
 const route = useRoute()
 const auth = useAuth()
+const adminSettings = useAdminSettings()
 const sidebarExpanded = ref(false)
 const mobileSidebarOpen = ref(false)
 const hostError = ref('')
@@ -19,7 +21,7 @@ const showShell = computed(() => route.name !== 'login' && route.name !== 'creat
 const garry = computed(() => {
   const featureKey = route.meta.federatedFeature
   const user = auth.user.value
-  if (typeof featureKey !== 'string' || !user || route.meta.hideAssistant || hostError.value) {
+  if (typeof featureKey !== 'string' || !user || route.meta.hideAssistant || hostError.value || !adminSettings.aiMode.value) {
     return null
   }
   const assistant = featureAssistants.get(featureKey)
@@ -49,6 +51,14 @@ onErrorCaptured((error) => {
 watch(() => route.fullPath, () => {
   hostError.value = ''
 })
+watch(
+  () => auth.user.value?.id,
+  (userId) => {
+    // Garry stays hidden if the switches cannot be read.
+    if (userId !== undefined) adminSettings.load().catch(() => {})
+  },
+  { immediate: true },
+)
 </script>
 
 <template>

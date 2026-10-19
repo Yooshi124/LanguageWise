@@ -16,6 +16,7 @@ import garryImage from '../assets/garry.png'
 import GarryDocsSearch from './GarryDocsSearch.vue'
 import GarryToolResultCard from './GarryToolResultCard.vue'
 import { useGarryAssistant } from '../composables/useGarryAssistant'
+import { useAdminSettings } from '../composables/useAdminSettings'
 import type { FeatureAssistant, FeatureAssistantTool } from '../federation/featureAssistants'
 
 const props = defineProps<{
@@ -27,6 +28,7 @@ const props = defineProps<{
 const route = useRoute()
 const router = useRouter()
 const garry = useGarryAssistant()
+const adminSettings = useAdminSettings()
 const draft = ref('')
 const docsSearchVisible = ref(false)
 const messageList = ref<HTMLElement | null>(null)
@@ -120,6 +122,7 @@ watch(
             <span>Hi, I’m Garry and I’m here to help you learn!</span>
           </div>
           <v-btn
+            v-if="adminSettings.rag.value"
             :icon="mdiBookSearchOutline"
             variant="text"
             size="small"
@@ -128,7 +131,7 @@ watch(
             @click="docsSearchVisible = true"
           />
           <v-btn
-            v-if="assistant.tools"
+            v-if="assistant.tools && adminSettings.mcp.value"
             :icon="mdiToolboxOutline"
             :variant="garry.toolsEnabled.value ? 'tonal' : 'text'"
             size="small"
@@ -155,7 +158,7 @@ watch(
         </header>
 
         <div class="garry-tools">
-          <template v-if="assistant.tools && garry.toolsEnabled.value">
+          <template v-if="assistant.tools && adminSettings.mcp.value && garry.toolsEnabled.value">
             <p v-if="garry.toolsLoading.value" class="garry-tools-status">Loading tools…</p>
             <p v-else-if="garry.toolsError.value" class="garry-tools-status">
               {{ garry.toolsError.value }}
