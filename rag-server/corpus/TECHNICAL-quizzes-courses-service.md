@@ -200,11 +200,10 @@ modes; its RAG client uses the authenticated technical retrieval endpoint.
   `Services__Garry`. Current Compose configuration connects to containerised
   Garry; Garry uses OpenRouter as its only model provider.
 - `Mcp__Enabled: "true"`, `Mcp__Endpoint:
-  http://host.docker.internal:8200/mcp` and
+  http://mcp-server:8080/mcp` and
   `Mcp__ApiKeyPath: /run/secrets/mcp_api_key` configure the feature MCP client.
-  Compose mounts the MCP key and signing public key and supplies the
-  `host.docker.internal` host-gateway mapping.
-- MCP, RAG and the agentic loop remain host-local, outside Compose. The shared
+  Compose mounts the MCP key and signing public key.
+- MCP and RAG run on the Compose network; the agentic loop stays host-local. The shared
   backend connects to RAG through `Services__Rag`; there is no direct RAG
   client or `/api/rag/answer` endpoint in quizzes-courses.
 
@@ -214,6 +213,8 @@ modes; its RAG client uses the authenticated technical retrieval endpoint.
 and database and builds all three Docker images. It sets `Mcp__Enabled: false`
 and `Rag__Enabled: false`; integration tests use fakes rather than local servers.
 Passing these tests does not replace live frontend/terminal validation evidence.
+The separate `ai-e2e` workflow tests real MCP/RAG containers and all five feature
+assistants with only the external generation provider simulated.
 
 Key references are the feature backend's `Program.cs`,
 `Clients/McpToolClient.cs`, `Clients/OpenRouterAssistantClient.cs`,

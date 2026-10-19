@@ -28,7 +28,7 @@ builder.Services.AddHttpClient<AchievementsClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(20);
 });
 
-// The RAG server runs on the host, not in Compose (reached via host.docker.internal).
+// Compose supplies the RAG service DNS URL; localhost supports host-only development.
 var ragServiceUrl = builder.Configuration["Services:Rag"] ?? "http://localhost:8100";
 builder.Services.AddHttpClient<RagClient>(client =>
 {
@@ -210,7 +210,7 @@ app.MapPost("/api/rag/answer", async (
         return Results.Unauthorized();
     }
 
-    // Rag:Enabled=false (as in CI) keeps the RAG server and Garry out of the request path.
+    // Isolated CI tests disable RAG; integrated E2E exercises the real service.
     if (!configuration.GetValue("Rag:Enabled", true))
     {
         return Results.Problem(
