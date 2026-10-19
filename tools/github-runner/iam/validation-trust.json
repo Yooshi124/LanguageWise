@@ -1,0 +1,21 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "TrustWorkstationBootstrapRole",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::047754151573:role/managed/AccountFullAccessRole"
+      },
+      "Action": "sts:AssumeRole"
+    },
+    {
+      "Sid": "TrustDedicatedGitHubUser",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::047754151573:user/languagewise/languagewise-runner"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}

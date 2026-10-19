@@ -1,0 +1,84 @@
+name: AWS Read-Only Validation
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: languagewise-aws-validation
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-southeast-2
+  AWS_PAGER: ''
+  AWS_EC2_METADATA_DISABLED: 'true'
+
+jobs:
+  validate:
+    if: github.repository == 'Yooshi124/LanguageWise' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    environment: aws-demo
+    timeout-minutes: 5
+
+    steps:
+      - name: Check required secrets
+        shell: bash
+        env:
+          HAS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
+          HAS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY != '' }}
+        run: |
+          set -euo pipefail
+          if [[ "$HAS_ACCESS_KEY_ID" != true || "$HAS_SECRET_ACCESS_KEY" != true ]]; then
+            printf '::error::Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in the aws-demo environment.\n'
+            exit 1
+          fi
+
+      - name: Assume read-only validation role
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-southeast-2
+          role-to-assume: arn:aws:iam::047754151573:role/languagewise/languagewise-runner-validation
+          role-session-name: GitHubValidation-${{ github.run_id }}-${{ github.run_attempt }}
+          role-duration-seconds: 900
+          role-skip-session-tagging: true
+          allowed-account-ids: '047754151573'
+          unset-current-credentials: true
+          force-skip-oidc: true
+          output-credentials: false
+          retry-max-attempts: 3
+          action-timeout-s: 90
+
+      - name: Verify role identity and scoped reads
+        shell: bash
+        run: |
+          set -euo pipefail
+          caller_arn="$(aws sts get-caller-identity --query Arn --output text)"
+          case "$caller_arn" in
+            arn:aws:sts::047754151573:assumed-role/languagewise-runner-validation/*)
+              printf 'Validated role: %s\n' "$caller_arn"
+              ;;
+            *)
+              printf '::error::Unexpected AWS identity.\n'
+              exit 1
+              ;;
+          esac
+
+          cluster_status="$(aws ecs describe-clusters --clusters languagewise \
+            --region "$AWS_REGION" \
+            --query "clusters[?clusterArn=='arn:aws:ecs:ap-southeast-2:047754151573:cluster/languagewise'].status | [0]" \
+            --output text)"
+          if [[ "$cluster_status" != ACTIVE ]]; then
+            printf '::error::The expected ECS cluster is not active or could not be described.\n'
+            exit 1
+          fi
+
+          repository_arn="$(aws ecr describe-repositories --repository-names 41026release2/languagewise \
+            --region "$AWS_REGION" --query 'repositories[0].repositoryArn' --output text)"
+          if [[ "$repository_arn" != arn:aws:ecr:ap-southeast-2:047754151573:repository/41026release2/languagewise ]]; then
+            printf '::error::The expected ECR repository could not be described.\n'
+            exit 1
+          fi
+          printf 'AWS read-only validation passed for the LanguageWise cluster and repository in Sydney.\n'

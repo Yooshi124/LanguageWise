@@ -1,6 +1,10 @@
 # Isolated Homebox Runner VM
 
-This prepares an Ubuntu 24.04 VM on the Debian homebox. It does not register a
+This VM setup is historical. The selected deployment path uses GitHub-hosted
+runners and a dedicated IAM user key in GitHub Secrets. Do not install that key
+in the homebox or guest. The existing VM/runner has not been removed.
+
+The setup script prepares an Ubuntu 24.04 VM on the Debian homebox. It does not register a
 GitHub runner, authenticate to AWS, or create AWS resources. Application builds
 and PR tests remain on GitHub-hosted runners.
 
@@ -114,6 +118,35 @@ does not check out code, and does not use AWS credentials. It checks Linux/x64,
 non-root execution, and GitHub HTTPS access. Confirm the run succeeds and the
 runner returns to Idle before configuring deployment authentication. Local
 YAML/shell validation does not replace this GitHub-dispatched test.
+
+## AWS Validation Role
+
+The separately approved, manual IAM bootstrap created
+`arn:aws:iam::047754151573:role/languagewise/languagewise-runner-validation`.
+[iam/validation-trust.json](iam/validation-trust.json) trusts exactly the existing
+workstation role, including its `/managed/` path, and dedicated IAM user
+`arn:aws:iam::047754151573:user/languagewise/languagewise-runner`.
+[iam/runner-user-permissions.json](iam/runner-user-permissions.json) records the
+user's sole inline policy, permitting only assumption of this validation role.
+[iam/validation-permissions.json](iam/validation-permissions.json) permits only
+describing the existing LanguageWise ECS cluster and ECR repository in Sydney.
+The maximum session duration is one hour. This is not a deployment role and
+does not permit pulling images, reading secrets, passing roles, or changing AWS
+resources. It is not yet managed by Terraform.
+
+The user was created without a console password or access key. Policy simulation
+allows assumption of the validation role, denies assumption of the broad
+workstation role, and denies direct ECS/ECR reads. Secure key creation, GitHub
+Secrets configuration, and a GitHub-hosted validation run are still pending.
+
+Role assumption and both metadata reads passed from Windows and inside the VM.
+The VM check received only this role's temporary credentials through trusted
+SSH standard input and held them in process memory; no credentials were printed
+or saved. No persistent AWS credentials were installed in the guest. Future
+checks must likewise transfer only scoped temporary sessions, never the
+workstation's administrative credentials or login cache. Enter SSH passwords
+directly in the terminal, not chat. This one-off VM check does not configure
+AWS access or session renewal for GitHub Actions.
 
 ## Stop and Remove
 
