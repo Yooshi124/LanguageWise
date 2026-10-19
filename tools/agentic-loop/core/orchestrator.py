@@ -12,20 +12,21 @@ visible in the record.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
-from agents import analyst, critic, decision_parser, file_selector, planner
+from agents import analyst, critic, decision_parser, file_selector, planner, reviewer, worker, workflow_planner
 from collectors import file_reader, github_actions, mcp_observer, rag_observer, repo_observer, repo_scanner
 from config.settings import Settings
 from core import console, stages
 from core.mcp_client import McpClient
-from core.models import Finding
+from core.models import Finding, ReviewerAssessment, WorkerOutput, WorkflowDecision, WorkflowPlan
 from core.openrouter_client import OpenRouterClient, OpenRouterError
 from core.prompt_registry import PromptRegistry
 from core.rag_client import RagClient
-from core.session import RoundState, SessionState, format_timestamp
+from core.session import RoundState, SessionState, format_timestamp, new_guid, utc_now
+from output import workflow_log
 from output.plan_writer import write_plan
 from output.session_writer import SessionWriter
 
@@ -69,6 +70,26 @@ MCP_VALIDATION_PROMPT = (
 )
 
 
+PARTICIPATING_AGENTS = ("planner_agent", "worker_agent", "reviewer_agent")
+
+MULTI_AGENT_DESCRIPTION = (
+    "Worker agent executes the plan against the evidence; reviewer agent assesses the risk."
+)
+
+
+@dataclass
+class WorkflowRun:
+    """State of one planner -> worker -> reviewer -> human workflow."""
+
+    workflow_id: str = field(default_factory=new_guid)
+    plan: WorkflowPlan | None = None
+    worker_output: WorkerOutput | None = None
+    assessment: ReviewerAssessment | None = None
+    decision: WorkflowDecision = WorkflowDecision.PENDING
+    decision_note: str = ""
+    evidence_files: list[str] = field(default_factory=list)
+
+
 class RoundAborted(RuntimeError):
     """Raised when a round cannot continue; the reason is recorded in the log."""
 
@@ -87,6 +108,7 @@ class RoundOutcome:
     aborted_reason: str | None = None
     end_session: bool = False
     follow_up_prompt: str | None = None
+    workflow: WorkflowRun | None = None
 
 
 class Orchestrator:
@@ -121,34 +143,79 @@ class Orchestrator:
         self.settings = self._initial_settings
 
     def run_round(self, user_prompt: str, extra_context: str | None = None) -> RoundOutcome:
-        round_state = self.session.start_round(user_prompt)
+        return self._guarded_round(
+            user_prompt, lambda round_state: self._review_round(round_state, extra_context)
+        )
+
+    def run_multi_agent_round(self, user_request: str) -> RoundOutcome:
+        """Run the planner -> worker -> reviewer -> human workflow as one round.
+
+        PLAN: the planner agent turns the request into a workflow plan.
+        ACT/OBSERVE: files are selected using the request plus the plan.
+        AGENT: the worker executes the plan; the reviewer assesses the risk.
+        HUMAN REVIEW: the human accepts, partially accepts or rejects.
+        ADAPT: the workflow history and coordination audit are appended.
+        Aborted workflows are still recorded so the audit trail has no gaps.
+        """
+        workflow = WorkflowRun()
+        outcome = self._guarded_round(
+            user_request, lambda round_state: self._multi_agent_round(round_state, workflow)
+        )
+        outcome.workflow = workflow
+        if outcome.aborted_reason:
+            history, audit = self._workflow_records(
+                workflow, outcome.round_state, "aborted", outcome.aborted_reason
+            )
+            workflow_log.append_workflow(self.settings.sessions_dir, history, audit)
+        return outcome
+
+    def _review_round(self, round_state: RoundState, extra_context: str | None) -> RoundOutcome:
+        user_prompt = round_state.prompt
+        self._stage_plan(round_state)
+        selection, scan = self._stage_act(user_prompt)
+        bundle = file_reader.load_files(selection.entries, self.settings)
+        observation = self._stage_observe(scan, bundle, extra_context)
+        findings = self._stage_agent(user_prompt, bundle, observation, round_state)
+        accepted = self._stage_human_review(findings, round_state)
+        plan_path = self._stage_adapt(
+            user_prompt, accepted, findings, bundle, observation, round_state
+        )
+        if not findings:
+            # Asked after ADAPT so the six stages always print in order.
+            note = self._offer_next_step()
+            if note:
+                self.writer.write_note(f"**Human next step:** {note}")
+        return RoundOutcome(
+            round_state,
+            findings,
+            accepted,
+            plan_path,
+            end_session=self._end_session,
+            follow_up_prompt=self._follow_up_prompt,
+        )
+
+    def _multi_agent_round(self, round_state: RoundState, workflow: WorkflowRun) -> RoundOutcome:
+        user_request = round_state.prompt
+        plan = self._stage_plan_workflow(round_state, workflow)
+        selection, scan = self._stage_act(_selection_prompt(user_request, plan))
+        bundle = file_reader.load_files(selection.entries, self.settings)
+        workflow.evidence_files = [file.relative_path for file in bundle.files]
+        observation = self._stage_observe(scan, bundle)
+        self._stage_coordinate(user_request, plan, bundle, observation, round_state, workflow)
+        self._stage_workflow_decision(workflow)
+        self._stage_record_workflow(workflow, round_state)
+        return RoundOutcome(round_state, [], [], None)
+
+    def _guarded_round(
+        self, prompt: str, body: Callable[[RoundState], RoundOutcome]
+    ) -> RoundOutcome:
+        round_state = self.session.start_round(prompt)
         self.writer.start_round(round_state.number)
         self._end_session = False
         self._follow_up_prompt = None
 
         try:
-            self._stage_plan(round_state)
-            selection, scan = self._stage_act(user_prompt)
-            bundle = file_reader.load_files(selection.entries, self.settings)
-            observation = self._stage_observe(scan, bundle, extra_context)
-            findings = self._stage_agent(user_prompt, bundle, observation, round_state)
-            accepted = self._stage_human_review(findings, round_state)
-            plan_path = self._stage_adapt(
-                user_prompt, accepted, findings, bundle, observation, round_state
-            )
-            if not findings:
-                # Asked after ADAPT so the six stages always print in order.
-                note = self._offer_next_step()
-                if note:
-                    self.writer.write_note(f"**Human next step:** {note}")
-            return RoundOutcome(
-                round_state,
-                findings,
-                accepted,
-                plan_path,
-                end_session=self._end_session,
-                follow_up_prompt=self._follow_up_prompt,
-            )
+            return body(round_state)
 
         except RoundAborted as abort:
             self._record_unreached(abort.reason)
@@ -573,6 +640,237 @@ class Orchestrator:
         )
         return path
 
+    # -- multi-agent workflow stages ----------------------------------------
+
+    def _stage_plan_workflow(self, round_state: RoundState, workflow: WorkflowRun) -> WorkflowPlan:
+        self._stage_plan(round_state)
+        console.print_info(f"Planner agent planning the workflow with {self.settings.model}...")
+        try:
+            result = workflow_planner.plan_workflow(
+                user_request=round_state.prompt,
+                settings=self.settings,
+                prompts=self.prompts,
+                client=self.client,
+            )
+        except OpenRouterError as exc:
+            self.writer.write_note(f"**Planner agent failed:** {exc}")
+            raise RoundAborted(stages.PLAN, f"planner agent failed: {exc}") from exc
+
+        round_state.tokens += result.response.total_tokens
+        workflow.plan = result.plan
+        console.print_workflow_plan(result.plan)
+        self.writer.write_note(
+            "\n".join(
+                [
+                    "#### Planner Agent",
+                    "",
+                    _plan_markdown(result.plan),
+                    "",
+                    f"_Call: {result.response.usage_line()}_",
+                ]
+            )
+        )
+        return result.plan
+
+    def _stage_coordinate(
+        self,
+        user_request: str,
+        plan: WorkflowPlan,
+        bundle: file_reader.CodeBundle,
+        observation: repo_observer.Observation,
+        round_state: RoundState,
+        workflow: WorkflowRun,
+    ) -> None:
+        console.print_stage_banner(stages.AGENT, MULTI_AGENT_DESCRIPTION)
+        console.print_info(
+            f"Worker agent executing the plan over {len(bundle.files)} file(s) "
+            f"with {self.settings.model}..."
+        )
+        try:
+            work = worker.execute_plan(
+                user_request=user_request,
+                plan=plan,
+                bundle=bundle,
+                observation=observation,
+                settings=self.settings,
+                prompts=self.prompts,
+                client=self.client,
+            )
+        except OpenRouterError as exc:
+            self.writer.write_agent_stage(f"**Worker agent failed:** {exc}")
+            raise RoundAborted(stages.AGENT, f"worker agent failed: {exc}") from exc
+
+        round_state.tokens += work.response.total_tokens
+        workflow.worker_output = work.output
+        console.print_worker_output(work.output)
+        worker_section = [
+            "#### 4a. Worker Agent",
+            "",
+            _worker_markdown(work.output),
+            "",
+            f"_Call: {work.response.usage_line()}_",
+            "",
+        ]
+
+        console.print_info(
+            f"Reviewer agent assessing with {self.settings.review_model} via OpenRouter..."
+        )
+        try:
+            review = reviewer.review_output(
+                user_request=user_request,
+                plan=plan,
+                worker_output=work.output,
+                bundle=bundle,
+                observation=observation,
+                settings=self.settings,
+                prompts=self.prompts,
+                client=self.review_client,
+            )
+        except OpenRouterError as exc:
+            self.writer.write_agent_stage(
+                "\n".join(worker_section + [f"**Reviewer agent failed:** {exc}"])
+            )
+            raise RoundAborted(stages.AGENT, f"reviewer agent failed: {exc}") from exc
+
+        round_state.tokens += review.response.total_tokens
+        workflow.assessment = review.assessment
+        console.print_review(review.assessment)
+        self.writer.write_agent_stage(
+            "\n".join(
+                [f"_{MULTI_AGENT_DESCRIPTION}_", ""]
+                + worker_section
+                + [
+                    "#### 4b. Reviewer Agent",
+                    "",
+                    _review_markdown(review.assessment),
+                    "",
+                    f"_Call: {review.response.usage_line()}_",
+                ]
+            )
+        )
+
+    def _stage_workflow_decision(self, workflow: WorkflowRun) -> None:
+        console.print_stage_banner(
+            stages.HUMAN_REVIEW, "The human accepts, partially accepts or rejects the workflow output."
+        )
+        recommendation = workflow.assessment.recommendation if workflow.assessment else None
+        recommended = recommendation.value if recommendation else "(none)"
+
+        if not self.interactive:
+            console.print_info("Non-interactive run - the human decision is left pending.")
+            self.writer.write_human_review_stage(
+                f"- Reviewer recommendation: `{recommended}`\n"
+                f"- Human decision: **{WorkflowDecision.PENDING.value}** (non-interactive run)"
+            )
+            return
+
+        console.print_info(f"Reviewer recommendation: {recommended}")
+        while True:
+            reply = self.input_fn(
+                "Your decision on this output? (accept / partial / reject, optionally followed by a note):"
+            ).strip()
+            decision, note = WorkflowDecision.parse(reply)
+            if decision:
+                break
+            console.print_warning("Reply with accept, partial or reject (or a / p / r).")
+
+        workflow.decision = decision
+        workflow.decision_note = note
+        console.print_success(f"Human decision: {decision.value}")
+
+        lines = [
+            "**User response (verbatim):**",
+            "",
+            f"```text\n{reply}\n```",
+            "",
+            f"- Reviewer recommendation: `{recommended}`",
+            f"- Human decision: **{decision.value}**",
+        ]
+        if note:
+            lines.append(f"- Note: {note}")
+        if recommendation and decision.name.lower() != recommendation.value:
+            lines.append("- The human overrode the reviewer recommendation.")
+        self.writer.write_human_review_stage("\n".join(lines))
+
+    def _stage_record_workflow(self, workflow: WorkflowRun, round_state: RoundState) -> None:
+        console.print_stage_banner(stages.ADAPT, "Record the workflow history and coordination audit.")
+        history, audit = self._workflow_records(workflow, round_state, "completed")
+        history_path, audit_path = workflow_log.append_workflow(
+            self.settings.sessions_dir, history, audit
+        )
+        console.print_workflow_recorded(history_path, audit_path)
+        self.writer.write_adapt_stage(
+            "\n".join(
+                [
+                    f"- Workflow ID: `{workflow.workflow_id}`",
+                    f"- Participating agents: {', '.join(PARTICIPATING_AGENTS)}",
+                    f"- Evidence files: {len(workflow.evidence_files)}",
+                    f"- Human decision: **{workflow.decision.value}**",
+                    f"- Workflow history: `{history_path}`",
+                    f"- Coordination audit: `{audit_path}`",
+                    f"- Round duration: {round_state.duration_seconds():.1f}s",
+                ]
+            )
+        )
+
+    def _workflow_records(
+        self,
+        workflow: WorkflowRun,
+        round_state: RoundState,
+        status: str,
+        reason: str | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        timestamp = utc_now().isoformat()
+        duration_ms = int(round_state.duration_seconds() * 1000)
+        assessment = workflow.assessment
+        common = {
+            "workflow_id": workflow.workflow_id,
+            "timestamp": timestamp,
+            "duration_ms": duration_ms,
+            "status": status,
+            "participating_agents": list(PARTICIPATING_AGENTS),
+        }
+        history = {
+            **common,
+            "session_guid": self.session.guid,
+            "round": round_state.number,
+            "user_request": round_state.prompt,
+            "scope": str(self.settings.scope),
+            "models": {
+                "planner_agent": self.settings.model,
+                "worker_agent": self.settings.model,
+                "reviewer_agent": self.settings.review_model,
+            },
+            "evidence_files": workflow.evidence_files,
+            "planner_result": _dump(workflow.plan),
+            "worker_result": _dump(workflow.worker_output),
+            "reviewer_result": _dump(assessment),
+            "human_decision": {
+                "required": True,
+                "status": workflow.decision.value,
+                "note": workflow.decision_note,
+                "allowed_values": [
+                    WorkflowDecision.ACCEPT.value,
+                    WorkflowDecision.PARTIALLY_ACCEPT.value,
+                    WorkflowDecision.REJECT.value,
+                ],
+            },
+            "tokens": round_state.tokens,
+        }
+        audit = {
+            **common,
+            "human_approval_required": True,
+            "human_decision": workflow.decision.value,
+            "reviewer_risk": assessment.risk.value if assessment else None,
+            "reviewer_recommendation": assessment.recommendation.value if assessment else None,
+            "evidence_count": len(workflow.evidence_files),
+            "tokens": round_state.tokens,
+        }
+        if reason:
+            history["aborted_reason"] = reason
+            audit["aborted_reason"] = reason
+        return history, audit
+
     # -- helpers -------------------------------------------------------------
 
     def _offer_next_step(self) -> str:
@@ -610,3 +908,49 @@ class Orchestrator:
         """
         for stage in self.writer.unwritten_stages():
             self.writer.write_stage_not_reached(stage, reason)
+
+
+def _selection_prompt(user_request: str, plan: WorkflowPlan) -> str:
+    """Let the planner's steps and evidence requirements steer file selection."""
+    lines = [user_request, "", "Workflow plan steps:"]
+    lines.extend(f"- {step}" for step in plan.steps)
+    if plan.evidence_required:
+        lines.extend(["", "Evidence required:"])
+        lines.extend(f"- {item}" for item in plan.evidence_required)
+    return "\n".join(lines)
+
+
+def _dump(model: Any) -> dict[str, Any] | None:
+    return model.model_dump(mode="json") if model is not None else None
+
+
+def _bullets(label: str, items: list[str]) -> list[str]:
+    if not items:
+        return [f"**{label}:** (none)"]
+    return [f"**{label}:**", ""] + [f"- {item}" for item in items]
+
+
+def _plan_markdown(plan: WorkflowPlan) -> str:
+    lines = [f"**Objective:** {plan.objective}", "", "**Steps:**", ""]
+    lines.extend(f"{index}. {step}" for index, step in enumerate(plan.steps, start=1))
+    lines.append("")
+    lines.extend(_bullets("Evidence required", plan.evidence_required))
+    lines.extend(["", f"**Human approval:** {plan.human_approval or '(not stated)'}"])
+    return "\n".join(lines)
+
+
+def _worker_markdown(output: WorkerOutput) -> str:
+    lines = ["**Output:**", "", output.output.strip() or "(empty)", ""]
+    lines.extend(_bullets("Evidence used", output.evidence_used))
+    lines.append("")
+    lines.extend(_bullets("Limitations", output.limitations))
+    return "\n".join(lines)
+
+
+def _review_markdown(assessment: ReviewerAssessment) -> str:
+    lines = [f"**Risk:** {assessment.risk.value} — {assessment.risk_summary}", ""]
+    lines.extend(_bullets("Corrections", assessment.corrections))
+    lines.append("")
+    lines.extend(_bullets("Retest", assessment.retest))
+    lines.extend(["", f"**Recommendation:** `{assessment.recommendation.value}`"])
+    return "\n".join(lines)

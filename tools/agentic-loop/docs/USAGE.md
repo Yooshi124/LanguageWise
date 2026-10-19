@@ -19,6 +19,7 @@ All commands run from `LanguageWise\Tools\AgenticLoop`.
 | `python main.py --rag-validate "achievements service"` | Same, but scopes the retrieval to that topic. |
 | `python main.py --mcp-validate` | Exercises the local MCP server (`initialize`, `tools/list`, one `tools/call` probe) and validates the mcp-server code against the observed behaviour, writes the session log, exits. |
 | `python main.py --mcp-validate courses_list_courses` | Same, but probes that specific tool. |
+| `python main.py --multi-agent "summarise how XP is awarded"` | Runs one planner -> worker -> reviewer workflow over the code in scope, records it with the human decision left `Pending`, exits (exit code 1 if the workflow aborted). |
 | `python main.py --scope ..\..\DatabaseService` | Overrides `TARGETED_DIRECTORY` for this run only. |
 | `python main.py --env C:\path\to\other.env` | Uses an alternative configuration file. |
 | `python main.py --help` | Shows the flags. |
@@ -44,6 +45,7 @@ review prompt.
 | `/rag <question>` | Query the local RAG server directly and print the results, without running a full review round. |
 | `/mcp-validate [tool]` | Exercise the local MCP server (`initialize`, `tools/list`, one `tools/call` probe) and validate the mcp-server code in scope against the observed behaviour. |
 | `/mcp [tool]` | List the MCP tools for the configured scope, or call one directly with empty arguments, without running a full review round. |
+| `/multi-agent <request>` | Run the planner -> worker -> reviewer workflow for the request, then accept, partially accept or reject the output. |
 | `/exit` | End the session, write the log footer, and list any plans created. |
 
 ---
@@ -94,6 +96,29 @@ tool; without one, the first tool requiring no arguments is probed.
 Setup lives in `.env`: `MCP_BASE_URL`, `MCP_API_KEY` (defaults to reading
 `mcp-server/.mcp-api-key`), `MCP_TOOL_SCOPE`, and `MCP_USER_TOKEN` (optional
 user JWT for per-user tools).
+
+---
+
+## Multi-agent workflow
+
+The multi-agent mode coordinates three agents and a human through the same six
+stages:
+
+| Stage | Multi-agent behaviour |
+| --- | --- |
+| PLAN | The **planner agent** (`OPENROUTER_MODEL`) turns the request into an objective, 3-5 steps, the evidence required, and what the human must approve. |
+| ACT | Files are selected using the request plus the plan's steps and evidence requirements. |
+| OBSERVE | Deterministic observations, as in any round. |
+| AGENT | The **worker agent** (`OPENROUTER_MODEL`) executes the plan using only the supplied code: output, evidence used, limitations. The **reviewer agent** (`OPENROUTER_REVIEW_MODEL`) checks it against the plan and evidence: risk, corrections, retest checks, recommendation. |
+| HUMAN REVIEW | You reply `accept`, `partial` or `reject` (or `a` / `p` / `r`), optionally followed by a note. Overriding the reviewer's recommendation is recorded. |
+| ADAPT | The workflow is appended to `workflow_history.jsonl` (full record) and `coordination_audit.jsonl` (compact governance record) in `SESSIONS_DIR`. Aborted workflows are recorded too. |
+
+```
+agentic-loop > /multi-agent summarise how the leaderboard service awards XP
+```
+
+Prompts live in `prompts/workflow_planner/`, `prompts/worker/` and
+`prompts/reviewer/`.
 
 ---
 

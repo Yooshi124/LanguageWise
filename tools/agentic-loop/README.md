@@ -76,6 +76,10 @@ python main.py --mcp-validate
   server (`mcp-server/`, not containerised) with `initialize`, `tools/list` and a
   real `tools/call` probe, then runs a round validating the server code against
   the observed behaviour; `/mcp [tool]` lists or calls tools directly
+- **Multi-agent workflow mode:** `--multi-agent "<request>"` (or `/multi-agent`)
+  runs a planner -> worker -> reviewer workflow over the code in scope, asks the
+  human to accept / partially accept / reject, and appends the result to
+  `workflow_history.jsonl` and `coordination_audit.jsonl` in the sessions directory
 - **Prompts:** every prompt lives in `prompts/` as markdown — change behaviour without touching Python
 - **Privacy:** `.env` files, keys, certificates and binaries are never sent to the API
 

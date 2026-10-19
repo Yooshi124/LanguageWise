@@ -6,6 +6,7 @@ Run from this directory:
     python main.py --prompt "review tests"  # single round, then exit
     python main.py --scope ..\..\DatabaseService
     python main.py --ci-failures            # diagnose the latest failed CI run
+    python main.py --multi-agent "summarise the quests API"  # planner/worker/reviewer workflow
 """
 
 from __future__ import annotations
@@ -56,6 +57,9 @@ Commands
   /rag <question>    Query the local RAG server directly (no review round)
   /mcp-validate [t]  Exercise the local MCP server and validate it against the code
   /mcp [tool]        List MCP tools (or call one) directly (no review round)
+  /multi-agent <req> Run the planner -> worker -> reviewer workflow, then decide
+                     accept / partial / reject (logged to workflow_history.jsonl
+                     and coordination_audit.jsonl in the sessions dir)
   /exit              End the session and write the log footer
 
 Anything else is treated as a review prompt, for example:
@@ -114,6 +118,15 @@ def build_parser() -> argparse.ArgumentParser:
             "running locally (mcp-server/, dotnet run)."
         ),
     )
+    parser.add_argument(
+        "--multi-agent",
+        metavar="REQUEST",
+        help=(
+            "Run one planner -> worker -> reviewer workflow for this request over the "
+            "code in scope, record it to the workflow history and coordination audit "
+            "with the human decision left pending, then exit."
+        ),
+    )
     return parser
 
 
@@ -155,6 +168,7 @@ def run_repl(
     ci_failures: str | None = None,
     rag_validate: str | None = None,
     mcp_validate: str | None = None,
+    multi_agent: str | None = None,
 ) -> int:
     if ci_failures is not None:
         orchestrator.interactive = False
@@ -191,6 +205,13 @@ def run_repl(
         writer.write_footer("MCP-validate run completed.")
         console.print_success(f"\nEvidence log: {writer.path}")
         return 0
+
+    if multi_agent:
+        orchestrator.interactive = False
+        outcome = orchestrator.run_multi_agent_round(multi_agent)
+        writer.write_footer("Multi-agent run completed.")
+        console.print_success(f"\nEvidence log: {writer.path}")
+        return 1 if outcome.aborted_reason else 0
 
     if single_prompt:
         orchestrator.interactive = False
@@ -286,6 +307,16 @@ def run_repl(
                             console.print_info(f"- {tool.name}: {tool.description}")
                 except McpError as exc:
                     console.print_error(str(exc))
+                continue
+            if command == "/multi-agent":
+                if not argument:
+                    console.print_warning("Usage: /multi-agent <request>")
+                    continue
+                try:
+                    orchestrator.run_multi_agent_round(argument)
+                except Exception as exc:  # keep the REPL alive, but record the failure
+                    logging.getLogger(__name__).exception("Multi-agent round failed")
+                    console.print_error(f"Multi-agent round failed: {exc}")
                 continue
             if command == "/rag":
                 if not argument:
@@ -424,6 +455,7 @@ def main(argv: list[str] | None = None) -> int:
             args.ci_failures,
             args.rag_validate,
             args.mcp_validate,
+            args.multi_agent,
         )
     finally:
         writer.write_footer("Session closed.")

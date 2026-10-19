@@ -86,6 +86,12 @@ class PromptRegistry:
             ("planning", "task"),
             ("decision", "system"),
             ("decision", "task"),
+            ("workflow_planner", "system"),
+            ("workflow_planner", "task"),
+            ("worker", "system"),
+            ("worker", "task"),
+            ("reviewer", "system"),
+            ("reviewer", "task"),
         )
         missing = [f"{stage}/{name}.md" for stage, name in required if not self.path_for(stage, name).is_file()]
         if missing:
