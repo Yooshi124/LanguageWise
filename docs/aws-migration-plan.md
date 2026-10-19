@@ -60,6 +60,8 @@ Future MCP/RAG integration is a separate change and must revisit runtime sizing,
 
 Cost this deployment in **Sydney (`ap-southeast-2`)**, not US East. Eighteen tasks reserve 9 vCPUs and 18 GiB RAM while running. Continuous operation is incompatible with the $100/month limit; demonstrations must be time-limited and followed by full runtime teardown.
 
+**Partial price verification (2026-10-19):** the AWS Price List API reports Sydney On-Demand Fargate CPU at $0.04856/vCPU-hour (`APS2-Fargate-vCPU-Hours:perCPU`) and memory at $0.00532/GB-hour (`APS2-Fargate-GB-Hours`) for the planned Linux/x86 deployment. The eighteen-task steady-state compute subtotal is `9 * 0.04856 + 18 * 0.00532 = $0.5328/hour`, or $21.312 for 40 compute hours. This excludes public IPv4, RDS, ALB/LCUs, CloudFront, storage, logs, secrets, transfer, migrations, and rollout overlap. It is not an approved all-in estimate or permission to provision.
+
 Use this provisional monthly allocation, **not a verified AWS quote**:
 
 | Allocation | USD/month | Control |
@@ -96,6 +98,41 @@ Avoid NAT gateways and collections of paid interface endpoints for this small de
 ### Step 2: Inventory the Existing AWS Resources
 
 **You provide:** account ID, ECS cluster name/ARN, ECR repository name/URI, and GitHub repository owner/name. Confirm the existing resources are in `ap-southeast-2`; resources in another region need a deliberate adoption/recreation decision. These are identifiers, not secret keys. Do not send passwords, private keys, or API tokens in chat.
+
+**Identifiers supplied (2026-10-19):** the AWS account, ECS cluster, and ECR repository have now been verified through read-only AWS calls. GitHub repository identity/ownership is user-provided; repository permissions have not been inspected.
+
+| Item | Value |
+| --- | --- |
+| AWS account | `047754151573` |
+| Region | `ap-southeast-2` |
+| ECS cluster | `languagewise` |
+| ECS cluster ARN | `arn:aws:ecs:ap-southeast-2:047754151573:cluster/languagewise` |
+| ECR repository | `41026release2/languagewise` |
+| ECR repository URI | `047754151573.dkr.ecr.ap-southeast-2.amazonaws.com/41026release2/languagewise` |
+| GitHub repository | `Yooshi124/LanguageWise` ([repository](https://github.com/Yooshi124/LanguageWise)) |
+
+**GitHub coordination:** the repository is owned by a teammate. Coordinate repository/environment administration, Actions permissions, deployment variables, and branch protection with the owner or an authorized administrator. AWS OIDC trust must target `Yooshi124/LanguageWise`, not the deploying collaborator's personal repository. Confirm the available GitHub permissions and protection features before bootstrap.
+
+**Read-only inventory (2026-10-19):**
+
+| Check | Observed result / consequence |
+| --- | --- |
+| Local tools and identity | AWS CLI v2.38.1 and Terraform are available. STS confirms account `047754151573` through an assumed `AccountFullAccessRole`, not root. The earlier CLI lookup used a stale terminal PATH. |
+| ECS cluster | Active, with zero running/pending tasks, active services, or registered container instances. `FARGATE` and `FARGATE_SPOT` capacity providers are associated; no default capacity-provider strategy is set. Container Insights is disabled. |
+| ECR repository | Zero images; AES256 encryption; mutable tags; scan-on-push disabled. No settings were changed. Preserve immutable deployed digests regardless of the current tag setting. |
+| Existing networking | Only the default VPC, `vpc-0387d00b69d6b923e` (`172.31.0.0/16`), was returned, with three subnets across Sydney AZs `a`, `b`, and `c`. Each enables automatic public IPv4 assignment. Route tables and security-group rules were not audited; do not treat these subnets as deployment-ready. |
+| Existing regional runtime resources | No RDS instances, ALB/NLB load balancers, NAT gateways, or Elastic IP allocations were returned in Sydney. This is not an account-wide billing audit. |
+| CloudFront | Global distribution inventory contains zero distributions. |
+| Fargate On-Demand quota | The account owner increased regional quota `L-3032A538` from **6 to 20 vCPUs**; a subsequent read-only AWS call verified the applied value of **20**. This covers the **9-vCPU** steady-state requirement and up to 18 for full rolling overlap plus migration headroom, subject to other regional workloads. |
+| IAM/OIDC access | `iam:ListOpenIDConnectProviders` is explicitly denied by an AWS Organizations Service Control Policy. Existing OIDC configuration could not be inventoried, and permissions to create providers/deployment roles remain unverified. The role's name does not establish unrestricted permissions. |
+| Budget safeguards | The Budgets CLI call returned no usable JSON; budget existence and notification thresholds remain unverified. Check them in Billing/Budgets with an authorized identity. |
+| Costs | Fargate CPU/memory unit rates were checked in section 3. The complete Sydney calculator estimate, account-plan restrictions/credits, existing account charges, and runtime allowance approval remain pending. |
+
+**Adoption boundary:** the empty cluster and ECR repository are candidates for deliberate adoption, not yet Terraform-managed resources. Leave the shared default VPC outside the disposable demo state; the proposed dedicated demo network still requires approval. No AWS resources or Terraform state were changed by this inspection.
+
+**Authentication follow-up:** the account plan API confirms `FREE` / `ACTIVE`. The owner has chosen a self-hosted GitHub runner inside a dedicated homebox VM rather than upgrade solely for OIDC. The Debian 13/x86_64 host has QEMU/KVM and a dedicated non-login `languagewise-runner` account. The Ubuntu 24.04 guest is created and operator SSH works after the documented account-group/YAML repair. The user supplied clean cloud-init output, successful GitHub HTTPS access, failed probes to host/LAN/metadata/home-public IPv4 targets, and host nftables counters confirming rejected traffic. These are tested IPv4 paths, not an exhaustive isolation audit. The user confirms repository safeguards, runner registration, and a running runner service; an actual GitHub-dispatched job is still pending. The manual-only, credential-free [runner smoke test](../.github/workflows/runner-smoke-test.yml) is prepared for that check. [VM setup and isolation notes](../tools/github-runner/README.md) include the remaining caveats. AWS authentication in the VM is not configured; temporary login still needs renewal, and automatic cleanup must not depend solely on the homebox or its session. The OIDC-specific implementation steps below remain conditional on the final authentication decision, not instructions to upgrade the account now.
+
+**Next gate:** the Fargate quota check is satisfied. Confirm an approved deployment-authentication and IAM-role setup path, verify budget alerts, and approve the complete Sydney cost estimate. Do not assume provider/role creation is permitted merely because other read calls work, or substitute long-lived GitHub access keys. Do not create resources, import Terraform state, or alter the existing cluster/repository until permissions, ownership, and costs are agreed.
 
 **Implementation:** inspect the cluster's capacity providers, VPC/subnets, permissions, Fargate quotas, and the existing ECR repository. Merely creating a cluster does not create running capacity or task definitions. Check the regional Fargate on-demand vCPU quota: eighteen tasks require 9 vCPUs at steady state, plus migration/rollout headroom. Request an increase before deployment if necessary.
 
