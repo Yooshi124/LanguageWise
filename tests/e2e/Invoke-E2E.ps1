@@ -69,9 +69,6 @@ finally {
 	if ($LASTEXITCODE -ne 0) {
 		Write-Warning "E2E cleanup failed for project $project."
 	}
-	foreach ($file in @('.env', 'signing_private_key.pem', 'signing_public_key.pem', 'mcp-api-key')) {
-		Remove-Item -LiteralPath (Join-Path $state $file) -ErrorAction SilentlyContinue
-	}
-	Remove-Item -LiteralPath $state
+	Remove-Item -LiteralPath $state -Recurse -Force
 	Remove-Item Env:E2E_STATE_DIR, Env:E2E_RESULTS_DIR
 }
