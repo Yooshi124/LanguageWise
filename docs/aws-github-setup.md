@@ -11,14 +11,21 @@ implement Demo Up/Down yet. No AWS key belongs on the homebox.
 - Its only permission is to assume
   `arn:aws:iam::047754151573:role/languagewise/languagewise-runner-validation`.
 - That role only describes the existing LanguageWise ECS cluster and ECR repository.
-- No access key has been generated or installed in GitHub.
+- One dedicated-user access key was created on 2026-10-19. Its two values are
+   installed as `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` environment secrets
+   in `aws-demo`, without printing them or writing local files. Rotate by
+   **2027-01-17**, or earlier on handover/exposure. No new key is needed now.
 - The signed-in GitHub account, `Amber-Cahill`, has repository `WRITE`, not `ADMIN`.
-- The `aws-demo` environment lookup returned 404; it is absent or not visible to
-  this account. An administrator must confirm/configure it before key creation.
-- [The validation workflow](../.github/workflows/aws-validation.yml) is prepared
-  locally, not yet merged or run on GitHub.
+- The admin created `aws-demo`. API checks confirm only the branch `master` is
+   allowed, with no required reviewers/wait timer. Environment-secret writes from
+   Amber's GitHub CLI account succeeded.
+- [The validation workflow](../.github/workflows/aws-validation.yml) is merged.
+   [Run 39247442861](https://github.com/Yooshi124/LanguageWise/actions/runs/39247442861)
+   passed, verifying GitHub-hosted role assumption and the two scoped reads.
 
 ## 1. GitHub Admin: Configure the Environment
+
+Completed for the current setup. Keep these settings when maintaining it:
 
 In [repository environments](https://github.com/Yooshi124/LanguageWise/settings/environments):
 
@@ -42,9 +49,10 @@ Do not put the AWS key in repository-wide secrets as a workaround.
 
 ## 2. Team: Merge the Validation Workflow
 
-Merge [aws-validation.yml](../.github/workflows/aws-validation.yml) through the
-normal reviewed PR process into `master`. The assistant has not committed,
-pushed, or merged these local changes.
+The team merged [aws-validation.yml](../.github/workflows/aws-validation.yml) into
+`master`. Its Git blob hash was checked against the locally validated version
+before the successful run. Future changes still go through reviewed PRs; the
+assistant has not committed, pushed, or merged changes.
 
 The workflow is named **AWS Read-Only Validation**. It runs only through
 `workflow_dispatch`, only in the expected repository on `master`, and only on a
@@ -58,6 +66,10 @@ not allowed `sts:TagSession`. Account, region, and validation role are fixed in
 this workflow, so no GitHub variables are needed for this first test.
 
 ## 3. AWS Operator: Create and Deliver One Key
+
+Completed for the current setup through the assisted handoff below. Do not create
+another key or replace working secrets now; retain these instructions for planned
+rotation/recovery. AWS/GitHub secret values cannot be retrieved for display later.
 
 Do not generate the key until the protected environment and a secure secret-entry
 path are ready. Never send key values through chat, email, a workflow input, or
@@ -102,6 +114,10 @@ must not be overwritten or deleted without checking its owner/use.
    do not create repeated active keys or grant broader permissions to fix delivery.
 
 ## 4. Team: Run and Verify
+
+Completed: [run 39247442861](https://github.com/Yooshi124/LanguageWise/actions/runs/39247442861)
+passed on 2026-10-19 after the key was installed. The earlier missing-secrets
+failure is resolved. The following steps can be used to repeat the check:
 
 In [repository Actions](https://github.com/Yooshi124/LanguageWise/actions), choose
 **AWS Read-Only Validation** > **Run workflow** > branch `master` > **Run workflow**.

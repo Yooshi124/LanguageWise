@@ -12,6 +12,25 @@ namespace LanguageWise.MiniGamesService.Api.Tests;
 public sealed class AuthenticationTests
 {
     [Test]
+    public async Task GameState_WithConfiguredPem_PrefersPemOverFile()
+    {
+        using var fixture = new ApiFixture(usePem: true);
+        using var client = fixture.CreateCookieClient(fixture.CreateToken());
+
+        var response = await client.GetAsync("/api/guess-the-word");
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+    }
+
+    [Test]
+    public void Startup_WithInvalidConfiguredPem_DoesNotFallBackToFile()
+    {
+        using var fixture = new ApiFixture(invalidPem: true);
+
+        Assert.Throws<ArgumentException>(() => fixture.CreateClient());
+    }
+
+    [Test]
     public async Task GameState_WithoutCookie_ReturnsUnauthorized()
     {
         using var fixture = new ApiFixture();
@@ -76,8 +95,13 @@ public sealed class AuthenticationTests
             AppContext.BaseDirectory,
             $"mini-games-auth-test-key-{Guid.NewGuid():N}.pem");
 
-        internal ApiFixture()
+        private readonly bool usePem;
+        private readonly bool invalidPem;
+
+        internal ApiFixture(bool usePem = false, bool invalidPem = false)
         {
+            this.usePem = usePem;
+            this.invalidPem = invalidPem;
             File.WriteAllText(signingKeyPath, signingKey.ExportRSAPublicKeyPem());
         }
 
@@ -113,6 +137,14 @@ public sealed class AuthenticationTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseSetting("Auth:VerificationKeyPath", signingKeyPath);
+            if (usePem || invalidPem)
+            {
+                builder.UseSetting("Auth:VerificationKeyPem", invalidPem ? "invalid-pem" : signingKey.ExportRSAPublicKeyPem());
+                if (usePem)
+                {
+                    File.WriteAllText(signingKeyPath, "invalid-file-pem");
+                }
+            }
             builder.ConfigureAppConfiguration((_, configuration) =>
             {
                 configuration.AddInMemoryCollection(new Dictionary<string, string?>
