@@ -1,33 +1,23 @@
-using Microsoft.Data.Sqlite;
+using Npgsql;
 
 namespace LanguageWise.MiniGamesService.Db.Data;
 
 /// <summary>
-/// Applies the schema on every start-up and seeds the table the first time it is empty,
-/// so that a brand new Docker volume always comes up with usable data.
+/// Applies the schema transactionally on every start-up.
 /// </summary>
 public sealed class DatabaseInitializer(string connectionString, string sqlDirectory, ILogger<DatabaseInitializer> logger)
 {
     public void Initialise()
     {
-        EnsureDatabaseDirectoryExists();
-
-        using var connection = new SqliteConnection(connectionString);
+        using var connection = new NpgsqlConnection(connectionString);
         connection.Open();
-
-        Execute(connection, ReadSqlFile("schema.sql"));
-        logger.LogInformation("Schema applied to {ConnectionString}.", connectionString);
-    }
-
-    private void EnsureDatabaseDirectoryExists()
-    {
-        var dataSource = new SqliteConnectionStringBuilder(connectionString).DataSource;
-        var directory = Path.GetDirectoryName(Path.GetFullPath(dataSource));
-
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
+        using var transaction = connection.BeginTransaction();
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = ReadSqlFile("schema.sql");
+        command.ExecuteNonQuery();
+        transaction.Commit();
+        logger.LogInformation("Mini-games database schema applied.");
     }
 
     private string ReadSqlFile(string fileName)
@@ -42,10 +32,4 @@ public sealed class DatabaseInitializer(string connectionString, string sqlDirec
         return File.ReadAllText(path);
     }
 
-    private static void Execute(SqliteConnection connection, string sql)
-    {
-        using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        command.ExecuteNonQuery();
-    }
 }

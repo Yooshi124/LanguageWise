@@ -73,14 +73,14 @@ preferences, and pause or resume notifications.
   `LanguageWise.QuestsAchievementsNotificationsService.Api`. Container
   `quests-achievements-notifications-service-backend`, port 8080, published on
   host port 5004 on all interfaces (other services bind to 127.0.0.1 only).
-- **Database**: PostgreSQL (`quests-achievements-notifications-service-db`) with
+- **Database**: PostgreSQL (shared-owned `shared-db`) with
   the service-owned `api` schema, exposed to the backend by PostgREST
-  (`quests-achievements-notifications-service-db-api`, port 3000, not published
+  (`quests-achievements-notifications-service-db`, port 3000, not published
   to the host). The backend talks to it through `AppDataClient` over PostgREST
   query strings (for example `user_preferences?user_id=eq.{id}`), and upserts use
   `Prefer: resolution=merge-duplicates`.
-- **Email content**: `OllamaEmailGenerator` calls Ollama `api/chat` with model
-  `gemma4:e4b` (15 s timeout) and falls back to a fixed template on any failure.
+- **Email content**: `OpenRouterEmailGenerator` calls OpenRouter's chat
+  completions API (15 s timeout) and falls back to a fixed template on any failure.
 - **Email delivery**: `GmailEmailSender` uses MailKit over SMTP with STARTTLS.
   Delivery is skipped when SMTP credentials are not configured.
 - **Frontend**: Vue feature remote served from `/remotes/quests-achievements/`;
@@ -184,8 +184,9 @@ All `/api/*` endpoints require a JWT; `GET /health` is anonymous.
 
 ## TECHNICAL-operations: Configuration, running, and tests
 
-- Configuration: `Services__Database`, `Services__Ollama`, `Services__Garry`,
-  `Ollama__Model`, `Auth__VerificationKeyPath`, `Mcp__Enabled`, `Mcp__Endpoint`,
+- Configuration: `Services__Database`, `OpenRouter__ApiKey`,
+  `OpenRouter__BaseUrl`, `OpenRouter__Model`, `Services__Garry`,
+  `Auth__VerificationKeyPath`, `Mcp__Enabled`, `Mcp__Endpoint`,
   `Mcp__ApiKeyPath` (Compose secret `mcp_api_key`), `Mcp__TimeoutSeconds`
   (default 15), and the `Smtp__*` values above.
 - Garry's tools need the MCP server running on the host

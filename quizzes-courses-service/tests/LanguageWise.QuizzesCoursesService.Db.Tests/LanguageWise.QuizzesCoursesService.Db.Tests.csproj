@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <Using Include="NUnit.Framework" />
+    <Compile Include="../../../shared/tests/PostgresTestDatabase.cs" Link="PostgresTestDatabase.cs" />
   </ItemGroup>
 
 </Project>

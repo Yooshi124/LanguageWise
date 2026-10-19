@@ -198,7 +198,7 @@ modes; its RAG client uses the authenticated technical retrieval endpoint.
   to internal port 8080.
 - Backend URLs use `Services__Database`, `Services__Achievements` and
   `Services__Garry`. Current Compose configuration connects to containerised
-  Garry; Garry uses the containerised Ollama runtime or its configured provider.
+  Garry; Garry uses OpenRouter as its only model provider.
 - `Mcp__Enabled: "true"`, `Mcp__Endpoint:
   http://host.docker.internal:8200/mcp` and
   `Mcp__ApiKeyPath: /run/secrets/mcp_api_key` configure the feature MCP client.

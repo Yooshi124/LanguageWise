@@ -22,12 +22,12 @@ Compared the five implementations: chat discussion, leaderboard analytics, mini-
 
 ## Differences to Resolve
 
-- **Provider strategy varies:** Chat discussion uses Ollama; quizzes/courses and mini-games use OpenRouter; leaderboard and quests/achievements use OpenRouter with Ollama fallback. Chat discussion also has a help-text fallback when the model is unavailable.
-- **The model runtime is already partly shared:** Docker Compose defines a shared `ollama` container, while Garry’s request handling, prompts, context loading, and stream relaying remain in the individual backend services. A shared Garry service could centralize that orchestration while domain services retain responsibility for supplying authorized context.
+- **Provider strategy is consistent:** Garry uses OpenRouter as its only model provider. The discussion assistant also has a help-text fallback when the model is unavailable.
+- **The model runtime is shared:** Docker Compose runs Garry as a shared service, while domain services retain responsibility for supplying authorized context.
 
 ## Code References
 
 - Request handling and validation: [chat discussion validator](../chat-discussion-service/backend/LanguageWise.ChatDiscussionService.Api/Services/AssistantRequestValidator.cs), [mini-games validator](../mini-games-service/backend/LanguageWise.MiniGamesService.Api/Services/AssistantRequestValidator.cs)
 - Prompt and context patterns: [discussion prompt](../chat-discussion-service/backend/LanguageWise.ChatDiscussionService.Api/Services/AssistantPromptBuilder.cs), [mini-games context](../mini-games-service/backend/LanguageWise.MiniGamesService.Api/Services/AssistantContextService.cs), [course context](../quizzes-courses-service/backend/LanguageWise.QuizzesCoursesService.Api/Services/AssistantContextService.cs)
 - Streaming and provider handling: [SSE relay](../leaderboard-analytics-service/backend/LanguageWise.LeaderboardAnalyticsService.Api/Services/AssistantSseResult.cs), [OpenRouter client](../mini-games-service/backend/LanguageWise.MiniGamesService.Api/Clients/OpenRouterAssistantClient.cs)
-- Existing Ollama deployment and Garry configuration: [Docker Compose](../docker-compose.yml), [README configuration](../README.md)
+- Existing OpenRouter deployment and Garry configuration: [Docker Compose](../docker-compose.yml), [README configuration](../README.md)

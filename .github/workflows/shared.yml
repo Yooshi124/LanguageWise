@@ -1,9 +1,9 @@
 # =============================================================================
 # Shared — build and validate
 # =============================================================================
-# Owned by the whole team. Builds and tests `shared` on its own: the
-# microservice has no dependency on any other folder in this repository, so a
-# failure here can only be caused by this service.
+# Owned by the whole team. Builds and tests shared API tiers and the shared
+# PostgreSQL server, which packages quests-owned initialization SQL through
+# an explicit named build context.
 #
 # This workflow deliberately has NO path filter. Required status checks are
 # matched by job name, and a workflow that never runs never reports a result,
@@ -39,6 +39,21 @@ jobs:
   shared-build-and-test:
     name: shared-build-and-test
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: languagewise
+          POSTGRES_PASSWORD: languagewise
+          POSTGRES_DB: postgres
+        ports:
+          - 15432:5432
+        options: >-
+          --health-cmd "pg_isready -U languagewise -d postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
 
     steps:
       - name: Check out the repository
@@ -147,8 +162,11 @@ jobs:
 
       # Each tier builds from its own folder as the context, which proves the
       # image does not reach outside the microservice.
-      - name: Build the database image
-        run: docker build -t languagewise/shared-db:ci ./shared/database
+      - name: Build the database API image
+        run: docker build -t languagewise/shared-db-api:ci ./shared/database
+
+      - name: Build the shared PostgreSQL image
+        run: docker compose build shared-db
 
       - name: Build the backend image
         run: docker build -t languagewise/shared-backend:ci ./shared/backend

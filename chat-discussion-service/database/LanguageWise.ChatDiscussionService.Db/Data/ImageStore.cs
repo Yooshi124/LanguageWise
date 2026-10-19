@@ -1,7 +1,7 @@
 namespace LanguageWise.ChatDiscussionService.Db.Data;
 
 /// <summary>
-/// Holds the bytes of uploaded images on disk, beside the SQLite file. The Images
+/// Holds the bytes of uploaded images on disk. The Images
 /// table is the index; this class only ever deals in storage keys.
 /// </summary>
 public sealed class ImageStore(string rootPath)

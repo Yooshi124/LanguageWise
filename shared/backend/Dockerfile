@@ -25,7 +25,7 @@ RUN apt-get update \
 COPY --from=build /app/publish ./
 
 ENV ASPNETCORE_HTTP_PORTS=8080 \
-    Services__Database=http://shared-db:8080
+    Services__Database=http://shared-db-api:8080
 
 USER app
 EXPOSE 8080

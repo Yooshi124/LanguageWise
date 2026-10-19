@@ -40,7 +40,7 @@ var garryServiceUrl = builder.Configuration["Services:Garry"] ?? "http://localho
 builder.Services.AddHttpClient<GarryClient>(client =>
 {
     client.BaseAddress = new Uri(garryServiceUrl.TrimEnd('/') + "/");
-    // Local Ollama can take a while to load the model on the first question.
+    // Assistant responses are streamed and may take longer than the default timeout.
     client.Timeout = TimeSpan.FromSeconds(120);
 });
 

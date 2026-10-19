@@ -5,12 +5,9 @@ networks:
     driver: bridge
 
 volumes:
-  shared-db-data:
-  quizzes-courses-service-db-data:
-  chat-discussion-service-db-data:
-  quests-achievements-notifications-service-db-data:
-  mini-games-service-db-data:
-  ollama-data:
+  postgres-data:
+  shared-images-data:
+  chat-images-data:
 
 # Generate using tools/gen-signing-key/gen-signing-key.ps1
 secrets:
@@ -23,45 +20,15 @@ secrets:
     file: ./mcp-server/.mcp-api-key
 
 services:
-  ollama:
-    container_name: ollama
-    image: ollama/ollama:0.33.1
-    gpus: all
-    environment:
-      OLLAMA_KEEP_ALIVE: -1
-    volumes:
-      - ollama-data:/root/.ollama
-    networks: [languagewise]
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-    restart: unless-stopped
-
-  ollama-model-init:
-    container_name: ollama-model-init
-    image: ollama/ollama:0.33.1
-    environment:
-      OLLAMA_HOST: http://ollama:11434
-    entrypoint: ["/bin/sh", "-c"]
-    command: ["ollama pull gemma4:e4b && ollama run gemma4:e4b \"\""]
-    networks: [languagewise]
-    depends_on:
-      ollama:
-        condition: service_healthy
-    restart: "no"
-
   garry-ai-service-backend:
     container_name: garry-ai-service-backend
     build:
       context: ./garry-ai-service/backend
-    env_file:
-      - path: ./garry-ai-service/backend/.env
-        required: false
     environment:
-      Services__Ollama: http://ollama:11434
-      Ollama__Model: gemma4:e4b
+      OpenRouter__ApiKey: ${OPENROUTER_API_KEY:-}
+      OpenRouter__BaseUrl: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      OpenRouter__Model: ${OPENROUTER_MODEL:-google/gemma-4-26b-a4b-it}
+      OpenRouter__MaxOutputTokens: ${OPENROUTER_MAX_OUTPUT_TOKENS:-1024}
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
       Mcp__Enabled: "true"
       Mcp__Endpoint: http://host.docker.internal:8200/mcp
@@ -78,22 +45,39 @@ services:
       timeout: 3s
       start_period: 15s
       retries: 6
-    depends_on:
-      ollama-model-init:
-        condition: service_completed_successfully
     restart: unless-stopped
 
   shared-db:
     container_name: shared-db
     build:
+      context: ./shared/database/postgres
+      additional_contexts:
+        quests_sql: ./quests-achievements-notifications-service/database/sql
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: languagewise
+      POSTGRES_PASSWORD: languagewise
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks: [languagewise]
+    restart: unless-stopped
+
+  shared-db-api:
+    container_name: shared-db-api
+    build:
       context: ./shared/database
     environment:
-      Database__Path: /data/shared.db
+      Database__ConnectionString: Host=shared-db;Database=shared;Username=shared_app;Password=languagewise
     volumes:
-      - shared-db-data:/data
+      - shared-images-data:/data/images
     ports:
       - "127.0.0.1:6000:8080"
     networks: [languagewise]
+    depends_on:
+      shared-db:
+        condition: service_healthy
     restart: unless-stopped
 
   shared-backend:
@@ -101,7 +85,7 @@ services:
     build:
       context: ./shared/backend
     environment:
-      Services__Database: http://shared-db:8080
+      Services__Database: http://shared-db-api:8080
       Services__Achievements: http://quests-achievements-notifications-service-backend:8080
       Services__Rag: http://host.docker.internal:8100
       Services__Garry: http://garry-ai-service-backend:8080
@@ -114,7 +98,7 @@ services:
       - "127.0.0.1:5000:8080"
     networks: [languagewise]
     depends_on:
-      shared-db:
+      shared-db-api:
         condition: service_healthy
     restart: unless-stopped
 
@@ -135,12 +119,13 @@ services:
     build:
       context: ./mini-games-service/database
     environment:
-      Database__Path: /data/mini-games-service.db
-    volumes:
-      - mini-games-service-db-data:/data
+      Database__ConnectionString: Host=shared-db;Database=mini_games;Username=mini_games_app;Password=languagewise
     ports:
       - "127.0.0.1:6005:8080"
     networks: [languagewise]
+    depends_on:
+      shared-db:
+        condition: service_healthy
     restart: unless-stopped
 
   mini-games-service-backend:
@@ -169,7 +154,7 @@ services:
     networks: [languagewise]
     depends_on:
       mini-games-service-db:
-        condition: service_started
+        condition: service_healthy
       garry-ai-service-backend:
         condition: service_healthy
     restart: unless-stopped
@@ -190,12 +175,13 @@ services:
     build:
       context: ./quizzes-courses-service/database
     environment:
-      Database__Path: /data/quizzes-courses-service.db
-    volumes:
-      - quizzes-courses-service-db-data:/data
+      Database__ConnectionString: Host=shared-db;Database=quizzes_courses;Username=quizzes_courses_app;Password=languagewise
     ports:
       - "127.0.0.1:6003:8080"
     networks: [languagewise]
+    depends_on:
+      shared-db:
+        condition: service_healthy
     restart: unless-stopped
 
   quizzes-courses-service-backend:
@@ -240,16 +226,20 @@ services:
     build:
       context: ./chat-discussion-service/database
     environment:
-      Database__Path: /data/chat-discussion-service.db
+      Database__ConnectionString: Host=shared-db;Database=chat_discussion;Username=chat_discussion_app;Password=languagewise
       Services__Courses: http://quizzes-courses-service-db:8080
-      Services__Users: http://shared-db:8080
+      Services__Users: http://shared-db-api:8080
     volumes:
-      - chat-discussion-service-db-data:/data
+      - chat-images-data:/data
     ports:
       - "127.0.0.1:6002:8080"
     networks: [languagewise]
     depends_on:
+      shared-db:
+        condition: service_healthy
       quizzes-courses-service-db:
+        condition: service_healthy
+      shared-db-api:
         condition: service_healthy
     restart: unless-stopped
 
@@ -292,27 +282,14 @@ services:
 
   quests-achievements-notifications-service-db:
     container_name: quests-achievements-notifications-service-db
-    build:
-      context: ./quests-achievements-notifications-service/database
-    environment:
-      POSTGRES_DB: quests_achievements_notifications
-      POSTGRES_USER: languagewise
-      POSTGRES_PASSWORD: languagewise
-    volumes:
-      - quests-achievements-notifications-service-db-data:/var/lib/postgresql
-    networks: [languagewise]
-    restart: unless-stopped
-
-  quests-achievements-notifications-service-db-api:
-    container_name: quests-achievements-notifications-service-db-api
     image: postgrest/postgrest:v12.2.3
     environment:
-      PGRST_DB_URI: postgres://languagewise:languagewise@quests-achievements-notifications-service-db:5432/quests_achievements_notifications
+      PGRST_DB_URI: postgres://quests_app:languagewise@shared-db:5432/quests_achievements_notifications
       PGRST_DB_SCHEMA: api
       PGRST_DB_ANON_ROLE: web_anon
     networks: [languagewise]
     depends_on:
-      quests-achievements-notifications-service-db:
+      shared-db:
         condition: service_healthy
     restart: unless-stopped
 
@@ -324,10 +301,11 @@ services:
       - path: ./quests-achievements-notifications-service/backend/.env
         required: false
     environment:
-      Services__Database: http://quests-achievements-notifications-service-db-api:3000
-      Services__Ollama: http://ollama:11434
+      Services__Database: http://quests-achievements-notifications-service-db:3000
       Services__Garry: http://garry-ai-service-backend:8080
-      Ollama__Model: gemma4:e4b
+      OpenRouter__ApiKey: ${OPENROUTER_API_KEY:-}
+      OpenRouter__BaseUrl: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      OpenRouter__Model: ${OPENROUTER_MODEL:-google/gemma-4-26b-a4b-it}
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
       Mcp__Enabled: "true"
       Mcp__Endpoint: http://host.docker.internal:8200/mcp
@@ -341,12 +319,10 @@ services:
       - "5004:8080"
     networks: [languagewise]
     depends_on:
-      quests-achievements-notifications-service-db-api:
+      quests-achievements-notifications-service-db:
         condition: service_started
       garry-ai-service-backend:
         condition: service_healthy
-      ollama-model-init:
-        condition: service_completed_successfully
     restart: unless-stopped
 
   quests-achievements-notifications-service-frontend:
@@ -368,9 +344,10 @@ services:
         required: false
     environment:
       Services__QuizzesCourses: http://quizzes-courses-service-backend:8080
-      Services__Ollama: http://ollama:11434
       Services__Garry: http://garry-ai-service-backend:8080
-      Ollama__Model: gemma4:e4b
+      OpenRouter__ApiKey: ${OPENROUTER_API_KEY:-}
+      OpenRouter__BaseUrl: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      OpenRouter__Model: ${OPENROUTER_MODEL:-google/gemma-4-26b-a4b-it}
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
     secrets:
       - signing_public_key
@@ -382,8 +359,6 @@ services:
         condition: service_healthy
       garry-ai-service-backend:
         condition: service_healthy
-      ollama-model-init:
-        condition: service_completed_successfully
     restart: unless-stopped
 
   leaderboard-analytics-service-frontend:

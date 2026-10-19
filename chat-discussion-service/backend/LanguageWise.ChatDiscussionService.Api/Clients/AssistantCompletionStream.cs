@@ -45,7 +45,7 @@ public sealed class GarryCompletionClient(
         }
         try
         {
-            return new AssistantCompletionStream(response, await response.Content.ReadAsStreamAsync(cancellationToken), true);
+            return new AssistantCompletionStream(response, await response.Content.ReadAsStreamAsync(cancellationToken));
         }
         catch
         {
@@ -66,18 +66,12 @@ public interface IAssistantEventStream : IAsyncDisposable
 }
 
 /// <summary>
-/// The assistant's streaming response. Garry relays server-sent events ("data: {...}"
-/// lines); the legacy Ollama newline-delimited JSON format is still parsed for test
-/// doubles that replay it directly.
-///
-/// A stream that stops without a done event has lost part of the answer, so it is
-/// an error rather than a short reply — a truncated response is never passed off
-/// as a complete one.
+/// The assistant's streaming response. A stream that stops without a done event
+/// has lost part of the answer, so it is an error rather than a short reply.
 /// </summary>
 public sealed class AssistantCompletionStream(
     HttpResponseMessage response,
-    Stream responseStream,
-    bool fromGarry = false) : IAssistantEventStream
+    Stream responseStream) : IAssistantEventStream
 {
     internal const string DeltaType = "delta";
     internal const string DoneType = "done";
@@ -92,60 +86,29 @@ public sealed class AssistantCompletionStream(
     public async IAsyncEnumerable<ProviderStreamEvent> ReadEventsAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        if (fromGarry)
-        {
-            using var garryReader = new StreamReader(responseStream);
-            string? eventName = null;
-            while (await garryReader.ReadLineAsync(cancellationToken) is { } garryLine)
-            {
-                if (garryLine.StartsWith("event: ", StringComparison.Ordinal))
-                {
-                    eventName = garryLine[7..].Trim();
-                    continue;
-                }
-                if (!garryLine.StartsWith("data: ", StringComparison.Ordinal))
-                {
-                    continue;
-                }
-                var streamEvent = ParseGarryEvent(eventName, garryLine[6..]);
-                eventName = null;
-                yield return streamEvent;
-                if (streamEvent.Type == DoneType)
-                {
-                    yield break;
-                }
-            }
-            throw new AssistantProviderStreamException();
-        }
-
         using var reader = new StreamReader(responseStream);
-        var doneReceived = false;
-
-        while (true)
+        string? eventName = null;
+        while (await reader.ReadLineAsync(cancellationToken) is { } line)
         {
-            var line = await reader.ReadLineAsync(cancellationToken);
-
-            if (line is null)
+            if (line.StartsWith("event: ", StringComparison.Ordinal))
             {
-                if (!doneReceived)
-                {
-                    throw new AssistantProviderStreamException();
-                }
-
-                yield break;
+                eventName = line[7..].Trim();
+                continue;
             }
-
-            if (line.Length == 0)
+            if (!line.StartsWith("data: ", StringComparison.Ordinal))
             {
                 continue;
             }
 
-            foreach (var streamEvent in ParseChunk(line))
+            var streamEvent = ParseGarryEvent(eventName, line[6..]);
+            eventName = null;
+            yield return streamEvent;
+            if (streamEvent.Type == DoneType)
             {
-                doneReceived |= streamEvent.Type == DoneType;
-                yield return streamEvent;
+                yield break;
             }
         }
+        throw new AssistantProviderStreamException();
     }
 
     public ValueTask DisposeAsync()
@@ -189,58 +152,6 @@ public sealed class AssistantCompletionStream(
             throw new AssistantProviderStreamException();
         }
         throw new AssistantProviderStreamException();
-    }
-
-    private static IReadOnlyList<ProviderStreamEvent> ParseChunk(string line)
-    {
-        try
-        {
-            using var document = JsonDocument.Parse(line);
-            var root = document.RootElement;
-
-            if (root.ValueKind != JsonValueKind.Object)
-            {
-                throw new AssistantProviderStreamException();
-            }
-
-            // Ollama reports a model-side failure inside the stream rather than
-            // by status code, so a chunk carrying 'error' ends the answer.
-            if (root.TryGetProperty("error", out _))
-            {
-                throw new AssistantProviderStreamException();
-            }
-
-            var events = new List<ProviderStreamEvent>(2);
-
-            if (root.TryGetProperty("message", out var message)
-                && message.TryGetProperty("content", out var content)
-                && content.ValueKind == JsonValueKind.String)
-            {
-                var value = content.GetString();
-
-                if (!string.IsNullOrEmpty(value))
-                {
-                    events.Add(ProviderStreamEvent.Delta(value));
-                }
-            }
-
-            if (root.TryGetProperty("done", out var done)
-                && done.ValueKind == JsonValueKind.True)
-            {
-                var reason = root.TryGetProperty("done_reason", out var doneReason)
-                    && doneReason.ValueKind == JsonValueKind.String
-                        ? doneReason.GetString()
-                        : null;
-
-                events.Add(ProviderStreamEvent.Done(reason ?? "stop"));
-            }
-
-            return events;
-        }
-        catch (JsonException)
-        {
-            throw new AssistantProviderStreamException();
-        }
     }
 }
 

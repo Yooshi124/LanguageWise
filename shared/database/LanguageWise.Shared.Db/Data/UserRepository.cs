@@ -1,14 +1,12 @@
-using Microsoft.Data.Sqlite;
+using Npgsql;
 
 namespace LanguageWise.Shared.Db.Data;
 
 public sealed class UserRepository(string connectionString)
 {
-    private const int SqliteConstraintUnique = 2067;
-
     public long Count()
     {
-        using var connection = new SqliteConnection(connectionString);
+        using var connection = new NpgsqlConnection(connectionString);
         connection.Open();
 
         using var command = connection.CreateCommand();
@@ -19,42 +17,43 @@ public sealed class UserRepository(string connectionString)
     /// <summary>Returns the user ID if credentials match, or null otherwise.</summary>
     public int? Verify(string username, string password)
     {
-        using var connection = new SqliteConnection(connectionString);
+        using var connection = new NpgsqlConnection(connectionString);
         connection.Open();
 
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id FROM Users WHERE Username = $u AND Password = $p;";
-        command.Parameters.AddWithValue("$u", username);
-        command.Parameters.AddWithValue("$p", password);
+        command.CommandText = "SELECT Id FROM Users WHERE Username = @username AND Password = @password;";
+        command.Parameters.AddWithValue("username", username);
+        command.Parameters.AddWithValue("password", password);
 
         var result = command.ExecuteScalar();
-        return result is long id ? (int)id : null;
+        return result is int id ? id : null;
     }
 
     public bool IsAdmin(int userId)
     {
-        using var connection = new SqliteConnection(connectionString);
+        using var connection = new NpgsqlConnection(connectionString);
         connection.Open();
-        using var command = connection.CreateCommand();
-        command.CommandText = "SELECT IsAdmin FROM Users WHERE Id = $userId;";
-        command.Parameters.AddWithValue("$userId", userId);
 
-        return command.ExecuteScalar() is long isAdmin && isAdmin != 0;
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT IsAdmin FROM Users WHERE Id = @userId;";
+        command.Parameters.AddWithValue("userId", userId);
+
+        return command.ExecuteScalar() is true;
     }
 
     public UserAccountResult Create(string username, string password)
     {
-        using var connection = new SqliteConnection(connectionString);
+        using var connection = new NpgsqlConnection(connectionString);
         connection.Open();
 
         using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO Users (Username, Password)
-            VALUES ($username, $password)
+            VALUES (@username, @password)
             RETURNING Id, Username;
             """;
-        command.Parameters.AddWithValue("$username", username);
-        command.Parameters.AddWithValue("$password", password);
+        command.Parameters.AddWithValue("username", username);
+        command.Parameters.AddWithValue("password", password);
 
         try
         {
@@ -62,7 +61,7 @@ public sealed class UserRepository(string connectionString)
             reader.Read();
             return new UserAccountResult(UserAccountStatus.Saved, MapUserAccount(reader));
         }
-        catch (SqliteException exception) when (exception.SqliteExtendedErrorCode == SqliteConstraintUnique)
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
         {
             return new UserAccountResult(UserAccountStatus.UsernameTaken);
         }
@@ -70,30 +69,30 @@ public sealed class UserRepository(string connectionString)
 
     public UserAccountResult Update(int userId, string? username, string? password)
     {
-        using var connection = new SqliteConnection(connectionString);
+        using var connection = new NpgsqlConnection(connectionString);
         connection.Open();
 
         using var command = connection.CreateCommand();
         var setClauses = new List<string>();
         if (username is not null)
         {
-            setClauses.Add("Username = $username");
-            command.Parameters.AddWithValue("$username", username);
+            setClauses.Add("Username = @username");
+            command.Parameters.AddWithValue("username", username);
         }
 
         if (password is not null)
         {
-            setClauses.Add("Password = $password");
-            command.Parameters.AddWithValue("$password", password);
+            setClauses.Add("Password = @password");
+            command.Parameters.AddWithValue("password", password);
         }
 
         command.CommandText = $"""
             UPDATE Users
             SET {string.Join(", ", setClauses)}
-            WHERE Id = $userId
+            WHERE Id = @userId
             RETURNING Id, Username;
             """;
-        command.Parameters.AddWithValue("$userId", userId);
+        command.Parameters.AddWithValue("userId", userId);
 
         try
         {
@@ -102,7 +101,7 @@ public sealed class UserRepository(string connectionString)
                 ? new UserAccountResult(UserAccountStatus.Saved, MapUserAccount(reader))
                 : new UserAccountResult(UserAccountStatus.NotFound);
         }
-        catch (SqliteException exception) when (exception.SqliteExtendedErrorCode == SqliteConstraintUnique)
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
         {
             return new UserAccountResult(UserAccountStatus.UsernameTaken);
         }
@@ -110,17 +109,17 @@ public sealed class UserRepository(string connectionString)
 
     public IReadOnlyList<UserAccount> GetUsernames(IReadOnlyCollection<int> userIds)
     {
-        using var connection = new SqliteConnection(connectionString);
+        using var connection = new NpgsqlConnection(connectionString);
         connection.Open();
 
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT Id, Username
             FROM Users
-            WHERE Id IN (SELECT value FROM json_each($userIds))
+            WHERE Id = ANY(@userIds)
             ORDER BY Id;
             """;
-        command.Parameters.AddWithValue("$userIds", System.Text.Json.JsonSerializer.Serialize(userIds));
+        command.Parameters.AddWithValue("userIds", userIds.ToArray());
 
         using var reader = command.ExecuteReader();
         var accounts = new List<UserAccount>();
@@ -134,31 +133,31 @@ public sealed class UserRepository(string connectionString)
 
     public int? RecordLogin(int userId, DateOnly today)
     {
-        using var connection = new SqliteConnection(connectionString);
+        using var connection = new NpgsqlConnection(connectionString);
         connection.Open();
 
         using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE Users
             SET CurrentStreak = CASE
-                    WHEN date(LastLogin) = date($today, '-1 day') THEN CurrentStreak + 1
+                    WHEN LastLogin = @today - 1 THEN CurrentStreak + 1
                     ELSE 0
                 END,
-                LastLogin = $today
-            WHERE Id = $userId
-              AND (LastLogin IS NULL OR date(LastLogin) <> date($today))
+                                LastLogin = @today
+                        WHERE Id = @userId
+                            AND (LastLogin IS NULL OR LastLogin <> @today)
             RETURNING CurrentStreak;
             """;
-        command.Parameters.AddWithValue("$userId", userId);
-        command.Parameters.AddWithValue("$today", today.ToString("yyyy-MM-dd"));
+        command.Parameters.AddWithValue("userId", userId);
+        command.Parameters.AddWithValue("today", today);
 
         var result = command.ExecuteScalar();
-        return result is long streak ? (int)streak : null;
+        return result is int streak ? streak : null;
     }
 
     public ProfilePicture? GetProfilePicture(int userId)
     {
-        using var connection = new SqliteConnection(connectionString);
+        using var connection = new NpgsqlConnection(connectionString);
         connection.Open();
 
         using var command = connection.CreateCommand();
@@ -166,9 +165,9 @@ public sealed class UserRepository(string connectionString)
             SELECT ProfilePictureStorageKey, ProfilePictureFileName, ProfilePictureContentType,
                    ProfilePictureSizeBytes, ProfilePictureUploadedAt
             FROM Users
-            WHERE Id = $userId AND ProfilePictureStorageKey IS NOT NULL;
+            WHERE Id = @userId AND ProfilePictureStorageKey IS NOT NULL;
             """;
-        command.Parameters.AddWithValue("$userId", userId);
+        command.Parameters.AddWithValue("userId", userId);
 
         using var reader = command.ExecuteReader();
         return reader.Read() ? MapProfilePicture(reader) : null;
@@ -176,27 +175,27 @@ public sealed class UserRepository(string connectionString)
 
     public ProfilePicture? SetProfilePicture(int userId, ProfilePictureInput input)
     {
-        using var connection = new SqliteConnection(connectionString);
+        using var connection = new NpgsqlConnection(connectionString);
         connection.Open();
 
         using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE Users
-            SET ProfilePictureStorageKey = $storageKey,
-                ProfilePictureFileName = $fileName,
-                ProfilePictureContentType = $contentType,
-                ProfilePictureSizeBytes = $sizeBytes,
-                ProfilePictureUploadedAt = $uploadedAt
-            WHERE Id = $userId
+            SET ProfilePictureStorageKey = @storageKey,
+                ProfilePictureFileName = @fileName,
+                ProfilePictureContentType = @contentType,
+                ProfilePictureSizeBytes = @sizeBytes,
+                ProfilePictureUploadedAt = @uploadedAt
+            WHERE Id = @userId
             RETURNING ProfilePictureStorageKey, ProfilePictureFileName, ProfilePictureContentType,
                       ProfilePictureSizeBytes, ProfilePictureUploadedAt;
             """;
-        command.Parameters.AddWithValue("$userId", userId);
-        command.Parameters.AddWithValue("$storageKey", input.StorageKey);
-        command.Parameters.AddWithValue("$fileName", (input.FileName ?? string.Empty).Trim());
-        command.Parameters.AddWithValue("$contentType", (input.ContentType ?? string.Empty).Trim());
-        command.Parameters.AddWithValue("$sizeBytes", input.SizeBytes);
-        command.Parameters.AddWithValue("$uploadedAt", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("userId", userId);
+        command.Parameters.AddWithValue("storageKey", input.StorageKey);
+        command.Parameters.AddWithValue("fileName", (input.FileName ?? string.Empty).Trim());
+        command.Parameters.AddWithValue("contentType", (input.ContentType ?? string.Empty).Trim());
+        command.Parameters.AddWithValue("sizeBytes", input.SizeBytes);
+        command.Parameters.AddWithValue("uploadedAt", DateTime.UtcNow);
 
         using var reader = command.ExecuteReader();
         return reader.Read() ? MapProfilePicture(reader) : null;
@@ -204,7 +203,7 @@ public sealed class UserRepository(string connectionString)
 
     public bool ClearProfilePicture(int userId)
     {
-        using var connection = new SqliteConnection(connectionString);
+        using var connection = new NpgsqlConnection(connectionString);
         connection.Open();
 
         using var command = connection.CreateCommand();
@@ -215,23 +214,23 @@ public sealed class UserRepository(string connectionString)
                 ProfilePictureContentType = NULL,
                 ProfilePictureSizeBytes = NULL,
                 ProfilePictureUploadedAt = NULL
-            WHERE Id = $userId AND ProfilePictureStorageKey IS NOT NULL;
+            WHERE Id = @userId AND ProfilePictureStorageKey IS NOT NULL;
             """;
-        command.Parameters.AddWithValue("$userId", userId);
+        command.Parameters.AddWithValue("userId", userId);
 
         return command.ExecuteNonQuery() > 0;
     }
 
-    private static UserAccount MapUserAccount(SqliteDataReader reader) => new(
-        (int)reader.GetInt64(0),
+    private static UserAccount MapUserAccount(NpgsqlDataReader reader) => new(
+        reader.GetInt32(0),
         reader.GetString(1));
 
-    private static ProfilePicture MapProfilePicture(SqliteDataReader reader) => new(
+    private static ProfilePicture MapProfilePicture(NpgsqlDataReader reader) => new(
         reader.GetString(0),
         reader.GetString(1),
         reader.GetString(2),
         reader.GetInt64(3),
-        DateTime.Parse(reader.GetString(4), null, System.Globalization.DateTimeStyles.RoundtripKind));
+        reader.GetDateTime(4));
 }
 
 public sealed record UserAccount(int Id, string Username);

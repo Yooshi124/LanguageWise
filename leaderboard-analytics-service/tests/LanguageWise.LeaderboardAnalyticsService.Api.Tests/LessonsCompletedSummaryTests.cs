@@ -90,16 +90,16 @@ public sealed class LessonsCompletedSummaryTests
     }
 
     [Test]
-    public async Task Generator_WhenOllamaTimesOut_ReturnsDeterministicFallback()
+    public async Task Generator_WhenOpenRouterTimesOut_ReturnsDeterministicFallback()
     {
         using var httpClient = new HttpClient(new TimeoutHandler())
         {
-            BaseAddress = new Uri("http://ollama/")
+            BaseAddress = new Uri("https://openrouter.ai/api/v1/")
         };
-        var generator = new OllamaSummaryGenerator(
+        var generator = new OpenRouterSummaryGenerator(
             httpClient,
-            Options.Create(new OllamaOptions()),
-            NullLogger<OllamaSummaryGenerator>.Instance);
+            Options.Create(new OpenRouterOptions { ApiKey = "test-key" }), // pragma: allowlist secret
+            NullLogger<OpenRouterSummaryGenerator>.Instance);
         var chartData = new LessonsCompletedResponse(
             42,
             new DateOnly(2026, 1, 1),
@@ -143,19 +143,21 @@ public sealed class LessonsCompletedSummaryTests
             ]);
         var modelJson = """
         {
-            "message": {
-                "content": "{\"summary\":\"Great momentum.\",\"trend\":\"up\",\"bestCourse\":\"Klingon\"}"
-            }
+            "choices": [{
+                "message": {
+                    "content": "{\"summary\":\"Great momentum.\",\"trend\":\"up\",\"bestCourse\":\"Klingon\"}"
+                }
+            }]
         }
         """;
         using var httpClient = new HttpClient(new StaticResponseHandler(modelJson))
         {
-            BaseAddress = new Uri("http://ollama/")
+            BaseAddress = new Uri("https://openrouter.ai/api/v1/")
         };
-        var generator = new OllamaSummaryGenerator(
+        var generator = new OpenRouterSummaryGenerator(
             httpClient,
-            Options.Create(new OllamaOptions()),
-            NullLogger<OllamaSummaryGenerator>.Instance);
+            Options.Create(new OpenRouterOptions { ApiKey = "test-key" }), // pragma: allowlist secret
+            NullLogger<OpenRouterSummaryGenerator>.Instance);
 
         var result = await generator.GenerateAsync(chartData);
 
@@ -172,7 +174,7 @@ public sealed class LessonsCompletedSummaryTests
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken) =>
-            Task.FromException<HttpResponseMessage>(new TaskCanceledException("Ollama timed out."));
+            Task.FromException<HttpResponseMessage>(new TaskCanceledException("OpenRouter timed out."));
     }
 
     private sealed class StaticResponseHandler(string json) : HttpMessageHandler

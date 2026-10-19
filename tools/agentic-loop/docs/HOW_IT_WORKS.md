@@ -22,7 +22,7 @@ version keeps the discipline and moves every variable part into configuration:
 | Prompts embedded in Python strings | Markdown templates in `prompts/` |
 | A fixed list of two files | Scope scan plus model-driven file selection |
 | One application's domain rules | Whatever the reviewed repository actually contains |
-| Ollama with two local models | OpenRouter chat completions, model set in `.env` |
+| Separate local models | OpenRouter chat completions, model ids set in `.env` |
 | A 1 / 2 / 3 accept menu | Per-finding acceptance in plain English |
 | One shared `evidence_log.md` | One `AgenticLoopSession{GUID}.md` per session |
 | No actionable output | `AgenticLoopPlan{GUID}.md` per accepted set |
@@ -36,7 +36,7 @@ version keeps the discipline and moves every variable part into configuration:
 | **1. PLAN** | `core/orchestrator.py` | Your prompt is captured verbatim and written to the log. Nothing is inferred or rewritten. |
 | **2. ACT** | `collectors/repo_scanner.py`, `agents/file_selector.py`, `collectors/file_reader.py` | The scope is walked, a manifest is built, the model picks the relevant files, and those files are read within budget. |
 | **3. OBSERVE** | `collectors/repo_observer.py` | Deterministic facts are computed locally: file and line counts, file types, test files, git branch and commit, and every skip or truncation warning. No model involved. |
-| **4. AGENT** | `agents/analyst.py`, `agents/critic.py` | The implementation agent (via OpenRouter) proposes findings; the review agent (local Gemma via Ollama, mandatory) challenges them. Only survivors are shown. |
+| **4. AGENT** | `agents/analyst.py`, `agents/critic.py` | The implementation and mandatory review agents use configurable OpenRouter models; only findings that survive critique are shown. |
 | **5. HUMAN REVIEW** | `agents/decision_parser.py` | Your free-text reply is turned into accepted indices. Your exact words are recorded. |
 | **6. ADAPT** | `agents/planner.py`, `output/plan_writer.py` | Accepted findings become a detailed implementation plan on disk; the decision and outcome are logged. |
 
@@ -60,7 +60,6 @@ main.py                     CLI entry point, REPL, slash commands
 │   ├── orchestrator.py     runs a round: stage banners + log headings, error handling
 │   ├── models.py           pydantic schemas, doubling as the model's JSON contracts
 │   ├── openrouter_client.py OpenRouter wrapper: structured output, retries, usage
-│   ├── ollama_client.py    local Ollama wrapper for the mandatory Review Agent
 │   ├── prompt_registry.py  loads prompts/*.md, strict {{PLACEHOLDER}} rendering
 │   ├── session.py          session and round identity, timing, running totals
 │   └── console.py          rich rendering, stage banners, findings list
@@ -117,18 +116,18 @@ Shortcuts and safety nets:
 ## Why two agents
 
 A single model asked to review code will pad its answer. The critic pass exists
-to shorten the list, not lengthen it — and it runs on a genuinely different,
-locally-hosted model so it cannot simply agree with itself:
+to shorten the list, not lengthen it. Configure a different review model for an
+independent second opinion:
 
 - **Implementation agent** (`OPENROUTER_MODEL`, via OpenRouter) reads the code and the
   observations and proposes findings, each with a problem, a specific fix, a
   severity, file paths and the evidence that supports it.
-- **Review agent** (`OLLAMA_REVIEW_MODEL`, a local Gemma model served by Ollama)
+- **Review agent** (`OPENROUTER_REVIEW_MODEL`, defaults to `OPENROUTER_MODEL`)
   sees the same code plus those findings and critiques them with a keep-first
   bias: keep the sound, amend the vague, and drop only what the supplied code
   actively contradicts. It returns a verdict for every original finding.
 
-The critic's bias is deliberate. Small local models over-fire on scepticism, so
+The critic's bias is deliberate. Models can over-fire on scepticism, so
 the prompts make KEEP the default verdict, require every drop to cite the
 contradicting code, and treat "the code does not prove this" as insufficient
 grounds for dropping. As a backstop, a critique that drops every finding from a
@@ -137,10 +136,8 @@ restated before the empty list is believed.
 
 Both the original findings and the critic's verdicts are recorded, so the log
 shows what was filtered and why. **The review pass is mandatory and cannot be
-disabled.** If the local model is unreachable, not pulled, or returns
-unusable output, the round aborts with a clear error rather than silently
-showing the human unreviewed findings — the whole point is that nothing
-reaches a human without a second, independent model having checked it first.
+disabled.** If the review model is unavailable or returns unusable output, the
+round aborts with a clear error rather than silently showing unreviewed findings.
 
 ---
 
@@ -162,11 +159,8 @@ If the reply is not valid JSON for the schema, the model gets one repair round
 ("That was not valid JSON. Reply with only the JSON object...") before the call
 is declared failed — again mirroring the mini-games vocabulary provider.
 
-The Review Agent (`core/ollama_client.py`) enforces the identical schema through
-Ollama's own structured-output support instead — a `format` field on the
-`/api/chat` request carrying the same `inline_schema_refs`-flattened JSON
-schema. Both clients hand their raw JSON reply to the same pydantic model for
-validation, so `agents/critic.py` cannot tell which backend produced it.
+The Review Agent uses the same OpenRouter client and Pydantic validation as the
+implementation agent, with `OPENROUTER_REVIEW_MODEL` selecting its model.
 
 Nothing is scraped out of prose, so a formatting wobble cannot corrupt a finding.
 `inline_schema_refs` flattens pydantic's `$defs`/`$ref` into a self-contained
@@ -176,8 +170,8 @@ Field order matters more than it looks. Models emit JSON keys in whatever order
 they like unless told otherwise, and if a long free-text field such as `summary`
 comes first the model treats it as a scratchpad: it reasons there until the
 output budget is gone, then closes the response with an empty `findings` array.
-The Ollama schema pins the order (arrays first, prose last) and the prose fields
-are capped with `maxLength` in the schema to keep the model's budget where it
+The schema pins the order (arrays first, prose last) and the prose fields are
+capped with `maxLength` in the schema to keep the model's budget where it
 belongs. The caps are
 schema-only hints via `json_schema_extra`, so an over-long reply still validates
 locally rather than failing the round.
@@ -187,9 +181,7 @@ analysis, planning), and `THINKING_LEVEL` maps to OpenRouter's unified
 `reasoning.effort` parameter. That budget covers the model's
 internal thinking as well as the reply, so setting it too low produces truncated
 JSON; the client detects that case and says so explicitly instead of reporting a
-schema mismatch. The local Ollama review agent has its own timeout
-(`OLLAMA_REQUEST_TIMEOUT_SECONDS`) instead, since it runs on your hardware rather
-than a metered API.
+schema mismatch. The review pass uses the same timeout and retry configuration.
 
 ---
 
@@ -307,26 +299,25 @@ Run `/config` in the REPL to see which templates were found on disk.
 
 ## Cost and tokens
 
-A full round makes up to four model calls — three billed against your OpenRouter
-credits, one free and local:
+A full round makes up to four model calls, all billed against your OpenRouter
+credits:
 
 | Call | When it happens | Model |
 | --- | --- | --- |
 | File selection | Only when the scope exceeds `MAX_FILES_IN_CONTEXT` | `OPENROUTER_SELECTION_MODEL` (OpenRouter, metered) |
 | Analysis | Always | `OPENROUTER_MODEL` (OpenRouter, metered) |
-| Critique | Always, when findings exist — mandatory, cannot be disabled | `OLLAMA_REVIEW_MODEL` (local via Ollama, free) |
+| Critique | Always, when findings exist — mandatory, cannot be disabled | `OPENROUTER_REVIEW_MODEL` (OpenRouter, metered) |
 | Planning | Only when you accept at least one finding | `OPENROUTER_MODEL` (OpenRouter, metered) |
 
 Interpreting your acceptance reply normally costs nothing — common phrasings are
 parsed locally, and the model is consulted only for genuinely unusual wording.
 
 Levers, cheapest first: narrow the scope, lower `MAX_FILES_IN_CONTEXT`, point
-`OPENROUTER_SELECTION_MODEL` at a lighter model. The critique pass is local and free,
-so there is no reason to skip it — and no setting to do so.
+`OPENROUTER_SELECTION_MODEL` at a lighter model. The critique pass is mandatory,
+so its model is configurable but the pass cannot be skipped.
 
 Token usage for every call is recorded in the evidence log and totalled in the
-session footer. The Review Agent's usage (`prompt_eval_count`/`eval_count` from
-Ollama) is recorded the same way, even though it costs nothing.
+session footer.
 
 ---
 
@@ -344,10 +335,8 @@ Ollama) is recorded the same way, even though it costs nothing.
 - **Symlinks skipped.** The scanner does not follow them, so it cannot escape the scope.
 
 **Privacy note:** the contents of selected files are sent to OpenRouter (which
-routes them to the provider hosting the configured model) for selection, analysis
-and planning. Only point the tool at code you are
-permitted to share. The Review Agent's pass (source code + findings) stays on
-your machine via the local Ollama daemon.
+routes them to the provider hosting the configured model) for selection, analysis,
+critique and planning. Only point the tool at code you are permitted to share.
 
 ---
 
@@ -362,7 +351,7 @@ your machine via the local Ollama daemon.
 | Planning call fails | Round stops in ADAPT; the accepted findings are preserved in the log. |
 | Ctrl+C mid-round | Remaining stages are marked interrupted; the log is complete up to that point; the REPL survives. |
 | Input closed (Ctrl+Z, or piped stdin ending) at a question | Same as Ctrl+C: the round ends, every stage heading is still recorded. |
-| Transient OpenRouter error (429, 5xx, timeout) | 429s honour the `Retry-After` header (capped at 8s); other transient errors are retried up to `MAX_RETRIES` with exponential backoff before surfacing. Ollama calls (the Review Agent) are not retried — a connection failure there is reported immediately with setup instructions instead. |
+| Transient OpenRouter error (429, 5xx, timeout) | 429s honour the `Retry-After` header (capped at 8s); other transient errors are retried up to `MAX_RETRIES` with exponential backoff before surfacing. |
 
 ---
 

@@ -31,6 +31,72 @@ docker compose up -d --build
 
 On machines using Podman, run `podman compose up -d --build` instead.
 
+## Local PostgreSQL
+
+All five data owners use PostgreSQL 18 on one shared-owned server. The
+`shared-db` container hosts the following separate databases and non-superuser
+logins; its bootstrap lives under `shared/database/postgres`. Quests retains
+ownership of its schema and seed files, supplied as a named image-build context.
+
+| Owner | Database | Login |
+| --- | --- | --- |
+| Shared | `shared` | `shared_app` |
+| Mini-games | `mini_games` | `mini_games_app` |
+| Quizzes/courses | `quizzes_courses` | `quizzes_courses_app` |
+| Chat/discussion | `chat_discussion` | `chat_discussion_app` |
+| Quests | `quests_achievements_notifications` | `quests_app` |
+
+The four C# database APIs and quests PostgREST retain their existing HTTP
+contracts. `shared-db-api` serves the shared HTTP API on port 6000, while
+`shared-db` serves PostgreSQL on port 5432. Database connections replace the old
+SQLite `Database:Path` setting
+with `Database:ConnectionString` (`Database__ConnectionString` in environment
+variables). PostgreSQL is published only on `127.0.0.1:5432`; the checked-in
+password `languagewise` and bootstrap administrator are for local demo use only.
+Use new credentials and private connectivity in any deployed environment.
+
+Start just the database tier without starting AI or frontend services:
+
+```powershell
+docker compose up -d --build --wait shared-db-api mini-games-service-db quizzes-courses-service-db chat-discussion-service-db quests-achievements-notifications-service-db
+```
+
+On an empty `postgres-data` volume, PostgreSQL creates the databases/roles and
+quests schema/seeds. The C# APIs apply their schemas/seeds on startup without
+resetting existing user changes. Mini-games has no static seed: games are created
+through its API. PostgreSQL data and uploaded shared/chat images use separate
+named volumes and survive application container replacement.
+
+This is a fresh, seeded demo migration, not an import. Old SQLite volumes and
+their uploaded images are not copied into the new storage. To deliberately
+erase **all Compose data, including uploads**, and reseed from scratch:
+
+```powershell
+docker compose down --volumes
+docker compose up -d --build
+```
+
+### PostgreSQL Tests
+
+The migrated database tests require real PostgreSQL and create a unique schema
+per fixture. Run an isolated test server so tests never touch application data:
+
+```powershell
+docker run --detach --rm --name languagewise-postgres-tests --publish 127.0.0.1:15432:5432 --env POSTGRES_USER=languagewise --env POSTGRES_PASSWORD=languagewise --env POSTGRES_DB=postgres postgres:18
+docker exec languagewise-postgres-tests pg_isready -U languagewise -d postgres
+dotnet test shared/LanguageWise.Shared.BE.slnx
+dotnet test mini-games-service/LanguageWise.MiniGamesService.BE.slnx
+dotnet test quizzes-courses-service/LanguageWise.QuizzesCoursesService.BE.slnx
+dotnet test chat-discussion-service/LanguageWise.ChatDiscussionService.BE.slnx
+dotnet test quests-achievements-notifications-service/LanguageWise.QuestsAchievementsNotificationsService.BE.slnx
+docker stop languagewise-postgres-tests
+```
+
+Wait for `pg_isready` to report readiness before running tests. To use another
+test server, set `LANGUAGEWISE_TEST_POSTGRES` to its Npgsql connection string; its
+login must be able to create and drop schemas in a disposable test database.
+CI starts PostgreSQL 18 automatically for each migrated service's test job.
+
 ---
 
 ## Features
@@ -124,11 +190,35 @@ chore: init
 
 Please don't commit API keys and `.env` files...thx 🙂
 
+## Pre-commit security checks
+
+Every commit runs these scans; the `pre-commit-security` workflow re-runs them in CI.
+
+| Hook | Checks |
+| --- | --- |
+| `ruff-check` | Python security rules (`S`, Bandit port) in `rag-server/` and `tools/agentic-loop/` |
+| `detect-secrets` | Every tracked file against the reviewed `.secrets.baseline` |
+| `pip-audit` | Known CVEs in the Python `requirements.txt` files |
+| `npm-audit` | High/critical CVEs in each frontend's production dependencies |
+| `dotnet-vulnerable` | High/critical CVEs in each `.slnx`, including transitive packages |
+
+Requires Python 3.10+, Node, and the .NET 10 SDK on `PATH`. Set up once per clone:
+
+```bash
+pipx install pre-commit   # or: pip install pre-commit
+pre-commit install
+pre-commit run --all-files
+```
+
+- A flagged false positive in `detect-secrets`: run `detect-secrets scan --baseline .secrets.baseline`, then `detect-secrets audit .secrets.baseline` and mark it, and commit the baseline.
+- A deliberate Ruff finding: add `# noqa: S###` with a short reason.
+- Skip one hook in an emergency only: `SKIP=npm-audit git commit ...` — CI still runs it.
+
 ## Notification email configuration
 
-The quests, achievements, and notifications service uses Ollama with
-`gemma4:e4b` to compose notification emails. Docker Compose downloads the model
-into the persistent `ollama-data` volume on its first start.
+The quests, achievements, and notifications service uses OpenRouter to compose
+notification emails. Set `OPENROUTER_API_KEY` in the root `.env` file before
+starting the stack.
 
 Create `quests-achievements-notifications-service/backend/.env` with these
 values to enable Gmail SMTP for that backend only:
@@ -150,26 +240,27 @@ The authenticated SMTP username is always used as the sender address.
 Garry runs in a private container shared by all five assistant endpoints. Each
 feature backend verifies the signed-in user and supplies its authorized domain
 rules and current context; Garry adds the same personality everywhere and streams
-the reply. Garry tries OpenRouter first and falls back to the shared Ollama model
-when OpenRouter cannot start. The feature backends do not choose a provider. The
+the reply. Garry uses OpenRouter as its only model provider; if OpenRouter is
+unavailable, it does not try another model provider. The feature backends do not choose a provider. The
 browser keeps its existing assistant URLs and stores bounded transcripts in
 `sessionStorage`; chats are not written to the database.
 
-Copy the example environment file and add an OpenRouter API key:
+Copy the root example environment file and add an OpenRouter API key:
 
 ```powershell
-Copy-Item garry-ai-service\backend\.env.example garry-ai-service\backend\.env
+Copy-Item .env.example .env
 ```
 
 ```text
-OpenRouter__ApiKey=your-openrouter-api-key
+OPENROUTER_API_KEY=your-openrouter-api-key
 ```
 
-Docker Compose loads this ignored file only into Garry. The default OpenRouter
-model is `google/gemma-4-26b-a4b-it`; `OpenRouter__Model`,
-`OpenRouter__BaseUrl`, and `OpenRouter__MaxOutputTokens` can be overridden there. Without a key, Garry uses
-Ollama. If neither provider can start, the discussion assistant uses its help
-articles; other assistants report temporary unavailability. Garry applies one
+Docker Compose passes this ignored file's key to Garry, analytics, and
+notification email generation. The default OpenRouter model is `google/gemma-4-26b-a4b-it`; set
+`OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`, or `OPENROUTER_MAX_OUTPUT_TOKENS`
+in the root `.env` to override it. Without a key, Garry has no model provider.
+If OpenRouter cannot start, the discussion assistant uses its
+help articles; other assistants report temporary unavailability. Garry applies one
 10-request-per-minute limit per user across all five assistants. This limit is
 in memory, so Garry must remain a single replica unless a distributed limiter
 is introduced. Garry has no public port: the private Compose network is the

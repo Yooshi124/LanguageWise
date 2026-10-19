@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@mdi/js": "7.4.47",
-    "@module-federation/vite": "1.21.2",
+    "@module-federation/vite": "1.23.5",
     "vue": "3.5.42",
     "vue-router": "4.6.4"
   },
@@ -20,7 +20,7 @@
     "jsdom": "26.1.0",
     "typescript": "5.8.3",
     "vite": "7.3.6",
-    "vitest": "3.2.4",
+    "vitest": "3.2.7",
     "vue-tsc": "3.0.4"
   }
 }

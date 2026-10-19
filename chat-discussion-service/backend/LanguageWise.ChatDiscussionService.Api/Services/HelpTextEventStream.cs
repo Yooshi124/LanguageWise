@@ -5,7 +5,7 @@ namespace LanguageWise.ChatDiscussionService.Api.Services;
 
 /// <summary>
 /// AI mode without a model behind it. The help topics that matched the question
-/// are already a usable answer, so when Ollama cannot be reached they are served
+/// are already a usable answer, so when the model provider cannot be reached they are served
 /// verbatim instead of the request failing.
 ///
 /// It is an <see cref="IAssistantEventStream"/> so it leaves through the same SSE

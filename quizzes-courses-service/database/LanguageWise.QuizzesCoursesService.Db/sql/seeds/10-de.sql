@@ -448,15 +448,16 @@ German compounds join meaningful parts: **Rindfleisch + Etikettierung + Überwac
 
 **Ohrwurm** literally means “earworm,” a tune you cannot stop hearing. **Wanderlust** is a desire to travel, and **Kopfkino** is a vivid imagined scene. Playful vocabulary should describe situations, not people.')
 )
-INSERT OR IGNORE INTO Lessons (CourseId, Slug, Title, SortOrder, ContentMarkdown)
+INSERT INTO Lessons (CourseId, Slug, Title, SortOrder, ContentMarkdown)
 SELECT c.Id, s.Slug, s.Title, s.SortOrder, content.ContentMarkdown
 FROM Courses c
 CROSS JOIN LessonSeeds s
 INNER JOIN LessonContentSeeds content
     ON content.CourseCode = c.Code AND content.LessonSlug = s.Slug
-WHERE c.Code = 'de';
+WHERE c.Code = 'de'
+ON CONFLICT DO NOTHING;
 
--- Seed individual words, then let SQLite construct valid vocabulary JSON documents.
+-- Seed individual words, then construct ordered vocabulary JSON documents.
 WITH WordSeeds (CourseCode, LessonSlug, Position, Word, Meaning) AS (
     VALUES
     ('de', 'greetings', 1, 'Hallo', 'Hello'),
@@ -560,19 +561,21 @@ WITH WordSeeds (CourseCode, LessonSlug, Position, Word, Meaning) AS (
     ('de', 'funny-unusual-words', 4, 'Fingerspitzengefühl', 'tact and intuitive sensitivity'),
     ('de', 'funny-unusual-words', 5, 'Kopfkino', 'a vivid imagined scene in your head')
 )
-INSERT OR IGNORE INTO LessonVocabulary (LessonId, VocabularyJson)
-SELECT l.Id, json_object('words', json((
-    SELECT json_group_array(json_object('word', ordered.Word, 'meaning', ordered.Meaning))
-    FROM (SELECT Word, Meaning FROM WordSeeds WHERE CourseCode = c.Code AND LessonSlug = l.Slug ORDER BY Position) ordered
-)))
+INSERT INTO LessonVocabulary (LessonId, VocabularyJson)
+SELECT l.Id, json_build_object('words', (
+    SELECT json_agg(json_build_object('word', ordered.Word, 'meaning', ordered.Meaning) ORDER BY ordered.Position)
+    FROM (SELECT Word, Meaning, Position FROM WordSeeds WHERE CourseCode = c.Code AND LessonSlug = l.Slug) ordered
+))
 FROM Lessons l
-INNER JOIN Courses c ON c.Id = l.CourseId AND c.Code = 'de';
+INNER JOIN Courses c ON c.Id = l.CourseId AND c.Code = 'de'
+ON CONFLICT DO NOTHING;
 
-INSERT OR IGNORE INTO Quizzes (LessonId, Title)
+INSERT INTO Quizzes (LessonId, Title)
 SELECT l.Id, l.Title || ' Quiz'
 FROM Lessons l
 INNER JOIN Courses c ON c.Id = l.CourseId
-WHERE c.Code = 'de';
+WHERE c.Code = 'de'
+ON CONFLICT DO NOTHING;
 
 WITH QuestionSeeds (LessonSlug, SortOrder, Content, Type, QuestionData, CorrectAnswer) AS (
     VALUES
@@ -796,9 +799,10 @@ WITH QuestionSeeds (LessonSlug, SortOrder, Content, Type, QuestionData, CorrectA
     ('funny-unusual-words', 9, 'Type the sentence “I have a catchy tune from this song stuck in my head.”', 'free_text', '{}', 'Ich habe einen Ohrwurm von diesem Lied.'),
     ('funny-unusual-words', 10, 'Type the sentence “After eating we go for a walk.”', 'free_text', '{}', 'Nach dem Essen gehen wir spazieren.')
 )
-INSERT OR IGNORE INTO QuizQuestions (QuizId, SortOrder, Content, Type, QuestionData, CorrectAnswer)
+INSERT INTO QuizQuestions (QuizId, SortOrder, Content, Type, QuestionData, CorrectAnswer)
 SELECT q.Id, s.SortOrder, s.Content, s.Type, s.QuestionData, s.CorrectAnswer
 FROM QuestionSeeds s
 INNER JOIN Lessons l ON l.Slug = s.LessonSlug
 INNER JOIN Courses c ON c.Id = l.CourseId AND c.Code = 'de'
-INNER JOIN Quizzes q ON q.LessonId = l.Id;
+INNER JOIN Quizzes q ON q.LessonId = l.Id
+ON CONFLICT DO NOTHING;

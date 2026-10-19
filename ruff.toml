@@ -1,0 +1,9 @@
+extend-exclude = ["bin", "obj"]
+
+[lint]
+# Security rules only (flake8-bandit port).
+select = ["S"]
+
+[lint.per-file-ignores]
+"**/tests/**" = ["S101"]
+"**/test_*.py" = ["S101"]

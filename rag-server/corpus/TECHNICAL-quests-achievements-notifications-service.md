@@ -12,13 +12,13 @@ Internal reference for the agentic loop. Not for end-user access.
   `POST /api/assistant/tools/{name}` (MCP tool handlers).
 - Domain entities: `Achievement`, `UserAchievement`, `UserPreferences`,
   `Notification`, `NotificationInput`, `EventRequest`.
-- Uses a local Ollama instance for email content generation and SMTP/Gmail for
+- Uses OpenRouter for email content generation and SMTP/Gmail for
   delivery; calls garry-ai-service for the in-app assistant.
 
 ## Database
 
 - PostgreSQL 18, database `quests_achievements_notifications`, fronted by a
-  PostgREST container (`quests-achievements-notifications-service-db-api`,
+  PostgREST container (`quests-achievements-notifications-service-db`,
   internal port `3000`) — the API talks to PostgREST rather than the database
   directly.
 - Key tables: `achievements` (achievement_id, name, description, image,
@@ -39,5 +39,5 @@ Internal reference for the agentic loop. Not for end-user access.
 
 - Backend service `quests-achievements-notifications-service-backend`, host
   port `5004`.
-- Env vars: `Services__Database` (points at the PostgREST API), `Services__Ollama`,
+- Env vars: `Services__Database` (points at the PostgREST API), `OpenRouter__ApiKey`,
   `Services__Garry`.

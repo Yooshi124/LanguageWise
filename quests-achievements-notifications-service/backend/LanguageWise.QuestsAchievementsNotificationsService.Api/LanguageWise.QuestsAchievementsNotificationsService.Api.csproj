@@ -13,6 +13,8 @@
     <PackageReference Include="MailKit" Version="4.17.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
     <PackageReference Include="ModelContextProtocol.Core" Version="2.2.0" />
+    <!-- Pins MailKit's transitive Pkcs past GHSA-846f-f764-76mx. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
   </ItemGroup>
 
   <ItemGroup>

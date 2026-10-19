@@ -83,8 +83,7 @@ def inline_schema_refs(schema: dict[str, Any]) -> dict[str, Any]:
     """Resolve `$ref`/`$defs` into a self-contained schema and pin field order.
 
     Pydantic emits `$defs` for nested models and enums; inlining keeps the schema
-    portable for backends that do not dereference local pointers (Ollama's
-    `format` parameter, among others).
+    portable for OpenRouter model providers that do not dereference local pointers.
 
     `propertyOrdering` is added to every object because models otherwise emit
     JSON keys in whatever order they like. When a long free-text field comes
@@ -211,7 +210,7 @@ class OpenRouterClient:
                 last_error = exc
                 if attempts >= self._settings.max_retries or not _is_retryable(exc):
                     break
-                delay = min(2 ** (attempts - 1), 8) + random.uniform(0, 0.5)
+                delay = min(2 ** (attempts - 1), 8) + random.uniform(0, 0.5)  # noqa: S311 - retry jitter, not crypto
                 logger.warning(
                     "OpenRouter call failed (attempt %s/%s): %s - retrying in %.1fs",
                     attempts,
@@ -246,7 +245,7 @@ class OpenRouterClient:
                 )
                 if _is_retryable_status(resp.status_code) and attempts < self._settings.max_retries:
                     last_error = error
-                    delay = min(2 ** (attempts - 1), 8) + random.uniform(0, 0.5)
+                    delay = min(2 ** (attempts - 1), 8) + random.uniform(0, 0.5)  # noqa: S311 - retry jitter, not crypto
                     logger.warning(
                         "OpenRouter returned HTTP %s (attempt %s/%s) - retrying in %.1fs",
                         resp.status_code,

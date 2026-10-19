@@ -110,8 +110,8 @@ class CiFailureReport:
 def detect_repo_slug(repo_root: Path) -> str | None:
     """Parse `owner/name` from the origin remote (https or ssh)."""
     try:
-        result = subprocess.run(
-            ["git", "-C", str(repo_root), "remote", "get-url", "origin"],
+        result = subprocess.run(  # noqa: S603 - fixed git argv, no user input
+            ["git", "-C", str(repo_root), "remote", "get-url", "origin"],  # noqa: S607 - git resolved from PATH by design
             capture_output=True,
             text=True,
             timeout=5,

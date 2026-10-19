@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+using Npgsql;
 
 namespace LanguageWise.Shared.Db.Data;
 
@@ -9,35 +9,13 @@ public sealed class DatabaseInitializer(string connectionString, string sqlDirec
 {
     public void Initialise()
     {
-        EnsureDatabaseDirectoryExists();
-
-        using var connection = new SqliteConnection(connectionString);
+        using var connection = new NpgsqlConnection(connectionString);
         connection.Open();
-
-        Execute(connection, ReadSqlFile("schema.sql"));
-        EnsureColumn(connection, "LastLogin", "TEXT");
-        EnsureColumn(connection, "CurrentStreak", "INTEGER NOT NULL DEFAULT 0");
-        EnsureColumn(connection, "ProfilePictureStorageKey", "TEXT");
-        EnsureColumn(connection, "ProfilePictureFileName", "TEXT");
-        EnsureColumn(connection, "ProfilePictureContentType", "TEXT");
-        EnsureColumn(connection, "ProfilePictureSizeBytes", "INTEGER");
-        EnsureColumn(connection, "ProfilePictureUploadedAt", "TEXT");
-        EnsureColumn(connection, "IsAdmin", "INTEGER NOT NULL DEFAULT 0");
-        logger.LogInformation("Schema applied to {ConnectionString}.", connectionString);
-
-        Execute(connection, ReadSqlFile("seed.sql"));
-        logger.LogInformation("Development users are available.");
-    }
-
-    private void EnsureDatabaseDirectoryExists()
-    {
-        var dataSource = new SqliteConnectionStringBuilder(connectionString).DataSource;
-        var directory = Path.GetDirectoryName(Path.GetFullPath(dataSource));
-
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
+        using var transaction = connection.BeginTransaction();
+        Execute(connection, transaction, ReadSqlFile("schema.sql"));
+        Execute(connection, transaction, ReadSqlFile("seed.sql"));
+        transaction.Commit();
+        logger.LogInformation("Schema applied and development users are available.");
     }
 
     private string ReadSqlFile(string fileName)
@@ -52,25 +30,11 @@ public sealed class DatabaseInitializer(string connectionString, string sqlDirec
         return File.ReadAllText(path);
     }
 
-    private static void Execute(SqliteConnection connection, string sql)
+    private static void Execute(NpgsqlConnection connection, NpgsqlTransaction transaction, string sql)
     {
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = sql;
         command.ExecuteNonQuery();
-    }
-
-    private static void EnsureColumn(SqliteConnection connection, string columnName, string definition)
-    {
-        using var query = connection.CreateCommand();
-        query.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Users') WHERE name = $name;";
-        query.Parameters.AddWithValue("$name", columnName);
-        if (Convert.ToInt64(query.ExecuteScalar()) > 0)
-        {
-            return;
-        }
-
-        using var alter = connection.CreateCommand();
-        alter.CommandText = $"ALTER TABLE Users ADD COLUMN {columnName} {definition};";
-        alter.ExecuteNonQuery();
     }
 }

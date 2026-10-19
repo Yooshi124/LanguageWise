@@ -1,6 +1,6 @@
 using System.Text.Json;
 using LanguageWise.QuizzesCoursesService.Db.Models;
-using Microsoft.Data.Sqlite;
+using Npgsql;
 
 namespace LanguageWise.QuizzesCoursesService.Db.Data;
 
@@ -18,10 +18,10 @@ public sealed class LearningRepository(string connectionString)
             FROM Quizzes q
             INNER JOIN Lessons l ON l.Id = q.LessonId
             INNER JOIN Courses c ON c.Id = l.CourseId
-            WHERE c.Code = $code
+            WHERE c.Code = @code
             ORDER BY l.SortOrder;
             """;
-        command.Parameters.AddWithValue("$code", courseCode);
+        command.Parameters.AddWithValue("@code", courseCode);
 
         var quizzes = new List<QuizSummary>();
         using var reader = command.ExecuteReader();
@@ -48,9 +48,9 @@ public sealed class LearningRepository(string connectionString)
             SELECT q.Id, q.Title, q.LessonId, l.Slug, l.Title, l.SortOrder
             FROM Quizzes q
             INNER JOIN Lessons l ON l.Id = q.LessonId
-            WHERE q.Id = $quizId;
+            WHERE q.Id = @quizId;
             """;
-        command.Parameters.AddWithValue("$quizId", quizId);
+        command.Parameters.AddWithValue("@quizId", quizId);
 
         using var reader = command.ExecuteReader();
         if (!reader.Read())
@@ -71,7 +71,7 @@ public sealed class LearningRepository(string connectionString)
             """
             SELECT Id, SortOrder, Content, Type, QuestionData
             FROM QuizQuestions
-            WHERE QuizId = $quizId
+            WHERE QuizId = @quizId
             ORDER BY SortOrder;
             """;
 
@@ -107,10 +107,10 @@ public sealed class LearningRepository(string connectionString)
             FROM Lessons l
             INNER JOIN Courses c ON c.Id = l.CourseId
             INNER JOIN LessonVocabulary v ON v.LessonId = l.Id
-            WHERE c.Code = $code
+            WHERE c.Code = @code
             ORDER BY l.SortOrder;
             """;
-        command.Parameters.AddWithValue("$code", courseCode);
+        command.Parameters.AddWithValue("@code", courseCode);
 
         var decks = new List<FlashcardDeckSummary>();
         using var reader = command.ExecuteReader();
@@ -137,10 +137,10 @@ public sealed class LearningRepository(string connectionString)
             FROM Lessons l
             INNER JOIN Courses c ON c.Id = l.CourseId
             INNER JOIN LessonVocabulary v ON v.LessonId = l.Id
-            WHERE c.Code = $code AND l.Slug = $slug;
+            WHERE c.Code = @code AND l.Slug = @slug;
             """;
-        command.Parameters.AddWithValue("$code", courseCode);
-        command.Parameters.AddWithValue("$slug", lessonSlug);
+        command.Parameters.AddWithValue("@code", courseCode);
+        command.Parameters.AddWithValue("@slug", lessonSlug);
 
         using var reader = command.ExecuteReader();
         if (!reader.Read())
@@ -168,8 +168,8 @@ public sealed class LearningRepository(string connectionString)
 
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM QuizQuestions WHERE QuizId = $quizId;";
-        command.Parameters.AddWithValue("$quizId", quizId);
+        command.CommandText = "SELECT COUNT(*) FROM QuizQuestions WHERE QuizId = @quizId;";
+        command.Parameters.AddWithValue("@quizId", quizId);
         var totalQuestions = Convert.ToInt32(command.ExecuteScalar());
         if (totalQuestions == 0)
         {
@@ -181,12 +181,12 @@ public sealed class LearningRepository(string connectionString)
         command.CommandText =
             """
             INSERT INTO QuizAttempts (UserId, QuizId, TotalQuestions, StartedAt)
-            VALUES ($userId, $quizId, $totalQuestions, $startedAt);
-            SELECT last_insert_rowid();
+            VALUES (@userId, @quizId, @totalQuestions, @startedAt)
+            RETURNING Id;
             """;
-        command.Parameters.AddWithValue("$userId", userId);
-        command.Parameters.AddWithValue("$totalQuestions", totalQuestions);
-        command.Parameters.AddWithValue("$startedAt", FormatTimestamp(startedAt));
+        command.Parameters.AddWithValue("@userId", userId);
+        command.Parameters.AddWithValue("@totalQuestions", totalQuestions);
+        command.Parameters.AddWithValue("@startedAt", FormatTimestamp(startedAt));
         var attemptId = Convert.ToInt32(command.ExecuteScalar());
 
         return DomainResult<QuizAttempt>.Success(
@@ -288,13 +288,13 @@ public sealed class LearningRepository(string connectionString)
                 INSERT INTO QuizAnswers
                     (AttemptId, QuestionId, StudentResponse, IsCorrect, AnsweredAt)
                 VALUES
-                    ($attemptId, $questionId, $response, $isCorrect, $answeredAt);
+                    (@attemptId, @questionId, @response, @isCorrect, @answeredAt);
                 """;
-            insert.Parameters.AddWithValue("$attemptId", attemptId);
-            insert.Parameters.AddWithValue("$questionId", answer.Question.Id);
-            insert.Parameters.AddWithValue("$response", answer.Response);
-            insert.Parameters.AddWithValue("$isCorrect", answer.IsCorrect);
-            insert.Parameters.AddWithValue("$answeredAt", FormatTimestamp(completedAt));
+            insert.Parameters.AddWithValue("@attemptId", attemptId);
+            insert.Parameters.AddWithValue("@questionId", answer.Question.Id);
+            insert.Parameters.AddWithValue("@response", answer.Response);
+            insert.Parameters.AddWithValue("@isCorrect", answer.IsCorrect);
+            insert.Parameters.AddWithValue("@answeredAt", FormatTimestamp(completedAt));
             insert.ExecuteNonQuery();
         }
 
@@ -305,12 +305,12 @@ public sealed class LearningRepository(string connectionString)
             update.CommandText =
                 """
                 UPDATE QuizAttempts
-                SET Score = $score, CompletedAt = $completedAt
-                WHERE Id = $attemptId;
+                SET Score = @score, CompletedAt = @completedAt
+                WHERE Id = @attemptId;
                 """;
-            update.Parameters.AddWithValue("$score", score);
-            update.Parameters.AddWithValue("$completedAt", FormatTimestamp(completedAt));
-            update.Parameters.AddWithValue("$attemptId", attemptId);
+            update.Parameters.AddWithValue("@score", score);
+            update.Parameters.AddWithValue("@completedAt", FormatTimestamp(completedAt));
+            update.Parameters.AddWithValue("@attemptId", attemptId);
             update.ExecuteNonQuery();
         }
 
@@ -320,12 +320,12 @@ public sealed class LearningRepository(string connectionString)
             milestone.Transaction = transaction;
             milestone.CommandText =
                 """
-                INSERT OR IGNORE INTO Milestones (UserId, QuizId, CompletedAt)
-                VALUES ($userId, $quizId, $completedAt);
+                INSERT INTO Milestones (UserId, QuizId, CompletedAt)
+                VALUES (@userId, @quizId, @completedAt) ON CONFLICT DO NOTHING;
                 """;
-            milestone.Parameters.AddWithValue("$userId", userId);
-            milestone.Parameters.AddWithValue("$quizId", attempt.QuizId);
-            milestone.Parameters.AddWithValue("$completedAt", FormatTimestamp(completedAt));
+            milestone.Parameters.AddWithValue("@userId", userId);
+            milestone.Parameters.AddWithValue("@quizId", attempt.QuizId);
+            milestone.Parameters.AddWithValue("@completedAt", FormatTimestamp(completedAt));
             milestone.ExecuteNonQuery();
         }
 
@@ -366,32 +366,32 @@ public sealed class LearningRepository(string connectionString)
             SELECT l.Id, l.Slug, l.Title, l.SortOrder,
                    EXISTS(
                        SELECT 1 FROM Milestones lm
-                       WHERE lm.UserId = $userId AND lm.LessonId = l.Id
+                       WHERE lm.UserId = @userId AND lm.LessonId = l.Id
                    ),
                    q.Id, q.Title,
                    CASE WHEN q.Id IS NULL THEN NULL ELSE EXISTS(
                        SELECT 1 FROM Milestones qm
-                       WHERE qm.UserId = $userId AND qm.QuizId = q.Id
+                       WHERE qm.UserId = @userId AND qm.QuizId = q.Id
                    ) END,
                    (
                        SELECT MAX(a.Score)
                        FROM QuizAttempts a
-                       WHERE a.UserId = $userId
+                       WHERE a.UserId = @userId
                          AND a.QuizId = q.Id
                          AND a.CompletedAt IS NOT NULL
                    ),
                    (
-                       SELECT COUNT(*)
+                       SELECT COUNT(*)::integer
                        FROM QuizQuestions qq
                        WHERE qq.QuizId = q.Id
                    )
             FROM Lessons l
             LEFT JOIN Quizzes q ON q.LessonId = l.Id
-            WHERE l.CourseId = $courseId
+            WHERE l.CourseId = @courseId
             ORDER BY l.SortOrder;
             """;
-        command.Parameters.AddWithValue("$userId", userId);
-        command.Parameters.AddWithValue("$courseId", course.Value.Id);
+        command.Parameters.AddWithValue("@userId", userId);
+        command.Parameters.AddWithValue("@courseId", course.Value.Id);
 
         var lessons = new List<LessonProgress>();
         var quizzes = new List<QuizProgress>();
@@ -412,6 +412,8 @@ public sealed class LearningRepository(string connectionString)
                     reader.GetInt32(9)));
             }
         }
+
+        reader.Close();
 
         var eligible = lessons.Count > 0
             && lessons.All(lesson => lesson.Completed)
@@ -445,30 +447,30 @@ public sealed class LearningRepository(string connectionString)
             SELECT c.Code, c.Title, l.Id, l.Slug, l.Title, l.SortOrder,
                    EXISTS(
                        SELECT 1 FROM Milestones m
-                       WHERE m.UserId = $userId AND m.LessonId = l.Id
+                       WHERE m.UserId = @userId AND m.LessonId = l.Id
                    )
             FROM Courses c
             INNER JOIN Lessons l ON l.CourseId = c.Id
             WHERE EXISTS(
                       SELECT 1 FROM Milestones m
-                      WHERE m.UserId = $userId AND m.CourseId = c.Id)
+                      WHERE m.UserId = @userId AND m.CourseId = c.Id)
                OR EXISTS(
                       SELECT 1 FROM Milestones m
                       INNER JOIN Lessons ml ON ml.Id = m.LessonId
-                      WHERE m.UserId = $userId AND ml.CourseId = c.Id)
+                      WHERE m.UserId = @userId AND ml.CourseId = c.Id)
                OR EXISTS(
                       SELECT 1 FROM Milestones m
                       INNER JOIN Quizzes mq ON mq.Id = m.QuizId
                       INNER JOIN Lessons ql ON ql.Id = mq.LessonId
-                      WHERE m.UserId = $userId AND ql.CourseId = c.Id)
+                      WHERE m.UserId = @userId AND ql.CourseId = c.Id)
                OR EXISTS(
                       SELECT 1 FROM QuizAttempts a
                       INNER JOIN Quizzes aq ON aq.Id = a.QuizId
                       INNER JOIN Lessons al ON al.Id = aq.LessonId
-                      WHERE a.UserId = $userId AND al.CourseId = c.Id)
+                      WHERE a.UserId = @userId AND al.CourseId = c.Id)
             ORDER BY c.Code, l.SortOrder;
             """;
-        command.Parameters.AddWithValue("$userId", userId);
+        command.Parameters.AddWithValue("@userId", userId);
 
         var courses = new List<StartedCourseProgress>();
         var lessons = new List<LessonMilestone>();
@@ -589,23 +591,23 @@ public sealed class LearningRepository(string connectionString)
             ? """
               SELECT Id, UserId, CourseId, LessonId, QuizId, CompletedAt
               FROM Milestones
-              WHERE Id > $afterId
+              WHERE Id > @afterId
               ORDER BY Id
-              LIMIT $fetchCount;
+              LIMIT @fetchCount;
               """
             : """
               SELECT Id, UserId, CourseId, LessonId, QuizId, CompletedAt
               FROM Milestones
-              WHERE UserId = $userId
-                AND Id > $afterId
+              WHERE UserId = @userId
+                AND Id > @afterId
               ORDER BY Id
-              LIMIT $fetchCount;
+              LIMIT @fetchCount;
               """;
-        command.Parameters.AddWithValue("$afterId", afterId);
-        command.Parameters.AddWithValue("$fetchCount", limit + 1);
+        command.Parameters.AddWithValue("@afterId", afterId);
+        command.Parameters.AddWithValue("@fetchCount", limit + 1);
         if (userId is not null)
         {
-            command.Parameters.AddWithValue("$userId", userId.Value);
+            command.Parameters.AddWithValue("@userId", userId.Value);
         }
 
         var milestones = new List<Milestone>(limit + 1);
@@ -635,16 +637,16 @@ public sealed class LearningRepository(string connectionString)
             hasMore ? milestones[^1].Id : null);
     }
 
-    private SqliteConnection Open()
+    private NpgsqlConnection Open()
     {
-        var connection = new SqliteConnection(connectionString);
+        var connection = new NpgsqlConnection(connectionString);
         connection.Open();
         return connection;
     }
 
     private static AttemptRow? GetAttempt(
-        SqliteConnection connection,
-        SqliteTransaction transaction,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
         int attemptId)
     {
         using var command = connection.CreateCommand();
@@ -653,9 +655,9 @@ public sealed class LearningRepository(string connectionString)
             """
             SELECT Id, QuizId, UserId, StartedAt, CompletedAt
             FROM QuizAttempts
-            WHERE Id = $attemptId;
+            WHERE Id = @attemptId FOR UPDATE;
             """;
-        command.Parameters.AddWithValue("$attemptId", attemptId);
+        command.Parameters.AddWithValue("@attemptId", attemptId);
         using var reader = command.ExecuteReader();
         return reader.Read()
             ? new AttemptRow(
@@ -668,8 +670,8 @@ public sealed class LearningRepository(string connectionString)
     }
 
     private static IReadOnlyList<QuestionRow> GetQuestionsForGrading(
-        SqliteConnection connection,
-        SqliteTransaction transaction,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
         int quizId)
     {
         using var command = connection.CreateCommand();
@@ -678,10 +680,10 @@ public sealed class LearningRepository(string connectionString)
             """
             SELECT Id, SortOrder, Content, Type, QuestionData, CorrectAnswer
             FROM QuizQuestions
-            WHERE QuizId = $quizId
+            WHERE QuizId = @quizId
             ORDER BY SortOrder;
             """;
-        command.Parameters.AddWithValue("$quizId", quizId);
+        command.Parameters.AddWithValue("@quizId", quizId);
 
         var questions = new List<QuestionRow>();
         using var reader = command.ExecuteReader();
@@ -780,40 +782,40 @@ public sealed class LearningRepository(string connectionString)
     }
 
     private static (int Id, string Code)? GetCourseIdentity(
-        SqliteConnection connection,
+        NpgsqlConnection connection,
         string courseCode)
     {
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, Code FROM Courses WHERE Code = $code;";
-        command.Parameters.AddWithValue("$code", courseCode);
+        command.CommandText = "SELECT Id, Code FROM Courses WHERE Code = @code;";
+        command.Parameters.AddWithValue("@code", courseCode);
         using var reader = command.ExecuteReader();
         return reader.Read() ? (reader.GetInt32(0), reader.GetString(1)) : null;
     }
 
-    private static bool EntityExists(SqliteConnection connection, string table, int id)
+    private static bool EntityExists(NpgsqlConnection connection, string table, int id)
     {
         using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT EXISTS(SELECT 1 FROM {table} WHERE Id = $id);";
-        command.Parameters.AddWithValue("$id", id);
-        return Convert.ToInt64(command.ExecuteScalar()) == 1;
+        command.CommandText = $"SELECT EXISTS(SELECT 1 FROM {table} WHERE Id = @id);";
+        command.Parameters.AddWithValue("@id", id);
+        return (bool)command.ExecuteScalar()!;
     }
 
     private static bool MilestoneExists(
-        SqliteConnection connection,
+        NpgsqlConnection connection,
         int userId,
         string targetColumn,
         int targetId)
     {
         using var command = connection.CreateCommand();
         command.CommandText =
-            $"SELECT EXISTS(SELECT 1 FROM Milestones WHERE UserId = $userId AND {targetColumn} = $targetId);";
-        command.Parameters.AddWithValue("$userId", userId);
-        command.Parameters.AddWithValue("$targetId", targetId);
-        return Convert.ToInt64(command.ExecuteScalar()) == 1;
+            $"SELECT EXISTS(SELECT 1 FROM Milestones WHERE UserId = @userId AND {targetColumn} = @targetId);";
+        command.Parameters.AddWithValue("@userId", userId);
+        command.Parameters.AddWithValue("@targetId", targetId);
+        return (bool)command.ExecuteScalar()!;
     }
 
     private static bool InsertMilestone(
-        SqliteConnection connection,
+        NpgsqlConnection connection,
         int userId,
         string targetColumn,
         int targetId)
@@ -821,26 +823,26 @@ public sealed class LearningRepository(string connectionString)
         using var command = connection.CreateCommand();
         command.CommandText =
             $"""
-             INSERT OR IGNORE INTO Milestones (UserId, {targetColumn}, CompletedAt)
-             VALUES ($userId, $targetId, $completedAt);
+             INSERT INTO Milestones (UserId, {targetColumn}, CompletedAt)
+             VALUES (@userId, @targetId, @completedAt) ON CONFLICT DO NOTHING;
              """;
-        command.Parameters.AddWithValue("$userId", userId);
-        command.Parameters.AddWithValue("$targetId", targetId);
-        command.Parameters.AddWithValue("$completedAt", FormatTimestamp(DateTimeOffset.UtcNow));
+        command.Parameters.AddWithValue("@userId", userId);
+        command.Parameters.AddWithValue("@targetId", targetId);
+        command.Parameters.AddWithValue("@completedAt", FormatTimestamp(DateTimeOffset.UtcNow));
         return command.ExecuteNonQuery() > 0;
     }
 
     private static void DeleteMilestone(
-        SqliteConnection connection,
+        NpgsqlConnection connection,
         int userId,
         string targetColumn,
         int targetId)
     {
         using var command = connection.CreateCommand();
         command.CommandText =
-            $"DELETE FROM Milestones WHERE UserId = $userId AND {targetColumn} = $targetId;";
-        command.Parameters.AddWithValue("$userId", userId);
-        command.Parameters.AddWithValue("$targetId", targetId);
+            $"DELETE FROM Milestones WHERE UserId = @userId AND {targetColumn} = @targetId;";
+        command.Parameters.AddWithValue("@userId", userId);
+        command.Parameters.AddWithValue("@targetId", targetId);
         command.ExecuteNonQuery();
     }
 

@@ -575,8 +575,8 @@ public sealed class AuthorizationTests
     }
 
     /// <summary>
-    /// Ollama not running is the ordinary state of a checkout whose container has
-    /// not been started. The retrieved help text already answers the common
+    /// An unavailable model provider is the ordinary state of a checkout whose
+    /// external model API is not configured. The retrieved help text already answers the common
     /// questions, so it is served rather than the request failing.
     /// </summary>
     [Test]

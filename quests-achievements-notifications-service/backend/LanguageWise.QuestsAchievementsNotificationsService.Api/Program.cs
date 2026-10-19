@@ -29,12 +29,12 @@ builder.Services.AddHttpClient<AppDataClient>(client =>
 });
 builder.Services.AddScoped<ProfileService>();
 
-var ollamaServiceUrl = builder.Configuration["Services:Ollama"] ?? "http://localhost:11434";
-builder.Services.Configure<OllamaOptions>(builder.Configuration.GetSection("Ollama"));
+builder.Services.Configure<OpenRouterOptions>(builder.Configuration.GetSection("OpenRouter"));
 builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection("Smtp"));
-builder.Services.AddHttpClient<IEmailContentGenerator, OllamaEmailGenerator>(client =>
+builder.Services.AddHttpClient<IEmailContentGenerator, OpenRouterEmailGenerator>(client =>
 {
-    client.BaseAddress = new Uri(ollamaServiceUrl.TrimEnd('/') + "/");
+    client.BaseAddress = new Uri(
+        (builder.Configuration["OpenRouter:BaseUrl"] ?? "https://openrouter.ai/api/v1").TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(15);
 });
 builder.Services.AddHttpContextAccessor();
@@ -623,4 +623,3 @@ static async Task<IReadOnlyDictionary<string, JsonElement>?> ReadAssistantToolAr
 }
 
     public partial class Program;
-

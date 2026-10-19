@@ -1,5 +1,6 @@
 using LanguageWise.ChatDiscussionService.Db.Data;
 using LanguageWise.ChatDiscussionService.Db.Models;
+using LanguageWise.Testing;
 
 namespace LanguageWise.ChatDiscussionService.Db.Tests;
 
@@ -20,21 +21,21 @@ public sealed class ForumSyncTests
     private const int SpanishForumId = 6;
     private const int SpanishCourseId = 5;
 
-    private string databasePath = null!;
+    private PostgresTestDatabase database = null!;
     private string connectionString = null!;
     private DiscussionRepository repository = null!;
 
     [SetUp]
     public void SetUp()
     {
-        databasePath = TestDatabase.NewPath();
-        connectionString = TestDatabase.ConnectionStringFor(databasePath);
+        database = new PostgresTestDatabase();
+        connectionString = database.ConnectionString;
         TestDatabase.Initialise(connectionString);
         repository = new DiscussionRepository(connectionString);
     }
 
     [TearDown]
-    public void TearDown() => TestDatabase.Delete(databasePath);
+    public void TearDown() => database?.Dispose();
 
     [Test]
     public void Seeding_MirrorsTheCourseCatalogue()
