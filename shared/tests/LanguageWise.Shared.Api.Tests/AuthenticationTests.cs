@@ -93,7 +93,7 @@ public sealed class AuthenticationTests
             HandleCookies = false
         });
 
-        var response = await client.PostAsJsonAsync("/api/login", new { username = "justin", password = "test-password" });
+        var response = await client.PostAsJsonAsync("/api/login", new { username = "justin", password = "test-password" }); // pragma: allowlist secret
         var cookie = response.Headers.GetValues("Set-Cookie").Single();
 
         Assert.Multiple(() =>

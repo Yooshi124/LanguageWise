@@ -252,7 +252,7 @@ test('foundation accepts JSON or a file path, but never Terraform output wrapper
   assert.deepEqual(loadFoundation('infra/generated/foundation.json', () => JSON.stringify(foundation)), foundation);
   assert.throws(() => loadFoundation(JSON.stringify({ foundation: { value: foundation } })), /foundation field/);
   assert.throws(() => validateFoundation({ ...foundation, secret_arns: {} }), /metadata/);
-  assert.throws(() => validateFoundation({ ...foundation, secret_value: 'not-an-allowed-input' }), /Unexpected foundation/);
+  assert.throws(() => validateFoundation({ ...foundation, secret_value: 'not-an-allowed-input' }), /Unexpected foundation/); // pragma: allowlist secret
   assert.throws(() => validateFoundation({ ...foundation, demo_state_key: 'foundation/terraform.tfstate' }), /disposable/);
 });
 

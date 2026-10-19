@@ -1,8 +1,27 @@
 # AWS Demo Infrastructure
 
-Implementation is present; **nothing has been applied to AWS**. Budget creation
-and the cost proposals were owner-confirmed on 2026-10-20. This does not constitute
-new API verification of alert recipients, tax, or notification delivery.
+**Bootstrap is applied; foundation and demo are not yet applied.** Protected local
+bootstrap state records both S3 buckets and their protections. Budget creation and
+the cost proposals were owner-confirmed on 2026-10-20. This does not constitute
+new API verification of alert recipients, tax, notification delivery, or AWS drift.
+
+## Current Progress: 2026-10-20
+
+- [PR #70](https://github.com/Yooshi124/LanguageWise/pull/70) is open. The three
+   Terraform CI failures were traced to Windows-only provider package hashes;
+   verified Linux hashes were added without changing provider versions.
+- The separate security-hook failures were addressed with line-scoped annotations
+   for reviewed SQL/subprocess lint false positives and explicitly fake fixtures.
+   No repository-wide checks were disabled.
+- Local verification passes in clean Linux containers: all three Terraform roots
+   validate with read-only lockfiles, all three mocked demo scenarios pass, and the
+   affected Ruff/secret-scan checks and eleven initializer tests pass. The updated
+   PR's GitHub checks still need confirmation before merging.
+- Continue at **step 3** after committing/pushing the fixes and confirming CI.
+   Package the exact reviewed commit, then upload its cleanup ZIP and record the
+   real S3 version. Cleanup publication, foundation apply, application secrets,
+   GitHub output configuration, SNS delivery checks and live rehearsals remain
+   pending. Demo Up/Down is not operational yet.
 
 ## Ownership
 
@@ -24,7 +43,9 @@ and access key remain outside Terraform; no replacement key is required.
    permissions, service-linked roles, root MFA, and the recipient for cleanup
    failures. Do not change the account plan silently. Review the intentional
    CloudFront ownership-tag exception below before granting routine permissions.
-2. Using an authorized workstation session, initialize bootstrap, create a saved
+2. **Completed for the current setup.** Retain these commands for reference; do
+   not recreate the buckets or discard the protected local state. For a fresh
+   setup, using an authorized workstation session, initialize bootstrap, create a saved
    plan, inspect it and apply exactly that plan. Keep its local state/backups in
    protected storage. The two protected buckets must exist before publishing code:
 
@@ -186,10 +207,12 @@ state. Only administrative foundation setup can change this provenance.
 
 ## Verification and Live Gate
 
-Local checks: backend-disabled Terraform initialization/validation, mocked runtime
-plans, Node control/release/expiry/contract tests, Python initializer tests,
-actionlint, focused .NET auth/RAG tests, initializer image build, and all six
-frontend image/nginx checks. These do not prove live AWS permissions or operation.
+Local checks: clean Linux backend-disabled Terraform initialization/validation
+with read-only lockfiles, three mocked runtime scenarios, 109 Node
+control/release/expiry/contract tests, eleven Python initializer tests, actionlint,
+618 affected API tests, initializer image build, and all six frontend image/nginx
+checks. The repaired Ruff and secret-scan checks also pass on the affected files.
+These do not prove current GitHub CI status, live AWS permissions or operation.
 
 Before using this for a presentation, perform two complete Up/Down cycles. Verify
 seed accounts/login, Secure cookies, all remote pages, durable writes during task

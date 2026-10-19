@@ -47,7 +47,7 @@ def password_verifier(password: str) -> str:
 
 def execute(command: list[str], payload: str, environment: dict[str, str]) -> str:
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603 -- fixed internal argv; no shell, payload on stdin.
             command, input=payload, text=True, capture_output=True,
             env=environment, timeout=300, check=False,
         )
@@ -88,10 +88,10 @@ class Initializer:
     def bootstrap_database(self, database: str, role: str) -> None:
         database_id, role_id = identifier(database), identifier(role)
         master_id = identifier(self.master["username"])
-        if self.sql("postgres", f"SELECT EXISTS(SELECT FROM pg_roles WHERE rolname={literal(role)});") != "t":
+        if self.sql("postgres", f"SELECT EXISTS(SELECT FROM pg_roles WHERE rolname={literal(role)});") != "t":  # noqa: S608 -- literal() escapes the validated identifier value.
             self.sql("postgres", f"CREATE ROLE {role_id} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOINHERIT;")
         self.sql("postgres", f"GRANT {role_id} TO {master_id} WITH ADMIN TRUE, INHERIT FALSE, SET TRUE;")
-        if self.sql("postgres", f"SELECT EXISTS(SELECT FROM pg_database WHERE datname={literal(database)});") != "t":
+        if self.sql("postgres", f"SELECT EXISTS(SELECT FROM pg_database WHERE datname={literal(database)});") != "t":  # noqa: S608 -- literal() escapes the validated identifier value.
             self.sql("postgres", f"CREATE DATABASE {database_id} OWNER {role_id};")
         self.sql("postgres", f"REVOKE ALL ON DATABASE {database_id} FROM PUBLIC;")
         self.sql(database, """
@@ -131,7 +131,7 @@ class Initializer:
     def initialize_owner(self, database: str, role: str, secret_key: str) -> None:
         self.bootstrap_database(database, role)
         secret_arn = self.secret_arns[secret_key]
-        status = self.sql(database, f"SELECT CASE WHEN NOT published THEN 'pending' WHEN secret_arn={literal(secret_arn)} THEN 'complete' ELSE 'mismatch' END FROM lw_bootstrap.state;")
+        status = self.sql(database, f"SELECT CASE WHEN NOT published THEN 'pending' WHEN secret_arn={literal(secret_arn)} THEN 'complete' ELSE 'mismatch' END FROM lw_bootstrap.state;")  # noqa: S608 -- validated ARN is escaped by literal().
         if status == "complete":
             return
         if status != "pending":
@@ -167,7 +167,7 @@ class Initializer:
             "aws", "secretsmanager", "put-secret-value", "--secret-id", secret_arn,
             "--secret-string", "file:///dev/stdin", "--no-cli-pager",
         ], payload, self.environment)
-        self.sql(database, f"UPDATE lw_bootstrap.state SET published=true, secret_arn={literal(secret_arn)};")
+        self.sql(database, f"UPDATE lw_bootstrap.state SET published=true, secret_arn={literal(secret_arn)};")  # noqa: S608 -- validated ARN is escaped by literal().
 
     def run(self) -> None:
         for owner in OWNERS:

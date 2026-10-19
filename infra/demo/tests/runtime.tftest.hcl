@@ -3,9 +3,9 @@ mock_provider "aws" {
     defaults = {
       address = "demo.example.ap-southeast-2.rds.amazonaws.com"
       master_user_secret = [{
-        secret_arn    = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:rds-managed-fixture-abcdef"
+        secret_arn    = "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:rds-managed-fixture-abcdef" # pragma: allowlist secret
         kms_key_id    = "00000000-0000-0000-0000-000000000000"
-        secret_status = "active"
+        secret_status = "active" # pragma: allowlist secret
       }]
     }
   }
@@ -54,7 +54,7 @@ variables {
     ] : name => "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:${name}-abcdef" }
   }
   release = {
-    sha = "0123456789abcdef0123456789abcdef01234567"
+    sha = "0123456789abcdef0123456789abcdef01234567" # pragma: allowlist secret
     images = { for name in concat(
       ["database-initializer", "shared-db-api", "shared-backend", "shared-frontend", "garry-ai-service-backend"],
       flatten([for feature in ["mini-games", "quizzes-courses", "chat-discussion", "quests-achievements-notifications", "leaderboard-analytics"] : concat(
@@ -125,7 +125,7 @@ run "reject_missing_image" {
   command = plan
   variables {
     release = {
-      sha    = "0123456789abcdef0123456789abcdef01234567"
+      sha    = "0123456789abcdef0123456789abcdef01234567" # pragma: allowlist secret
       images = {}
     }
   }

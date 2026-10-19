@@ -23,7 +23,7 @@ class InitializerTests(unittest.TestCase):
             for owner in initializer.OWNERS
         }
         self.instance = initializer.Initializer(
-            "demo.example.rds.amazonaws.com", {"username": "lw_admin", "password": "fixture-only"},
+            "demo.example.rds.amazonaws.com", {"username": "lw_admin", "password": "fixture-only"},  # pragma: allowlist secret
             self.arns, Path("unused"),
         )
 
