@@ -134,10 +134,12 @@ The maximum session duration is one hour. This is not a deployment role and
 does not permit pulling images, reading secrets, passing roles, or changing AWS
 resources. It is not yet managed by Terraform.
 
-The user was created without a console password or access key. Policy simulation
-allows assumption of the validation role, denies assumption of the broad
-workstation role, and denies direct ECS/ECR reads. Secure key creation, GitHub
-Secrets configuration, and a GitHub-hosted validation run are still pending.
+The user has no console password. Policy simulation allows assumption of the
+validation role, denies assumption of the broad workstation role, and denies
+direct ECS/ECR reads. One access key is now stored only in the protected
+`aws-demo` GitHub environment secrets, not this VM. The GitHub-hosted validation
+[run 39247442861](https://github.com/Yooshi124/LanguageWise/actions/runs/39247442861)
+passed. See the [current setup guide](../../docs/aws-github-setup.md).
 
 Role assumption and both metadata reads passed from Windows and inside the VM.
 The VM check received only this role's temporary credentials through trusted

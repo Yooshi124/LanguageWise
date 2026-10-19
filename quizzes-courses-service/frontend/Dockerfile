@@ -6,7 +6,9 @@ COPY . .
 RUN npm run build
 
 FROM nginx:1.29-alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+ENV DNS_RESOLVER=127.0.0.11 DNS_SUFFIX="" FORWARDED_SCHEME='$scheme' \
+    NGINX_ENVSUBST_FILTER='^(DNS_RESOLVER|DNS_SUFFIX|FORWARDED_SCHEME)$'
+COPY nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80

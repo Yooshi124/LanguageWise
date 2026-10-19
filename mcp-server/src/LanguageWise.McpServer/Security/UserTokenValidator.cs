@@ -25,9 +25,9 @@ public sealed class UserTokenValidator
 
 	public static UserTokenValidator FromConfiguration(IConfiguration configuration, string contentRoot)
 	{
-		var path = Path.GetFullPath(configuration["Auth:VerificationKeyPath"] ?? "../../../signing_public_key.pem", contentRoot);
 		var rsa = RSA.Create();
-		rsa.ImportFromPem(File.ReadAllText(path));
+		rsa.ImportFromPem(configuration["Auth:VerificationKeyPem"] ?? File.ReadAllText(
+			Path.GetFullPath(configuration["Auth:VerificationKeyPath"] ?? "../../../signing_public_key.pem", contentRoot)));
 		return new UserTokenValidator(rsa);
 	}
 
