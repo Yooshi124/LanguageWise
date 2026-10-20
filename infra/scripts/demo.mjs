@@ -87,9 +87,16 @@ export class DemoController {
 
   aws(service, operation, input = {}, timeout = 60_000, extra = []) {
     requireThat(this.dependencies.now() < this.workerDeadline, 'Worker deadline reached');
+    const fileTransfer = service === 's3api' && ['get-object', 'put-object'].includes(operation);
+    const s3Flags = { Bucket: '--bucket', Key: '--key', VersionId: '--version-id',
+      Body: '--body', ContentType: '--content-type', IfMatch: '--if-match', IfNoneMatch: '--if-none-match' };
+    const parameters = fileTransfer ? Object.entries(input).flatMap(([name, value]) => {
+      requireThat(Object.hasOwn(s3Flags, name) && typeof value === 'string', 'Unsupported S3 file-transfer argument');
+      return [s3Flags[name], value];
+    }) : ['--cli-input-json', JSON.stringify(input)];
     try {
       const output = this.dependencies.run('aws', [service, operation, '--region', this.config.region,
-        '--output', 'json', '--no-cli-pager', '--cli-input-json', JSON.stringify(input), ...extra],
+        '--output', 'json', '--no-cli-pager', ...parameters, ...extra],
       { timeout: Math.max(1, Math.min(timeout, this.workerDeadline - this.dependencies.now())) });
       return output?.trim() ? JSON.parse(output) : {};
     } catch (error) {
