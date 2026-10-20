@@ -122,7 +122,7 @@ export class DemoController {
       const build = this.aws('codebuild', 'batch-get-builds', { ids: [buildId] }).builds?.[0];
       requireThat(build?.id === buildId && build.projectName === this.config.cleanup_project_name
         && build.arn === `arn:aws:codebuild:${this.config.region}:${this.config.account_id}:build/${buildId}`
-        && build.serviceRole === expectedRole && build.buildInProgress === true && build.buildStatus === 'IN_PROGRESS'
+        && build.serviceRole === expectedRole && build.buildComplete === false && build.buildStatus === 'IN_PROGRESS'
         && identity.Arn === `${session}AWSCodeBuild-${buildId.split(':').at(-1)}`
         && build.timeoutInMinutes > 0 && build.timeoutInMinutes <= 120
         && Number.isFinite(Date.parse(build.startTime)) && Date.parse(build.startTime) <= this.started,
@@ -156,7 +156,7 @@ export class DemoController {
       requireThat(build?.id === buildId && build.serviceRole === this.config.cleanup_role_arn
         && build.arn === `arn:aws:codebuild:${this.config.region}:${this.config.account_id}:build/${buildId}`
         && existing.roleArn?.S === this.config.cleanup_role_arn && build.projectName === this.config.cleanup_project_name
-        && build.buildInProgress === false && ['SUCCEEDED', 'FAILED', 'FAULT', 'STOPPED', 'TIMED_OUT'].includes(build.buildStatus)
+        && build.buildComplete === true && ['SUCCEEDED', 'FAILED', 'FAULT', 'STOPPED', 'TIMED_OUT'].includes(build.buildStatus)
         && Number.isFinite(Date.parse(build.startTime)) && Date.parse(build.startTime) <= startedAt
         && Number.isFinite(Date.parse(build.endTime)) && Date.parse(build.endTime) <= this.dependencies.now()
         && build.timeoutInMinutes > 0 && build.timeoutInMinutes <= 120,
@@ -508,8 +508,20 @@ export class DemoController {
     const tags = this.aws('resourcegroupstaggingapi', 'get-resources', { TagFilters: [
       { Key: 'Project', Values: ['languagewise'] }, { Key: 'Lifecycle', Values: ['disposable-demo'] }], ResourcesPerPage: 100 });
     const retainedDefinition = new RegExp(`^arn:aws:ecs:${config.region}:${config.account_id}:task-definition/languagewise-demo-[a-z0-9-]+:[1-9][0-9]*$`);
-    requireThat(!tags.PaginationToken && (tags.ResourceTagMappingList ?? [])
-      .every(resource => retainedDefinition.test(resource.ResourceARN)), 'Tagged runtime resources remain');
+    requireThat(!tags.PaginationToken, 'Tagged runtime inventory is incomplete');
+    let taggedResiduals = (tags.ResourceTagMappingList ?? []).filter(resource => !retainedDefinition.test(resource.ResourceARN));
+    for (const [kind, operation, field, filter, prefix] of [
+      ['subnet', 'describe-subnets', 'Subnets', 'subnet-id', 'subnet'],
+      ['security-group-rule', 'describe-security-group-rules', 'SecurityGroupRules', 'security-group-rule-id', 'sgr'],
+    ]) {
+      const pattern = new RegExp(`^arn:aws:ec2:${config.region}:${config.account_id}:${kind}/(${prefix}-[0-9a-f]+)$`);
+      const ids = taggedResiduals.map(resource => pattern.exec(resource.ResourceARN)?.[1]).filter(Boolean);
+      if (!ids.length) continue;
+      const live = this.aws('ec2', operation, { Filters: [{ Name: filter, Values: ids }] });
+      requireThat(!live.NextToken && Array.isArray(live[field]) && live[field].length === 0, 'Tagged runtime resources remain');
+      taggedResiduals = taggedResiduals.filter(resource => !pattern.test(resource.ResourceARN));
+    }
+    requireThat(taggedResiduals.length === 0, 'Tagged runtime resources remain');
     const vpcs = this.aws('ec2', 'describe-vpcs', { Filters: [{ Name: 'tag:Project', Values: ['languagewise'] }, { Name: 'tag:Lifecycle', Values: ['disposable-demo'] }] }).Vpcs ?? [];
     requireThat(vpcs.length === 0, 'Demo VPC remains; dependent ALB/NAT/ENIs/endpoints may survive');
     const services = this.aws('ecs', 'list-services', { cluster: config.cluster_arn });
