@@ -59,6 +59,22 @@ test('VPC security-group enumeration is restricted to owned demo VPCs in the con
   assert.doesNotMatch(grant, /Resource\s*= "\*"|ec2:\*|ec2:(Create|Modify|Delete)/);
 });
 
+test('Cloud Map private DNS dependencies require global-endpoint service delegation rather than direct Route 53 access', () => {
+  const delegation = permissions.split('discovery_dns_delegation = {')[1].split('demo_tagged =')[0];
+  assert.match(delegation, /"aws:RequestedRegion" = "us-east-1"/);
+  assert.match(delegation, /"ForAnyValue:StringEquals"\s*= \{ "aws:CalledVia" = \["servicediscovery\.amazonaws\.com"\] \}/);
+  assert.doesNotMatch(delegation, /IfExists|\bNull\b/);
+  for (const sid of ['DiscoveryDnsZoneCreate', 'DiscoveryDnsZoneLifecycle', 'DiscoveryDnsZoneLookup']) {
+    assert.match(statement(sid), /Condition = local\.discovery_dns_delegation/);
+  }
+  assert.match(statement('DiscoveryDnsZoneCreate'), /Action\s*= \["route53:CreateHostedZone"\]/);
+  assert.match(statement('DiscoveryDnsZoneLookup'), /Action\s*= \["route53:ListHostedZonesByName"\]/);
+  const lifecycle = statement('DiscoveryDnsZoneLifecycle');
+  assert.match(lifecycle, /Resource\s*= "arn:aws:route53:::hostedzone\/\*"/);
+  for (const action of ['GetHostedZone', 'DeleteHostedZone', 'ChangeResourceRecordSets']) assert.ok(lifecycle.includes(`route53:${action}`));
+  assert.doesNotMatch(lifecycle, /route53:\*|HealthCheck/);
+});
+
 test('Cloud Map tagging requires demo request tags with supported wildcard scope and excludes cleanup', () => {
   const grant = statement('DiscoveryDemoTagging');
   assert.match(grant, /Action\s*= \["servicediscovery:TagResource"\]/);

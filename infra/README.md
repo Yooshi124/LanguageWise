@@ -1,10 +1,13 @@
 # AWS Demo Infrastructure
 
 **The latest Demo Up failed before readiness; application readiness is unverified.**
-Run `39369047280` was denied `ec2:GetSecurityGroupsForVpc` on its demo VPC.
-That read is now allowed only for owned demo VPCs in Sydney. Cleanup also needed
-complete tag-inventory pagination; its committed repair is published and pinned.
-Read-only verification found no runtime residuals. Budget creation and the cost proposals
+Run `39375711048` on `cc71e05` failed because Cloud Map's private-DNS operation
+was denied `route53:CreateHostedZone`. Its automatic Down completed successfully.
+The DNS dependency is now allowed only through Cloud Map delegation at the global
+Route 53 endpoint. A scoped-role DNS-only create/delete test passed, direct Route 53
+reads remained denied, and the probe zone and VPC were physically removed.
+Full cleanup readiness, residual checks, persisted Down and absent lock were verified.
+Budget creation and the cost proposals
 were owner-confirmed on 2026-10-20. No secret values were retrieved or fresh billing
 audit performed.
 
@@ -19,14 +22,18 @@ audit performed.
 - **Step 7 verified:** native cleanup build
    `5c176bce-ac93-4b5b-a264-be9fcba5eb86` succeeded, verified Down and released its
    lock. Reinvoking the dispatcher while Down started no build. The three required
-   service-linked roles are now foundation-owned. Runtime policy `v5` includes the
+   service-linked roles are now foundation-owned. Runtime policy `v6` includes the
    owner-approved Cloud Map tagging exception described below; live scoped-role
    tests allowed intended demo tags and denied foreign project request tags.
-   Runtime `v5` and cleanup `v3` also include the restricted VPC security-group
+   Runtime `v6` and cleanup `v3` also include the restricted VPC security-group
    read. Cleanup commit `a45ada2` follows bounded tag pagination while retaining
    repeated-token, malformed-page and unknown-resource rejection. Its native
    worker verified Down; the dispatcher then started no new build and all four
    alarms were OK with actions enabled. Never set Down manually.
+   DNS lifecycle policies `languagewise-{demo,cleanup}-resources-6` and their
+   three attachments are imported into foundation state with the expected tags.
+   A targeted preview shows no IAM changes; the unrelated ECS difference was
+   not applied. Cleanup receives no hosted-zone creation grant.
 - The earlier Terraform and security-hook fixes for
    [PR #70](https://github.com/Yooshi124/LanguageWise/pull/70) passed local checks.
    The cleanup permission fix is also represented in Terraform with regression
@@ -42,6 +49,44 @@ audit performed.
 The cleanup IAM repair was applied separately to avoid an unrelated ECS Exec
 configuration reset in a foundation plan. Review that remaining plan difference
 before a future foundation apply; do not apply an old saved plan indiscriminately.
+
+## Failure Review And Prediction
+
+| Repair | Purpose | Earlier Check |
+| --- | --- | --- |
+| Linux/Windows provider hashes | Permit readonly Terraform initialization on both platforms | Clean Linux and Windows CI initialization |
+| Foundation JSON trimming | Accept BOM-prefixed Windows configuration | BOM input fixture |
+| Explicit S3 get/put flags | Supply required streaming CLI arguments and file paths | Actual CLI transfer contract test |
+| Current-object and pinned-version S3 reads | Allow CodeBuild download while preserving immutable source provenance | Source-download smoke test |
+| AWS-owned managed prefix-list read | Read CloudFront's origin-facing network list | IAM resource-owner and region checks |
+| Cloud Map request-tag grant | Use supported wildcard scope and document accepted retagging capability | Official authorization reference and positive/negative live tests |
+| Retained service-linked roles | Provide ELB, RDS and CloudFront VPC-origin prerequisites without routine IAM writes | Role inventory before provisioning |
+| CodeBuild `buildComplete` metadata | Validate actual running/completed workers | Real API response fixture rather than invented fields |
+| CodeBuild project-scoped metadata read | Authorize `BatchGetBuilds` against its actual IAM resource type | Service authorization reference and native identity canary |
+| Exact-ID stale-tag confirmation | Distinguish deleted subnet/rule records from live resources without ignoring unknown types | Eventual-consistency integration fixtures; timing still requires live evidence |
+| Complete bounded tag pagination | Check every page instead of failing after inventory grows beyond 100 items | Multi-page, repeated-token and malformed-page fixtures |
+| Owned-VPC security-group read | Support the pinned provider's `GetSecurityGroupsForVpc` call | Scoped network canary using the pinned provider |
+| Delegated Route 53 lifecycle | Let Cloud Map create, inspect and delete its private DNS zone without direct DNS access | Private-DNS lifecycle canary, not an HTTP namespace test |
+
+Most configuration, permission and response-shape fixes were predictable. In
+particular, the Route 53 dependency should have been checked earlier: an HTTP
+namespace does not exercise private DNS, and Sydney-only CloudTrail lookup misses
+global Route 53 events recorded in `us-east-1`. Passing regex/unit contracts or a
+single-action IAM simulation is not proof that dependent AWS calls will succeed.
+
+Before another full cycle, review the pinned provider's API/dependency surface,
+validate actual supported IAM resource/condition keys and test creation, reads and
+deletion with the exact principals. Use representative fixtures for pagination and
+worker metadata. Keep tests tiered: offline checks, read-only account readiness,
+small scoped lifecycle canaries, then one explicitly approved end-to-end cycle.
+Inspect both Sydney and global-service event regions on failures.
+
+This does not predict every operational failure. Application initialization,
+secret consumption and all-service HTTPS readiness remain unverified by the DNS
+canary. Live quotas, throttling, provisioning delays and eventual-consistency timing
+cannot be guaranteed by static checks. Treat these as untested boundaries, not
+proven additional bugs; do not preemptively grant administrator access or unrelated
+actions. No new Demo Up was started for this repair.
 
 ## Ownership
 
@@ -220,6 +265,13 @@ state. Only administrative foundation setup can change this provenance.
 
 ## Security Boundaries Requiring Review
 
+- Route 53 dependencies require `aws:CalledVia` to include
+   `servicediscovery.amazonaws.com` and the global `us-east-1` endpoint. Creation
+   and name lookup require wildcard resource scope; zone lifecycle actions use
+   hosted-zone ARNs. Direct Route 53 access remains denied. The real private-DNS
+   lifecycle test verified creation and deletion through the routine role, but did
+   not launch application services. Independent cleanup has lifecycle access only,
+   not hosted-zone creation.
 - Cloud Map `TagResource` requires wildcard resource scope and does not support
    existing-resource ownership conditions. Its grant requires Sydney, the fixed
    Project/Layer request tags and only Project/Layer/Lifecycle tag keys, but can

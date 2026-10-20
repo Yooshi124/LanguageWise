@@ -1,5 +1,9 @@
 locals {
   regional = { StringEquals = { "aws:RequestedRegion" = local.region } }
+  discovery_dns_delegation = {
+    StringEquals               = { "aws:RequestedRegion" = "us-east-1" }
+    "ForAnyValue:StringEquals" = { "aws:CalledVia" = ["servicediscovery.amazonaws.com"] }
+  }
   demo_tagged = { StringEquals = {
     "aws:RequestedRegion"     = local.region
     "aws:ResourceTag/Project" = "languagewise"
@@ -265,6 +269,21 @@ locals {
       Sid      = "DemoVpcSecurityGroupRead", Effect = "Allow", Condition = local.demo_tagged
       Action   = ["ec2:GetSecurityGroupsForVpc"]
       Resource = "arn:aws:ec2:${local.region}:${local.account_id}:vpc/*"
+    },
+    {
+      Sid      = "DiscoveryDnsZoneCreate", Effect = "Allow", Condition = local.discovery_dns_delegation
+      Action   = ["route53:CreateHostedZone"]
+      Resource = "*"
+    },
+    {
+      Sid      = "DiscoveryDnsZoneLifecycle", Effect = "Allow", Condition = local.discovery_dns_delegation
+      Action   = ["route53:GetHostedZone", "route53:DeleteHostedZone", "route53:ChangeResourceRecordSets"]
+      Resource = "arn:aws:route53:::hostedzone/*"
+    },
+    {
+      Sid      = "DiscoveryDnsZoneLookup", Effect = "Allow", Condition = local.discovery_dns_delegation
+      Action   = ["route53:ListHostedZonesByName"]
+      Resource = "*"
     }
   ]
   image_read_statements = [
