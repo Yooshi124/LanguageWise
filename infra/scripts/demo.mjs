@@ -122,7 +122,7 @@ export class DemoController {
       const build = this.aws('codebuild', 'batch-get-builds', { ids: [buildId] }).builds?.[0];
       requireThat(build?.id === buildId && build.projectName === this.config.cleanup_project_name
         && build.arn === `arn:aws:codebuild:${this.config.region}:${this.config.account_id}:build/${buildId}`
-        && build.serviceRole === expectedRole && build.buildInProgress === true && build.buildStatus === 'IN_PROGRESS'
+        && build.serviceRole === expectedRole && build.buildComplete === false && build.buildStatus === 'IN_PROGRESS'
         && identity.Arn === `${session}AWSCodeBuild-${buildId.split(':').at(-1)}`
         && build.timeoutInMinutes > 0 && build.timeoutInMinutes <= 120
         && Number.isFinite(Date.parse(build.startTime)) && Date.parse(build.startTime) <= this.started,
@@ -156,7 +156,7 @@ export class DemoController {
       requireThat(build?.id === buildId && build.serviceRole === this.config.cleanup_role_arn
         && build.arn === `arn:aws:codebuild:${this.config.region}:${this.config.account_id}:build/${buildId}`
         && existing.roleArn?.S === this.config.cleanup_role_arn && build.projectName === this.config.cleanup_project_name
-        && build.buildInProgress === false && ['SUCCEEDED', 'FAILED', 'FAULT', 'STOPPED', 'TIMED_OUT'].includes(build.buildStatus)
+        && build.buildComplete === true && ['SUCCEEDED', 'FAILED', 'FAULT', 'STOPPED', 'TIMED_OUT'].includes(build.buildStatus)
         && Number.isFinite(Date.parse(build.startTime)) && Date.parse(build.startTime) <= startedAt
         && Number.isFinite(Date.parse(build.endTime)) && Date.parse(build.endTime) <= this.dependencies.now()
         && build.timeoutInMinutes > 0 && build.timeoutInMinutes <= 120,

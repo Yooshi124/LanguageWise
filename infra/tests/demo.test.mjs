@@ -172,8 +172,8 @@ function harness(options = {}) {
         id, arn: `arn:aws:codebuild:${region}:${account}:build/${id}`, projectName: foundation.cleanup_project_name,
         serviceRole: foundation.cleanup_role_arn, timeoutInMinutes: 120,
         startTime: new Date(id.endsWith(':old') || options.completedBuildIds?.includes(id) ? now - LOCK_WINDOW - 1000 : now - 1000).toISOString(),
-        ...(id.endsWith(':old') || options.completedBuildIds?.includes(id) ? { buildInProgress: Boolean(options.oldBuildRunning), buildStatus: options.oldBuildRunning ? 'IN_PROGRESS' : 'TIMED_OUT',
-          endTime: new Date(now - 30 * 60_000).toISOString() } : { buildInProgress: true, buildStatus: 'IN_PROGRESS' }),
+        ...(id.endsWith(':old') || options.completedBuildIds?.includes(id) ? { buildComplete: !options.oldBuildRunning, buildStatus: options.oldBuildRunning ? 'IN_PROGRESS' : 'TIMED_OUT',
+          endTime: new Date(now - 30 * 60_000).toISOString() } : { buildComplete: false, buildStatus: 'IN_PROGRESS' }),
       }));
       else if (service === 'lambda') response = {
         FunctionArn: foundation.cleanup_dispatcher_arn, Role: foundation.cleanup_dispatcher_role_arn,
@@ -538,6 +538,23 @@ test('S3 file transfers use explicit source and file arguments instead of JSON-o
     assert.equal(calls[1][calls[1].indexOf('--content-type') + 1], 'application/json');
     assert.equal(calls[1][calls[1].indexOf('--if-none-match') + 1], '*');
   } finally { rmSync(fixture.controller.directory, { recursive: true, force: true }); }
+});
+
+test('CodeBuild identity rejects missing or completed native metadata even with a legacy running flag', () => {
+  for (const complete of [undefined, true]) {
+    const fixture = harness({ codebuild: true });
+    const run = fixture.dependencies.run;
+    fixture.dependencies.run = (binary, args, settings) => {
+      const output = run(binary, args, settings);
+      if (binary !== 'aws' || args[0] !== 'codebuild' || args[1] !== 'batch-get-builds') return output;
+      const result = JSON.parse(output);
+      result.builds[0].buildComplete = complete;
+      result.builds[0].buildInProgress = true;
+      return JSON.stringify(result);
+    };
+    try { assert.throws(() => fixture.controller.workerIdentity(), /identity or termination bound/); }
+    finally { fixture.dispose(); }
+  }
 });
 
 test('independent cleanup configured for another state is rejected before provisioning', async () => {
