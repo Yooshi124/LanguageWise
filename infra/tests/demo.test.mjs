@@ -256,16 +256,16 @@ test('missing release never discards an existing disposable state', async () => 
 });
 
 test('native Terraform failures retain allowlisted diagnostics but never raw output or secrets', () => {
-  const secret = 'private-diagnostic-test-sentinel';
-  const event = { type: 'diagnostic', diagnostic: { severity: 'error', address: `aws_db_instance.${secret}`,
-    summary: `creating database ${secret}`, detail: `operation error RDS: CreateDBInstance, InvalidParameterCombination: ${secret}` } };
+  const sentinel = 'private-diagnostic-test-sentinel';
+  const event = { type: 'diagnostic', diagnostic: { severity: 'error', address: `aws_db_instance.${sentinel}`,
+    summary: `creating database ${sentinel}`, detail: `operation error RDS: CreateDBInstance, InvalidParameterCombination: ${sentinel}` } };
   const dependencies = nativeDependencies({}, undefined, () => {
-    throw Object.assign(new Error(secret), { stdout: `${JSON.stringify(event)}\n`, stderr: secret });
+    throw Object.assign(new Error(sentinel), { stdout: `${JSON.stringify(event)}\n`, stderr: sentinel });
   });
   assert.throws(() => dependencies.run('terraform', ['apply', '-json']), error => {
     assert.equal(error.diagnostic, 'resource_type=aws_db_instance; code=InvalidParameterCombination; category=provider-or-unknown');
-    assert.ok(!JSON.stringify(error).includes(secret));
-    assert.ok(!error.message.includes(secret));
+    assert.ok(!JSON.stringify(error).includes(sentinel));
+    assert.ok(!error.message.includes(sentinel));
     assert.equal(error.stdout, undefined);
     assert.equal(error.stderr, undefined);
     assert.equal(error.uncertainWriter, false);
