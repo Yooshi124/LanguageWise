@@ -75,7 +75,7 @@ locals {
     },
     {
       Sid       = "CleanupBuildIdentity", Effect = "Allow", Action = ["codebuild:BatchGetBuilds"]
-      Resource  = "arn:aws:codebuild:${local.region}:${local.account_id}:build/${local.foundation_contract.cleanup_project_name}:*"
+      Resource  = "arn:aws:codebuild:${local.region}:${local.account_id}:project/${local.foundation_contract.cleanup_project_name}"
       Condition = local.regional
     },
     {
@@ -247,6 +247,20 @@ locals {
       Action    = ["cloudfront:UpdateDistribution", "cloudfront:DeleteDistribution", "cloudfront:UpdateVpcOrigin", "cloudfront:DeleteVpcOrigin", "cloudfront:TagResource", "cloudfront:UntagResource"]
       Resource  = ["arn:aws:cloudfront::${local.account_id}:distribution/*", "arn:aws:cloudfront::${local.account_id}:vpcorigin/*"]
       Condition = { StringEquals = { "aws:ResourceTag/Project" = "languagewise", "aws:ResourceTag/Layer" = "demo" } }
+    },
+    {
+      Sid      = "AwsManagedPrefixListEntries", Effect = "Allow", Condition = local.regional
+      Action   = ["ec2:GetManagedPrefixListEntries"]
+      Resource = "arn:aws:ec2:${local.region}:aws:prefix-list/*"
+    },
+    {
+      Sid      = "DiscoveryInitialOwnershipTags", Effect = "Allow"
+      Action   = ["servicediscovery:TagResource"]
+      Resource = "arn:aws:servicediscovery:${local.region}:${local.account_id}:*/*"
+      Condition = merge(local.demo_creation, {
+        Null                        = { "aws:ResourceTag/Project" = "true" }
+        "ForAllValues:StringEquals" = { "aws:TagKeys" = ["Project", "Layer", "Lifecycle"] }
+      })
     }
   ]
   image_read_statements = [
@@ -273,7 +287,7 @@ locals {
     for name, statements in local.runtime_policy_parts : name => [
       for statement in statements : merge(statement, {
         Action = [for action in statement.Action : action if !can(regex(":(Create|Register|RunTask)", action)) && !(statement.Sid == "RdsManagedSecretMetadata" && !contains(["secretsmanager:DescribeSecret", "secretsmanager:GetResourcePolicy"], action))]
-      }) if statement.Sid != "CloudFrontInitialOwnershipTags" && length([for action in statement.Action : action if !can(regex(":(Create|Register|RunTask)", action)) && !(statement.Sid == "RdsManagedSecretMetadata" && !contains(["secretsmanager:DescribeSecret", "secretsmanager:GetResourcePolicy"], action))]) > 0
+      }) if !contains(["CloudFrontInitialOwnershipTags", "DiscoveryInitialOwnershipTags"], statement.Sid) && length([for action in statement.Action : action if !can(regex(":(Create|Register|RunTask)", action)) && !(statement.Sid == "RdsManagedSecretMetadata" && !contains(["secretsmanager:DescribeSecret", "secretsmanager:GetResourcePolicy"], action))]) > 0
     ]
   }
 }

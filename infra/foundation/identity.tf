@@ -18,6 +18,19 @@ locals {
   })
 }
 
+resource "aws_iam_service_linked_role" "runtime" {
+  for_each = toset([
+    "elasticloadbalancing.amazonaws.com",
+    "rds.amazonaws.com",
+    "vpcorigin.cloudfront.amazonaws.com",
+  ])
+  aws_service_name = each.key
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 resource "aws_iam_role" "github" {
   for_each             = toset(["release", "deploy", "control"])
   name                 = "languagewise-${each.key}"

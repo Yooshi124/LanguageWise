@@ -17,7 +17,7 @@ const demoNetwork = read('../demo/network.tf');
 const demoDatabase = read('../demo/database.tf');
 
 const statement = sid => permissions.split(`Sid`).slice(1)
-  .find(block => new RegExp(`^\\s*= "${sid}"`).test(block)).split(/\n    \},/)[0];
+  .find(block => new RegExp(`^\\s*= "${sid}"`).test(block)).split(/\r?\n    \},?/)[0];
 
 test('EC2 creation authorizes new tagged resources separately from tagged parents', () => {
   const creation = statement('CreateTaggedNetwork');
@@ -40,6 +40,44 @@ test('EC2 creation authorizes new tagged resources separately from tagged parent
     assert.ok(statement('TagNetworkAtCreation').includes(`"${action}"`));
     assert.ok(!statement('MutateTaggedNetwork').includes(`ec2:${action}`));
   }
+});
+
+test('CloudFront managed prefix-list entries have a regional AWS-owned read grant', () => {
+  assert.match(demoNetwork, /data "aws_ec2_managed_prefix_list" "cloudfront"/);
+  const grant = statement('AwsManagedPrefixListEntries');
+  assert.match(grant, /Effect = "Allow", Condition = local\.regional/);
+  assert.match(grant, /Action\s*= \["ec2:GetManagedPrefixListEntries"\]/);
+  assert.match(grant, /Resource\s*= "arn:aws:ec2:\$\{local\.region\}:aws:prefix-list\/\*"/);
+  assert.doesNotMatch(grant, /Resource\s*= "\*"|ec2:\*|ModifyManagedPrefixList|CreateManagedPrefixList/);
+});
+
+test('Cloud Map creation can tag only initial demo ownership without granting cleanup that ability', () => {
+  const grant = statement('DiscoveryInitialOwnershipTags');
+  assert.match(grant, /Action\s*= \["servicediscovery:TagResource"\]/);
+  assert.match(grant, /Resource\s*= "arn:aws:servicediscovery:\$\{local\.region\}:\$\{local\.account_id\}:\*\/\*"/);
+  assert.match(grant, /merge\(local\.demo_creation/);
+  assert.match(grant, /Null\s*= \{ "aws:ResourceTag\/Project" = "true" \}/);
+  assert.match(grant, /"aws:TagKeys" = \["Project", "Layer", "Lifecycle"\]/);
+  assert.match(permissions, /!contains\(\["CloudFrontInitialOwnershipTags", "DiscoveryInitialOwnershipTags"\], statement\.Sid\)/);
+  assert.match(statement('MutateTaggedDiscovery'), /Condition = local\.demo_tagged/);
+});
+
+test('foundation retains required service-linked roles without delegating IAM creation to routine workers', () => {
+  const roles = identity.split('resource "aws_iam_service_linked_role" "runtime"')[1].split('resource "aws_iam_role"')[0];
+  for (const service of ['elasticloadbalancing.amazonaws.com', 'rds.amazonaws.com', 'vpcorigin.cloudfront.amazonaws.com']) {
+    assert.ok(roles.includes(`"${service}"`));
+  }
+  assert.match(roles, /aws_service_name = each\.key/);
+  assert.match(roles, /prevent_destroy = true/);
+  assert.doesNotMatch(permissions + cleanup, /iam:CreateServiceLinkedRole/);
+});
+
+test('CodeBuild worker metadata reads authorize the exact project rather than nonexistent build-scoped access', () => {
+  const grant = statement('CleanupBuildIdentity');
+  assert.match(grant, /Action = \["codebuild:BatchGetBuilds"\]/);
+  assert.match(grant, /Resource\s*= "arn:aws:codebuild:\$\{local\.region\}:\$\{local\.account_id\}:project\/\$\{local\.foundation_contract\.cleanup_project_name\}"/);
+  assert.match(grant, /Condition = local\.regional/);
+  assert.doesNotMatch(grant, /:build\/|Resource\s*= "\*"/);
 });
 
 test('task definitions are prefix-scoped at registration and retained without deregistration rights', () => {
@@ -292,7 +330,7 @@ test('CloudFront initial tagging cannot take over differently owned resources or
   assert.match(grant, /"aws:ResourceTag\/Project" = "true"/);
   assert.match(grant, /"aws:ResourceTag\/Layer" = "true"/);
   assert.match(grant, /"aws:TagKeys" = \["Project", "Layer", "Lifecycle"\]/);
-  assert.match(permissions, /statement.Sid != "CloudFrontInitialOwnershipTags"/);
+  assert.match(permissions, /!contains\(\["CloudFrontInitialOwnershipTags", "DiscoveryInitialOwnershipTags"\], statement\.Sid\)/);
   assert.match(permissions, /Action = \["s3:GetBucketLocation", "s3:ListBucket"\]/);
 });
 
