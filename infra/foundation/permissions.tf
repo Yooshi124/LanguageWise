@@ -197,7 +197,7 @@ locals {
     },
     {
       Sid      = "EcsServices", Effect = "Allow", Condition = local.regional
-      Action   = ["ecs:CreateService", "ecs:UpdateService", "ecs:DeleteService", "ecs:DescribeServices", "ecs:TagResource", "ecs:UntagResource", "ecs:ListTagsForResource"]
+      Action   = ["ecs:CreateService", "ecs:UpdateService", "ecs:DeleteService", "ecs:DescribeServices", "ecs:ListServiceDeployments", "ecs:DescribeServiceDeployments", "ecs:TagResource", "ecs:UntagResource", "ecs:ListTagsForResource"]
       Resource = "arn:aws:ecs:${local.region}:${local.account_id}:service/languagewise/${local.prefix}-*"
     },
     {
@@ -284,6 +284,11 @@ locals {
       Sid      = "DiscoveryDnsZoneLookup", Effect = "Allow", Condition = local.discovery_dns_delegation
       Action   = ["route53:ListHostedZonesByName"]
       Resource = "*"
+    },
+    {
+      Sid      = "EcsDeploymentRead", Effect = "Allow", Condition = local.regional
+      Action   = ["ecs:DescribeServiceDeployments"]
+      Resource = "arn:aws:ecs:${local.region}:${local.account_id}:service-deployment/languagewise/${local.prefix}-*/*"
     }
   ]
   image_read_statements = [
