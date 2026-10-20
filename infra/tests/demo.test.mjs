@@ -217,8 +217,13 @@ function harness(options = {}) {
           initialized = !options.initializerFailure;
           response.tasks = [{ lastStatus: 'STOPPED', containers: [{ exitCode: options.initializerFailure ? 1 : 0 }] }];
         }
-        if (operation === 'describe-services') response.services = input.services.map(serviceName => ({ serviceName, status: 'ACTIVE', desiredCount: 1,
-          runningCount: 1, pendingCount: 0, deployments: [{ rolloutState: 'COMPLETED' }] }));
+        if (operation === 'describe-services') {
+          if (input.services[0]?.startsWith('arn:')) response = options.ecsResidualResponse ?? {
+            services: input.services.map(serviceArn => ({ serviceArn, status: 'INACTIVE', desiredCount: 0, runningCount: 0, pendingCount: 0 })), failures: [],
+          };
+          else response.services = input.services.map(serviceName => ({ serviceName, status: 'ACTIVE', desiredCount: 1,
+            runningCount: 1, pendingCount: 0, deployments: [{ rolloutState: 'COMPLETED' }] }));
+        }
       } else if (service === 'resourcegroupstaggingapi') response = options.tagPages?.[input.PaginationToken ?? 'first'] ?? {
         ResourceTagMappingList: (options.taggedResources ?? []).map(ResourceARN => ({ ResourceARN })),
         ...(options.tagPagination ? { PaginationToken: 'more' } : {}),
@@ -928,6 +933,59 @@ test('residual verification fails closed for later-page resources and malformed 
     } });
     await assert.rejects(fixture.controller.execute('down'), /Tagged runtime/);
     assert.equal(fixture.state().status, 'stopping');
+  }
+});
+
+test('inactive ECS tag records require exact complete service proof in batches across tag pages', async () => {
+  const serviceArns = SERVICES.map(name => `arn:aws:ecs:${region}:${account}:service/languagewise/languagewise-demo-${name}`);
+  const fixture = harness({ state: ready(), tagPages: {
+    first: { ResourceTagMappingList: [], PaginationToken: 'next' },
+    next: { ResourceTagMappingList: serviceArns.map(ResourceARN => ({ ResourceARN })) },
+  } });
+  await fixture.controller.execute('down');
+  assert.equal(fixture.state().status, 'down');
+  const checks = fixture.calls.filter(call => call.operation === 'describe-services');
+  assert.deepEqual(checks.map(call => call.input.services.length), [10, 8]);
+  assert.deepEqual(checks.flatMap(call => call.input.services), serviceArns);
+  assert.ok(checks.every(call => call.input.cluster === foundation.cluster_arn));
+});
+
+test('missing ECS service proof accepts only exact MISSING failures', async () => {
+  const arn = `arn:aws:ecs:${region}:${account}:service/languagewise/languagewise-demo-shared-backend`;
+  const fixture = harness({ state: ready(), taggedResources: [arn],
+    ecsResidualResponse: { services: [], failures: [{ arn, reason: 'MISSING' }] } });
+  await fixture.controller.execute('down');
+  assert.equal(fixture.state().status, 'down');
+});
+
+test('ECS residual proof rejects active, incomplete, duplicate, malformed and denied responses', async () => {
+  const arn = `arn:aws:ecs:${region}:${account}:service/languagewise/languagewise-demo-shared-backend`;
+  const inactive = { serviceArn: arn, status: 'INACTIVE', desiredCount: 0, runningCount: 0, pendingCount: 0 };
+  for (const response of [
+    {}, { services: [], failures: [] }, { services: null, failures: [] },
+    { services: [null], failures: [] }, { services: [], failures: [null] },
+    { services: [inactive] }, { services: [inactive, inactive], failures: [] },
+    { services: [inactive], failures: [{ arn, reason: 'MISSING' }] },
+    { services: [], failures: [{ arn, reason: 'ACCESS_DENIED' }] },
+    { services: [], failures: [{ arn: `${arn}-other`, reason: 'MISSING' }] },
+    { services: [inactive], failures: [], nextToken: 'more' },
+    ...[{ status: 'ACTIVE' }, { status: 'DRAINING' }, { desiredCount: 1 }, { runningCount: 1 }, { pendingCount: 1 },
+      { serviceArn: `${arn}-other` }, { runningCount: undefined }].map(change => ({ services: [{ ...inactive, ...change }], failures: [] })),
+  ]) {
+    const fixture = harness({ state: ready(), taggedResources: [arn], ecsResidualResponse: response });
+    await assert.rejects(fixture.controller.execute('down'), /Tagged ECS service/);
+    assert.equal(fixture.state().status, 'stopping');
+  }
+});
+
+test('ECS residual exceptions never admit foreign accounts, regions, clusters or service prefixes', async () => {
+  const arn = `arn:aws:ecs:${region}:${account}:service/languagewise/languagewise-demo-shared-backend`;
+  for (const foreign of [arn.replace(account, '000000000000'), arn.replace(region, 'us-east-1'),
+    arn.replace('/languagewise/', '/another-cluster/'), arn.replace('languagewise-demo-', 'another-app-')]) {
+    const fixture = harness({ state: ready(), taggedResources: [foreign] });
+    await assert.rejects(fixture.controller.execute('down'), /Tagged runtime/);
+    assert.equal(fixture.state().status, 'stopping');
+    assert.ok(!fixture.calls.some(call => call.operation === 'describe-services'));
   }
 });
 
