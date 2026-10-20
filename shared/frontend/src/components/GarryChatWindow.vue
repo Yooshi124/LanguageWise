@@ -119,7 +119,9 @@ async function submit(content = draft.value) {
   draft.value = ''
   await garry.send(message, context.value)
   await nextTick()
-  composer.value?.focus()
+  if (!props.minimized && composer.value?.closest('.garry-panel')?.contains(document.activeElement)) {
+    composer.value.focus()
+  }
 }
 
 function onComposerKeydown(event: KeyboardEvent) {

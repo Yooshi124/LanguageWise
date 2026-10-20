@@ -123,6 +123,40 @@ async function send(root: HTMLElement, text: string) {
 }
 
 describe('Garry floating workspace', () => {
+  it('keeps another chat focused when a background response completes', async () => {
+    await mountAssistant()
+    let finishResponse!: () => void
+    vi.mocked(streamAssistantMessage).mockImplementationOnce((_base, _request, handlers) =>
+      new Promise<void>((resolve) => {
+        finishResponse = () => {
+          handlers.onDelta('Background response')
+          handlers.onDone('stop')
+          resolve()
+        }
+      }),
+    )
+    await send(panel(), 'First conversation')
+    await click(panel(), 'New Garry chat')
+    const second = panel(2)
+    const input = second.querySelector<HTMLTextAreaElement>('textarea')!
+    input.focus()
+    input.value = 'Still writing in the second chat'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    const foregroundOrder = second.style.zIndex
+    expect(document.activeElement).toBe(input)
+    expect(Number(foregroundOrder)).toBeGreaterThan(Number(panel().style.zIndex))
+
+    finishResponse()
+    await flushPromises()
+
+    expect(panel().textContent).toContain('Background response')
+    expect(document.activeElement).toBe(input)
+    expect(second.style.zIndex).toBe(foregroundOrder)
+    expect(Number(second.style.zIndex)).toBeGreaterThan(Number(panel().style.zIndex))
+    expect(input.value).toBe('Still writing in the second chat')
+  })
+
   it('opens additional chats at the same bottom-right position without cascading offsets', async () => {
     await mountAssistant()
     const first = panel()
