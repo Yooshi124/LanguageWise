@@ -1,14 +1,70 @@
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using LanguageWise.McpServer.Security;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 
 namespace LanguageWise.McpServer.Tests;
 
 public sealed class McpEndpointTests
 {
+	[TestCase(false)]
+	[TestCase(true)]
+	public async Task UserTokenValidator_LoadsConfiguredPemOrFallbackFile(bool usePem)
+	{
+		using var key = RSA.Create(2048);
+		var path = Path.GetTempFileName();
+		try
+		{
+			File.WriteAllText(path, usePem ? "invalid-file-pem" : key.ExportSubjectPublicKeyInfoPem());
+			var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+			{
+				["Auth:VerificationKeyPath"] = path,
+				["Auth:VerificationKeyPem"] = usePem ? key.ExportSubjectPublicKeyInfoPem() : null
+			}).Build();
+			var validator = UserTokenValidator.FromConfiguration(configuration, AppContext.BaseDirectory);
+			var token = new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
+			{
+				Claims = new Dictionary<string, object> { ["sub"] = "7" },
+				Expires = DateTime.UtcNow.AddMinutes(5),
+				SigningCredentials = new SigningCredentials(new RsaSecurityKey(key), SecurityAlgorithms.RsaSha256)
+			});
+
+			Assert.That(await validator.IsValidAsync(token), Is.True);
+		}
+		finally
+		{
+			File.Delete(path);
+		}
+	}
+
+	[Test]
+	public void UserTokenValidator_InvalidPemDoesNotFallBackToFile()
+	{
+		using var key = RSA.Create(2048);
+		var path = Path.GetTempFileName();
+		try
+		{
+			File.WriteAllText(path, key.ExportSubjectPublicKeyInfoPem());
+			var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+			{
+				["Auth:VerificationKeyPath"] = path,
+				["Auth:VerificationKeyPem"] = "invalid-pem"
+			}).Build();
+
+			Assert.Throws<ArgumentException>(() => UserTokenValidator.FromConfiguration(configuration, AppContext.BaseDirectory));
+		}
+		finally
+		{
+			File.Delete(path);
+		}
+	}
+
 	private McpServerFactory factory = null!;
 
 	[OneTimeSetUp]

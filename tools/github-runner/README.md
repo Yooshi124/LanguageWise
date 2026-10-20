@@ -108,16 +108,14 @@ Repository workflow restrictions, contributor approval, branch/workflow review,
 temporary AWS login renewal, and independently authenticated expiry cleanup are
 separate gates. A label alone does not restrict a runner to a single workflow.
 
-## GitHub Smoke Test
+## Historical GitHub Smoke Test
 
-After the repository safeguards and runner service are configured, merge the
-manual-only `Runner Smoke Test` workflow into protected `master`. In GitHub
-Actions, select that workflow and run it against `master`. It targets
-`[self-hosted, linux, x64, languagewise-deploy]`, requires no token permissions,
-does not check out code, and does not use AWS credentials. It checks Linux/x64,
-non-root execution, and GitHub HTTPS access. Confirm the run succeeds and the
-runner returns to Idle before configuring deployment authentication. Local
-YAML/shell validation does not replace this GitHub-dispatched test.
+The manual-only `Runner Smoke Test` passed against protected `master`, checking
+Linux/x64, non-root execution and GitHub HTTPS access without checkout or AWS
+credentials. The workflow was retired on 2026-10-20: current AWS jobs use
+GitHub-hosted runners and do not require this VM. Do not recreate the workflow as
+a deployment prerequisite. Removing it does not unregister the runner or stop
+the VM; those remain separate operator actions described below.
 
 ## AWS Validation Role
 
@@ -134,10 +132,12 @@ The maximum session duration is one hour. This is not a deployment role and
 does not permit pulling images, reading secrets, passing roles, or changing AWS
 resources. It is not yet managed by Terraform.
 
-The user was created without a console password or access key. Policy simulation
-allows assumption of the validation role, denies assumption of the broad
-workstation role, and denies direct ECS/ECR reads. Secure key creation, GitHub
-Secrets configuration, and a GitHub-hosted validation run are still pending.
+The user has no console password. Policy simulation allows assumption of the
+validation role, denies assumption of the broad workstation role, and denies
+direct ECS/ECR reads. One access key is now stored only in the protected
+`aws-demo` GitHub environment secrets, not this VM. The GitHub-hosted validation
+[run 39247442861](https://github.com/Yooshi124/LanguageWise/actions/runs/39247442861)
+passed. See the [current setup guide](../../docs/aws-github-setup.md).
 
 Role assumption and both metadata reads passed from Windows and inside the VM.
 The VM check received only this role's temporary credentials through trusted

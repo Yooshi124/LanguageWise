@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Threading.RateLimiting;
 using LanguageWise.Shared.Api;
 using LanguageWise.Shared.Api.Clients;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
 
 const string ServiceName = "shared-backend";
@@ -11,6 +12,22 @@ const string DocsSearchRateLimiterPolicy = "docs-search";
 const int MaxDocsQueryLength = 500;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 1;
+    var trustedNetwork = builder.Configuration["ReverseProxy:TrustedNetwork"];
+    if (trustedNetwork is not null)
+    {
+        var network = System.Net.IPNetwork.Parse(trustedNetwork);
+        if (network.PrefixLength == 0)
+        {
+            throw new InvalidOperationException("ReverseProxy:TrustedNetwork must not trust every address.");
+        }
+        options.KnownIPNetworks.Add(network);
+    }
+});
 
 // Inside Docker this resolves to the database service by container name.
 var databaseServiceUrl = builder.Configuration["Services:Database"] ?? "http://localhost:6000";
@@ -32,6 +49,10 @@ builder.Services.AddHttpClient<AchievementsClient>(client =>
 var ragServiceUrl = builder.Configuration["Services:Rag"] ?? "http://localhost:8100";
 builder.Services.AddHttpClient<RagClient>(client =>
 {
+    if (!builder.Configuration.GetValue("Rag:Enabled", true))
+    {
+        return;
+    }
     client.BaseAddress = new Uri(ragServiceUrl.TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(15);
 });
@@ -47,7 +68,7 @@ builder.Services.AddHttpClient<GarryClient>(client =>
 // Load Signing Key
 var signingKeyPath = builder.Configuration["Auth:SigningKeyPath"] ?? "/run/secrets/signing_key";
 var rsa = RSA.Create();
-rsa.ImportFromPem(File.ReadAllText(signingKeyPath));
+rsa.ImportFromPem(builder.Configuration["Auth:SigningKeyPem"] ?? File.ReadAllText(signingKeyPath));
 var signingKey = new RsaSecurityKey(rsa);
 
 AuthenticatedUser? ValidateToken(string token)
@@ -106,6 +127,7 @@ void IssueSessionCookie(HttpContext ctx, int userId, string username)
     ctx.Response.Cookies.Append("token", token, new CookieOptions
     {
         HttpOnly = true,
+        Secure = ctx.Request.IsHttps,
         SameSite = SameSiteMode.Strict,
         MaxAge = TimeSpan.FromHours(1)
     });
@@ -128,6 +150,7 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
+app.UseForwardedHeaders();
 app.UseRateLimiter();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = ServiceName }));
@@ -191,7 +214,12 @@ app.MapPost("/api/check-login", async (
 
 app.MapPost("/api/logout", (HttpContext ctx) =>
 {
-    ctx.Response.Cookies.Delete("token");
+    ctx.Response.Cookies.Delete("token", new CookieOptions
+    {
+        HttpOnly = true,
+        Secure = ctx.Request.IsHttps,
+        SameSite = SameSiteMode.Strict
+    });
     return Results.Ok();
 });
 

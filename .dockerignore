@@ -1,0 +1,12 @@
+**
+!**/
+!**/*.sql
+!infra/images/**
+!infra/scripts/initialize-databases.py
+**/.env
+**/*.pem
+**/*.key
+**/.terraform/**
+**/node_modules/**
+**/bin/**
+**/obj/**
