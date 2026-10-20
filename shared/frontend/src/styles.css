@@ -112,7 +112,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
   position: fixed;
   top: 14px;
   left: 14px;
-  z-index: 1000;
+  z-index: 1002;
   display: none;
   width: 44px;
   height: 44px;

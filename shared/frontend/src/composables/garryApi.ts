@@ -77,10 +77,11 @@ export class GarryApiError extends Error {
   }
 }
 
-export async function listAssistantTools(apiBase: string) {
+export async function listAssistantTools(apiBase: string, signal?: AbortSignal) {
   const response = await fetch(`${apiBase}/assistant/tools`, {
     credentials: 'same-origin',
     headers: { Accept: 'application/json' },
+    signal,
   })
   await ensureToolResponse(response)
   const body = (await response.json()) as { tools?: AssistantTool[] }
@@ -91,12 +92,14 @@ export async function callAssistantTool(
   apiBase: string,
   name: string,
   args: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<AssistantToolResult> {
   const response = await fetch(`${apiBase}/assistant/tools/${encodeURIComponent(name)}`, {
     method: 'POST',
     credentials: 'same-origin',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
     body: JSON.stringify(args),
+    signal,
   })
   await ensureToolResponse(response)
   const body = (await response.json()) as { tool?: string; isError?: boolean; result?: unknown }

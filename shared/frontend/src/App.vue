@@ -79,15 +79,15 @@ watch(() => route.fullPath, () => {
         <router-view v-else :key="`${route.fullPath}:${renderKey}`" />
       </v-main>
     </div>
-    <GarryAssistant
-      v-if="garry"
-      :key="`${garry.featureKey}:${garry.userId}`"
-      :feature-key="garry.featureKey"
-      :user-id="garry.userId"
-      :assistant="garry.assistant"
-    />
   </v-app>
   <v-app v-else>
     <router-view />
   </v-app>
+  <GarryAssistant
+    v-if="showShell && auth.user.value"
+    :key="auth.user.value.id"
+    :feature-key="garry?.featureKey"
+    :user-id="auth.user.value.id"
+    :assistant="garry?.assistant"
+  />
 </template>
