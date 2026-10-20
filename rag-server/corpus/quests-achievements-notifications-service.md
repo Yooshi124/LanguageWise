@@ -89,9 +89,9 @@ preferences, and pause or resume notifications.
   learner's canonical profile (preferences, achievement progress, full
   notification history) and streams the completion from `garry-ai-service`,
   passing `toolScope: "quests"` when MCP is enabled.
-- **MCP**: `McpToolClient` connects to the host MCP server
-  (`http://host.docker.internal:8200/mcp`) with the shared API key; the MCP server
-  calls back into this backend on `http://localhost:5004`.
+- **MCP**: `McpToolClient` connects to the Compose MCP server
+  (`http://mcp-server:8080/mcp`) with the shared API key; the MCP server
+  calls this backend on `http://quests-achievements-notifications-service-backend:8080`.
 
 ## TECHNICAL-api: Backend endpoints
 

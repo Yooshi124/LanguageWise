@@ -1,0 +1,9 @@
+**
+!requirements.txt
+!server.py
+!ingest.py
+!startup.py
+!rag/
+!rag/*.py
+!corpus/
+!corpus/*.md

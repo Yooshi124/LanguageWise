@@ -32,4 +32,5 @@ Internal reference for the agentic loop. Not for end-user access.
 
 - Backend service `mini-games-service-backend`, host port `5001`.
 - Env vars: `Services__Database`, `Services__Courses`, `Services__Achievements`,
-  `Services__Garry`, `Services__Rag` (points at `host.docker.internal:8100`).
+  `Services__Garry`, `Mcp__Endpoint` (`http://mcp-server:8080/mcp`).
+  Shared Ask the docs uses RAG at `http://rag-server:8100`; this backend has no direct RAG client.

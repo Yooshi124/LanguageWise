@@ -1,7 +1,7 @@
 """FastMCP RAG server exposing the `retrieve_context` tool over HTTP.
 
-Non-containerised by design: it binds to the host so Docker containers can reach
-it through host.docker.internal:RAG_PORT. Run from the rag-server directory:
+Compose runs startup.py to index the corpus before starting this server.
+For host-only development, index with ingest.py, then run:
 
     python server.py
 

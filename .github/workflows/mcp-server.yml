@@ -107,3 +107,6 @@ jobs:
           name: mcp-server-test-results
           path: TestResults/
           if-no-files-found: warn
+
+      - name: Build the MCP image
+        run: docker build -t languagewise/mcp-server:ci ./mcp-server
