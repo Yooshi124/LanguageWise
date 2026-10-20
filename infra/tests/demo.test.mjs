@@ -256,6 +256,14 @@ test('foundation accepts JSON or a file path, but never Terraform output wrapper
   assert.throws(() => validateFoundation({ ...foundation, demo_state_key: 'foundation/terraform.tfstate' }), /disposable/);
 });
 
+test('foundation handles a UTF-8 BOM in inline or file JSON without bypassing validation', () => {
+  const json = '\uFEFF' + JSON.stringify(foundation);
+  assert.deepEqual(loadFoundation(json), foundation);
+  assert.deepEqual(loadFoundation('infra/generated/foundation.json', () => json), foundation);
+  assert.throws(() => loadFoundation('\uFEFF' + JSON.stringify({ foundation: { value: foundation } })), /foundation field/);
+  assert.throws(() => loadFoundation('\uFEFF \r\n'), /FOUNDATION_CONFIG is required/);
+});
+
 test('manifest contains exact 18 Compose services plus initializer and immutable repository digests', () => {
   assert.equal(SERVICES.length, 18);
   assert.deepEqual(validateRelease(release(), foundation), release());

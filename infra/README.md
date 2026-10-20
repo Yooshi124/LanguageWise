@@ -111,8 +111,20 @@ and access key remain outside Terraform; no replacement key is required.
    $outputs = terraform -chdir=infra/foundation output -json | ConvertFrom-Json
    $config = @{}
    $outputs.PSObject.Properties | ForEach-Object { $config[$_.Name] = $_.Value.value }
-   $config | ConvertTo-Json -Depth 10 -Compress | gh variable set AWS_FOUNDATION_CONFIG --env aws-demo --repo Yooshi124/LanguageWise
+    $previousOutputEncoding = $OutputEncoding
+    try {
+       $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+       $config | ConvertTo-Json -Depth 10 -Compress | gh variable set AWS_FOUNDATION_CONFIG --env aws-demo --repo Yooshi124/LanguageWise
+       if ($LASTEXITCODE -ne 0) { throw 'Foundation variable export failed.' }
+    } finally {
+       $OutputEncoding = $previousOutputEncoding
+    }
    ```
+
+    UTF-8 without a byte-order mark avoids a leading invisible character in native
+    CLI input from Windows PowerShell. If Check foundation contract reports an
+    unexpected token before the opening JSON brace, repeat this export and retry
+    AWS Release; updating the nonsecret variable does not start the demo.
 
    This contains identifiers/ARNs only. Preserve the existing environment AWS
    access-key secrets and its **master-only** deployment rule. Require reviewed
