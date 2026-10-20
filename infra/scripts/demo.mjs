@@ -508,8 +508,20 @@ export class DemoController {
     const tags = this.aws('resourcegroupstaggingapi', 'get-resources', { TagFilters: [
       { Key: 'Project', Values: ['languagewise'] }, { Key: 'Lifecycle', Values: ['disposable-demo'] }], ResourcesPerPage: 100 });
     const retainedDefinition = new RegExp(`^arn:aws:ecs:${config.region}:${config.account_id}:task-definition/languagewise-demo-[a-z0-9-]+:[1-9][0-9]*$`);
-    requireThat(!tags.PaginationToken && (tags.ResourceTagMappingList ?? [])
-      .every(resource => retainedDefinition.test(resource.ResourceARN)), 'Tagged runtime resources remain');
+    requireThat(!tags.PaginationToken, 'Tagged runtime inventory is incomplete');
+    let taggedResiduals = (tags.ResourceTagMappingList ?? []).filter(resource => !retainedDefinition.test(resource.ResourceARN));
+    for (const [kind, operation, field, filter, prefix] of [
+      ['subnet', 'describe-subnets', 'Subnets', 'subnet-id', 'subnet'],
+      ['security-group-rule', 'describe-security-group-rules', 'SecurityGroupRules', 'security-group-rule-id', 'sgr'],
+    ]) {
+      const pattern = new RegExp(`^arn:aws:ec2:${config.region}:${config.account_id}:${kind}/(${prefix}-[0-9a-f]+)$`);
+      const ids = taggedResiduals.map(resource => pattern.exec(resource.ResourceARN)?.[1]).filter(Boolean);
+      if (!ids.length) continue;
+      const live = this.aws('ec2', operation, { Filters: [{ Name: filter, Values: ids }] });
+      requireThat(!live.NextToken && Array.isArray(live[field]) && live[field].length === 0, 'Tagged runtime resources remain');
+      taggedResiduals = taggedResiduals.filter(resource => !pattern.test(resource.ResourceARN));
+    }
+    requireThat(taggedResiduals.length === 0, 'Tagged runtime resources remain');
     const vpcs = this.aws('ec2', 'describe-vpcs', { Filters: [{ Name: 'tag:Project', Values: ['languagewise'] }, { Name: 'tag:Lifecycle', Values: ['disposable-demo'] }] }).Vpcs ?? [];
     requireThat(vpcs.length === 0, 'Demo VPC remains; dependent ALB/NAT/ENIs/endpoints may survive');
     const services = this.aws('ecs', 'list-services', { cluster: config.cluster_arn });

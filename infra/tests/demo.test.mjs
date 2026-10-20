@@ -223,6 +223,11 @@ function harness(options = {}) {
         ResourceTagMappingList: (options.taggedResources ?? []).map(ResourceARN => ({ ResourceARN })),
         ...(options.tagPagination ? { PaginationToken: 'more' } : {}),
       };
+      else if (service === 'ec2' && ['describe-subnets', 'describe-security-group-rules'].includes(operation)) {
+        const field = operation === 'describe-subnets' ? 'Subnets' : 'SecurityGroupRules';
+        response = { ...(options.missingEc2Inventory ? {} : { [field]: options.liveEc2Resources ?? [] }),
+          ...(options.ec2Pagination ? { NextToken: 'more' } : {}) };
+      }
       else if (service === 'rds' && options.residualDatabase) response.DBInstances = [{ DBInstanceIdentifier: 'languagewise-demo-database' }];
       return JSON.stringify(response);
     },
@@ -814,6 +819,25 @@ for (const [label, type, body, expectedType, succeeds] of [
     else await assert.rejects(dependencies.probe('https://example.invalid/', expectedType));
   });
 }
+
+test('stale EC2 tag records require complete exact-ID proof of deletion before successful Down', async () => {
+  for (const [kind, id, operation, filter] of [
+    ['subnet', 'subnet-deadbeef', 'describe-subnets', 'subnet-id'],
+    ['security-group-rule', 'sgr-deadbeef', 'describe-security-group-rules', 'security-group-rule-id'],
+  ]) {
+    const taggedResources = [`arn:aws:ec2:${region}:${account}:${kind}/${id}`];
+    const absent = harness({ state: ready(), taggedResources });
+    await absent.controller.execute('down');
+    assert.equal(absent.state().status, 'down');
+    const check = absent.calls.find(call => call.operation === operation);
+    assert.deepEqual(check.input.Filters, [{ Name: filter, Values: [id] }]);
+    for (const options of [{ liveEc2Resources: [{ id }] }, { ec2Pagination: true }, { missingEc2Inventory: true }]) {
+      const live = harness({ state: ready(), taggedResources, ...options });
+      await assert.rejects(live.controller.execute('down'), /Tagged runtime/);
+      assert.equal(live.state().status, 'stopping');
+    }
+  }
+});
 
 test('residual inventory permits only own demo task-definition metadata and still rejects paid resources', async () => {
   const definition = `arn:aws:ecs:${region}:${account}:task-definition/languagewise-demo-shared-backend:12`;
