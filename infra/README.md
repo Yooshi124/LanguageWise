@@ -1,12 +1,77 @@
 # AWS Demo Infrastructure
 
 **The latest Demo Up failed before readiness; application readiness is unverified.**
-Run `39375711048` on `cc71e05` failed because Cloud Map's private-DNS operation
-was denied `route53:CreateHostedZone`. Its automatic Down completed successfully.
-The DNS dependency is now allowed only through Cloud Map delegation at the global
-Route 53 endpoint. A scoped-role DNS-only create/delete test passed, direct Route 53
-reads remained denied, and the probe zone and VPC were physically removed.
-Full cleanup readiness, residual checks, persisted Down and absent lock were verified.
+Run `39404244548` on `c452d5e` reported `Terraform infrastructure apply failed;
+resource_type=aws_db_instance; code=unknown` and then verified automatic Down.
+Fresh control metadata confirms Down with no lock. RDS CloudTrail lookups in
+Sydney and `us-east-1`, and RDS native instance events, contain no create failure
+message for this attempt, so its exact original rejection remains unavailable.
+
+**Confirmed account-plan blocker:** `freetier get-account-plan-state` reports
+`FREE` / `ACTIVE`, while the failed run requested `db.t4g.small`. AWS documents free-plan
+RDS support for `db.t3.micro` and `db.t4g.micro`, not `db.t4g.small`:
+[AWS RDS free-plan limits](https://aws.amazon.com/rds/free/). Regional catalog
+availability does not establish account-plan eligibility. On 2026-10-20 the owner
+approved changing this root to `db.t4g.micro` and starting one timed demo after
+validation. The local resize preserves PostgreSQL 18.6, 20 GiB gp3, encryption,
+private access and managed credentials. Sydney's orderable-options API confirms
+that combination in all three regional zones; Terraform validation passes.
+This does not yet prove live creation or application readiness. GitHub publication,
+exact-SHA CI/release and cleanup-source readiness remain launch prerequisites.
+The account plan, quotas, lease and cleanup limits remain unchanged. Budget alerts
+are not a hard spending cap.
+
+The local diagnostics follow-up now scans both `summary` and `detail` for fixed,
+allowlisted error codes. The pinned provider's `sdkdiag.AppendErrorf` uses the
+summary field; the original synthetic fixture incorrectly put its error in
+detail only. Both locations now have redaction regressions. Raw messages remain
+suppressed. This parser correction is uncommitted and not in the pinned cleanup
+archive below; it is not itself a fix for the account-plan incompatibility.
+Before the resize, all 120 focused foundation/controller/release tests passed. Editor diagnostics and
+`git diff --check` are clean. Fresh read-only cleanup readiness and full residual
+verification also pass, with control Down and no lock. No commit, publication,
+repin, Up, resize or account-plan change was made in that earlier investigation.
+
+Earlier run `39393527248` on `9d4be81` failed after creating its private-DNS namespace,
+18 discovery services and CloudFront resources. No initializer `RunTask` or RDS
+`CreateDBInstance` event was found. Complete provisioning-window CloudTrail lookups
+in Sydney and `us-east-1` did not identify a new authorization denial. The configured
+RDS version, instance class and gp3 size are available in Sydney; that check does
+not prove database creation will succeed. Investigation inconclusive: the original
+Terraform diagnostic was discarded, so the new startup cause is not confirmed.
+Automatic rollback completed; fresh cleanup readiness, full residual verification,
+persisted Down and absent lock checks passed. No new Up or IAM change was made.
+
+The initial controller repair, originally committed as `be71f29`, is present in
+the latest run. It requests Terraform JSON plan/apply output
+and reports the failing infrastructure/services/destroy phase plus allowlisted
+resource types, error codes and validation categories before rollback. Unknown or
+malformed diagnostics remain suppressed, along with all raw output, summaries,
+details, resource names, credentials and state. Initial validation covered 119 focused tests, including
+redaction and unchanged timeout/lock/rollback regressions. The production parser
+also accepted an actual offline Terraform JSON error without exposing raw output.
+The approved immutable cleanup archive is now published and pinned:
+
+- Key: `cleanup/df6edf9dd1c86f8320067d7ef7ac2baad211584b8a674781bffb67177e793437.zip`
+- VersionId: `BZFwzfKUub86bULDVD7hvCkZpvIT2pVr`; 24,928 bytes, AES256; local/server SHA256 verified.
+- CodeBuild and all four exact-source inline policies match; non-source settings
+   and statements were preserved. The ignored foundation variables match as well.
+- Native cleanup build `67b4328d-3501-412d-b1c9-043b97ad5e2e` succeeded through
+   download, install and execution while already Down. This verifies bundle
+   delivery/startup, not the failed Up path or destruction of a nonempty stack.
+- A targeted foundation preview has no IAM or CodeBuild changes. Its sole
+   unrelated ECS change was not applied, and the saved preview was deleted.
+
+Cleanup readiness and full residual checks passed after that archive was pinned;
+control remained Down with no lock. No new Up was started by this investigation.
+Publish the approved micro resize and review the local parser follow-up before
+considering another cycle; require exact-SHA CI/release and cleanup readiness.
+
+The preceding run `39375711048` on `cc71e05` was denied `route53:CreateHostedZone`.
+That dependency is allowed only through Cloud Map delegation at the global Route 53
+endpoint. A scoped-role DNS create/delete test passed, direct DNS reads stayed
+denied, and the probe was removed. The latest run's successful namespace creation
+confirms that this was not a repeat of the prior DNS failure.
 Budget creation and the cost proposals
 were owner-confirmed on 2026-10-20. No secret values were retrieved or fresh billing
 audit performed.
@@ -39,12 +104,13 @@ audit performed.
    The cleanup permission fix is also represented in Terraform with regression
    coverage. Ensure outstanding fixes are committed/reviewed and their latest
    GitHub CI checks pass; do not infer current merge status from this document.
-- **Step 8 verified for `9db4094`:** exact-SHA CI and `AWS Release` succeeded.
-   The subsequent Up failed, so successful image publication does not establish
-   runtime readiness. Merge the cleanup repair and remaining foundation/runbook
-   corrections, wait for exact-SHA CI/release success and verified native Down,
-   then explicitly request another cycle. Failed cycles retain their four-hour
-   reservation. Do not apply an old saved foundation plan.
+- **Step 8 publication is not runtime readiness:** the latest Up on `c452d5e`
+   failed at the RDS instance. The account-plan incompatibility above blocks the
+   unchanged design, and the exact original provider error was discarded.
+   Review the diagnostics repair above, preserve the immutable cleanup-source
+   process and require exact-SHA CI/release success before an explicitly approved
+   cycle. Failed cycles retain their four-hour reservation. Do not apply an old
+   saved foundation plan or treat the unresolved failure as a verified IAM defect.
 
 The cleanup IAM repair was applied separately to avoid an unrelated ECS Exec
 configuration reset in a foundation plan. Review that remaining plan difference
@@ -67,6 +133,9 @@ before a future foundation apply; do not apply an old saved plan indiscriminatel
 | Complete bounded tag pagination | Check every page instead of failing after inventory grows beyond 100 items | Multi-page, repeated-token and malformed-page fixtures |
 | Owned-VPC security-group read | Support the pinned provider's `GetSecurityGroupsForVpc` call | Scoped network canary using the pinned provider |
 | Delegated Route 53 lifecycle | Let Cloud Map create, inspect and delete its private DNS zone without direct DNS access | Private-DNS lifecycle canary, not an HTTP namespace test |
+| Allowlisted Terraform failure diagnostics | Distinguish the failed phase and safe error metadata from successful rollback without exposing raw output | Native JSON diagnostic fixtures with secret sentinels, malformed events, timeout/rollback regressions and an actual offline Terraform error |
+| Provider summary-field classification (local) | Extract only known codes from the provider SDK's actual error field without printing the message | Summary-only and detail-only redaction fixtures based on the pinned provider helper |
+| Approved RDS micro resize | Replace the free-plan-incompatible small class without changing storage, networking or credentials | Account-plan metadata, documented RDS plan limits, exact engine/class/storage availability, Terraform validation and a class contract regression |
 
 Most configuration, permission and response-shape fixes were predictable. In
 particular, the Route 53 dependency should have been checked earlier: an HTTP
@@ -80,6 +149,10 @@ deletion with the exact principals. Use representative fixtures for pagination a
 worker metadata. Keep tests tiered: offline checks, read-only account readiness,
 small scoped lifecycle canaries, then one explicitly approved end-to-end cycle.
 Inspect both Sydney and global-service event regions on failures.
+CloudTrail is not a substitute for the controller's own failure diagnostics: a
+missing create event does not establish why Terraform failed. Preserve safe phase
+and diagnostic metadata before rollback instead of inferring a permission defect
+from the final exit code or spending another reservation on an unchanged retry.
 
 This does not predict every operational failure. Application initialization,
 secret consumption and all-service HTTPS readiness remain unverified by the DNS
@@ -108,6 +181,11 @@ and access key remain outside Terraform; no replacement key is required.
    permissions, service-linked roles, root MFA, and the recipient for cleanup
    failures. Do not change the account plan silently. Review the intentional
    CloudFront ownership-tag exception below before granting routine permissions.
+   Before any Up, use an administrative session to run
+   `aws freetier get-account-plan-state --region us-east-1`. The approved
+   `db.t4g.micro` design follows the owner's approved FREE-plan resize; remaining
+   credits and catalog availability alone do not prove all plan/configuration
+   restrictions have been satisfied. Verify initialization and application health.
 2. **Completed for the current setup.** Retain these commands for reference; do
    not recreate the buckets or discard the protected local state. For a fresh
    setup, using an authorized workstation session, initialize bootstrap, create a saved

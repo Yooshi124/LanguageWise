@@ -104,6 +104,17 @@ test('CodeBuild worker metadata reads authorize the exact project rather than no
   assert.doesNotMatch(grant, /:build\/|Resource\s*= "\*"/);
 });
 
+test('approved free-plan database uses micro while preserving storage and private managed credentials', () => {
+  const instance = demoDatabase.split('resource "aws_db_instance" "demo" {')[1].split('resource "aws_ecs_task_definition"')[0];
+  assert.match(instance, /instance_class\s*= "db\.t4g\.micro"/);
+  assert.match(instance, /engine_version\s*= "18\.6"/);
+  assert.match(instance, /allocated_storage\s*= 20/);
+  assert.match(instance, /storage_type\s*= "gp3"/);
+  assert.match(instance, /storage_encrypted\s*= true/);
+  assert.match(instance, /publicly_accessible\s*= false/);
+  assert.match(instance, /manage_master_user_password\s*= true/);
+});
+
 test('task definitions are prefix-scoped at registration and retained without deregistration rights', () => {
   assert.match(statement('RegionalInventory'), /Resource = "\*"[\s\S]*ecs:DescribeTaskDefinition/);
   assert.match(statement('EcsRegisterDefinitions'), /Condition = local\.demo_creation/);
