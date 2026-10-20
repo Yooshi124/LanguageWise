@@ -219,7 +219,7 @@ function harness(options = {}) {
         }
         if (operation === 'describe-services') response.services = input.services.map(serviceName => ({ serviceName, status: 'ACTIVE', desiredCount: 1,
           runningCount: 1, pendingCount: 0, deployments: [{ rolloutState: 'COMPLETED' }] }));
-      } else if (service === 'resourcegroupstaggingapi') response = {
+      } else if (service === 'resourcegroupstaggingapi') response = options.tagPages?.[input.PaginationToken ?? 'first'] ?? {
         ResourceTagMappingList: (options.taggedResources ?? []).map(ResourceARN => ({ ResourceARN })),
         ...(options.tagPagination ? { PaginationToken: 'more' } : {}),
       };
@@ -853,6 +853,32 @@ test('stale EC2 tag records require complete exact-ID proof of deletion before s
       await assert.rejects(live.controller.execute('down'), /Tagged runtime/);
       assert.equal(live.state().status, 'stopping');
     }
+  }
+});
+
+test('residual verification consumes all tag pages and checks deleted EC2 records on later pages', async () => {
+  const fixture = harness({ state: ready(), tagPages: {
+    first: { ResourceTagMappingList: [{ ResourceARN: `arn:aws:ecs:${region}:${account}:task-definition/languagewise-demo-shared-backend:12` }], PaginationToken: 'next' },
+    next: { ResourceTagMappingList: [{ ResourceARN: `arn:aws:ec2:${region}:${account}:subnet/subnet-deadbeef` }] },
+  } });
+  await fixture.controller.execute('down');
+  assert.equal(fixture.state().status, 'down');
+  const pages = fixture.calls.filter(call => call.service === 'resourcegroupstaggingapi');
+  assert.deepEqual(pages.map(call => call.input.PaginationToken), [undefined, 'next']);
+  assert.ok(fixture.calls.some(call => call.operation === 'describe-subnets'));
+});
+
+test('residual verification fails closed for later-page resources and malformed tag pages', async () => {
+  for (const next of [
+    { ResourceTagMappingList: [{ ResourceARN: `arn:aws:rds:${region}:${account}:db:languagewise-demo-postgres` }] },
+    {},
+    { ResourceTagMappingList: [], PaginationToken: 123 },
+  ]) {
+    const fixture = harness({ state: ready(), tagPages: {
+      first: { ResourceTagMappingList: [], PaginationToken: 'next' }, next,
+    } });
+    await assert.rejects(fixture.controller.execute('down'), /Tagged runtime/);
+    assert.equal(fixture.state().status, 'stopping');
   }
 });
 
