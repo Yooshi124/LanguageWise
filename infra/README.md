@@ -1,9 +1,39 @@
 # AWS Demo Infrastructure
 
 **The latest Demo Up failed before readiness; application readiness is unverified.**
-Run `39404244548` on `c452d5e` reported `Terraform infrastructure apply failed;
+Run `39412985687` on merged/tested/released `b3e0b6d` passed RDS creation and
+database initialization, then failed in the services apply. CloudTrail records
+18 `ecs:ListServiceDeployments` denials for the control role at 11:29:12-14 UTC.
+The pinned provider's steady-state waiter then needs `ecs:DescribeServiceDeployments`;
+both reads were missing from the IAM grants. With owner approval, four managed
+policies were updated from `v1` to `v2`, adding only these reads on
+Sydney/account/demo-service and demo-deployment ARN scopes. Exact readback and
+112 positive/negative IAM simulations pass. A fresh targeted preview shows no
+remaining IAM or cleanup-source changes, only the known unrelated ECS cluster
+drift. That drift was not applied; the temporary plan was deleted.
+
+**Cleanup recovered: native worker and fresh independent checks verify Down.**
+Automatic rollback, recovery Down `39417298976` and independent workers failed
+verification because the tag index retains inactive ECS metadata. At diagnosis,
+control was `desiredMode=down`, `status=stopping`, with no lock. RDS instances,
+running tasks and demo VPC inventory were empty; all 18 tagged ECS
+service ARNs describe as `INACTIVE` with zero desired/running/pending tasks.
+The tag index retains these records even though `ListServices` is empty. The
+verifier now requires complete exact-ARN inactive or `MISSING` proof in batches
+of ten, rejecting active, nonzero, incomplete, duplicated, malformed and foreign
+records. With owner approval, cleanup-only commit `610e02d` was packaged and pinned
+without pushing. Native build `4e1245f1-ec69-4bd4-ad30-792464d3508a` succeeded and
+normally persisted verified Down. Fresh readiness and full residual checks pass,
+with no lock; the dispatcher starts no build while Down. All four alarms are OK
+with actions enabled. Reservations remain 7 cycles and 28 hours of the 10/40
+monthly limits. All 126 focused tests pass; Terraform validation, touched-file
+formatting and editor diagnostics are clean. No further Up, manual Down marking,
+alarm disabling, account-plan change or push was performed. Foundation policy,
+regression and runbook changes remain uncommitted for owner publication.
+
+Earlier run `39404244548` on `c452d5e` reported `Terraform infrastructure apply failed;
 resource_type=aws_db_instance; code=unknown` and then verified automatic Down.
-Fresh control metadata confirms Down with no lock. RDS CloudTrail lookups in
+At that time control metadata confirmed Down with no lock. RDS CloudTrail lookups in
 Sydney and `us-east-1`, and RDS native instance events, contain no create failure
 message for this attempt, so its exact original rejection remains unavailable.
 
@@ -13,20 +43,21 @@ RDS support for `db.t3.micro` and `db.t4g.micro`, not `db.t4g.small`:
 [AWS RDS free-plan limits](https://aws.amazon.com/rds/free/). Regional catalog
 availability does not establish account-plan eligibility. On 2026-10-20 the owner
 approved changing this root to `db.t4g.micro` and starting one timed demo after
-validation. The local resize preserves PostgreSQL 18.6, 20 GiB gp3, encryption,
+validation. The merged resize preserves PostgreSQL 18.6, 20 GiB gp3, encryption,
 private access and managed credentials. Sydney's orderable-options API confirms
 that combination in all three regional zones; Terraform validation passes.
-This does not yet prove live creation or application readiness. GitHub publication,
-exact-SHA CI/release and cleanup-source readiness remain launch prerequisites.
+The latest run proves creation and initialization, not application readiness.
+Exact-SHA CI/release and cleanup-source readiness passed before that attempt.
 The account plan, quotas, lease and cleanup limits remain unchanged. Budget alerts
 are not a hard spending cap.
 
-The local diagnostics follow-up now scans both `summary` and `detail` for fixed,
+The diagnostics follow-up merged in `b3e0b6d` scans both `summary` and `detail` for fixed,
 allowlisted error codes. The pinned provider's `sdkdiag.AppendErrorf` uses the
 summary field; the original synthetic fixture incorrectly put its error in
 detail only. Both locations now have redaction regressions. Raw messages remain
-suppressed. This parser correction is uncommitted and not in the pinned cleanup
-archive below; it is not itself a fix for the account-plan incompatibility.
+suppressed. This parser correction is not in the pinned cleanup
+archive used by the failed runs, but is included in the replacement below; it is
+not itself a fix for the account-plan incompatibility.
 Before the resize, all 120 focused foundation/controller/release tests passed. Editor diagnostics and
 `git diff --check` are clean. Fresh read-only cleanup readiness and full residual
 verification also pass, with control Down and no lock. No commit, publication,
@@ -50,22 +81,27 @@ malformed diagnostics remain suppressed, along with all raw output, summaries,
 details, resource names, credentials and state. Initial validation covered 119 focused tests, including
 redaction and unchanged timeout/lock/rollback regressions. The production parser
 also accepted an actual offline Terraform JSON error without exposing raw output.
-The approved immutable cleanup archive is now published and pinned:
+The replacement immutable cleanup archive from committed source `610e02d` is now
+published and pinned, including the merged micro resize and summary parser plus
+the inactive-ECS verification repair:
 
-- Key: `cleanup/df6edf9dd1c86f8320067d7ef7ac2baad211584b8a674781bffb67177e793437.zip`
-- VersionId: `BZFwzfKUub86bULDVD7hvCkZpvIT2pVr`; 24,928 bytes, AES256; local/server SHA256 verified.
+- Key: `cleanup/d931e8b5e46229724216b1e297b46b6d194a5539830612d368e5b003f8134b37.zip`
+- VersionId: `IpFvxdJzfJUXZcU3ufum8xxFuFO9r6ww`; 25,227 bytes, AES256;
+   local, server and downloaded SHA256 verified; create-only upload.
 - CodeBuild and all four exact-source inline policies match; non-source settings
    and statements were preserved. The ignored foundation variables match as well.
-- Native cleanup build `67b4328d-3501-412d-b1c9-043b97ad5e2e` succeeded through
-   download, install and execution while already Down. This verifies bundle
-   delivery/startup, not the failed Up path or destruction of a nonempty stack.
+- Native cleanup build `4e1245f1-ec69-4bd4-ad30-792464d3508a` succeeded through
+   download, install and execution from `stopping`, then persisted verified Down
+   and released its lock. This proves delivery and native cleanup finalization,
+   not application startup or destruction of a newly provisioned nonempty stack.
 - A targeted foundation preview has no IAM or CodeBuild changes. Its sole
    unrelated ECS change was not applied, and the saved preview was deleted.
 
-Cleanup readiness and full residual checks passed after that archive was pinned;
-control remained Down with no lock. No new Up was started by this investigation.
-Publish the approved micro resize and review the local parser follow-up before
-considering another cycle; require exact-SHA CI/release and cleanup readiness.
+Cleanup readiness and full residual checks pass after the replacement archive was
+pinned and its native worker completed. The prior `df6edf9...` archive lacked the
+micro resize, summary parser follow-up and inactive-ECS proof. Publish/review the
+remaining source changes and require exact-SHA CI/release and fresh cleanup
+readiness before another explicitly approved cycle. No additional Up is authorized.
 
 The preceding run `39375711048` on `cc71e05` was denied `route53:CreateHostedZone`.
 That dependency is allowed only through Cloud Map delegation at the global Route 53
@@ -84,7 +120,10 @@ audit performed.
 - **Steps 5-6 complete, owner-confirmed:** the three application secrets are saved,
    OpenRouter's separate $10 key limit is set, and the nonsecret foundation contract
    is configured as `AWS_FOUNDATION_CONFIG` in GitHub's `aws-demo` environment.
-- **Step 7 verified:** native cleanup build
+- **Step 7 verified again:** the replacement native cleanup build above succeeded,
+   persisted Down and released its lock. Fresh residual/readiness checks pass,
+   the dispatcher starts no build, and all four armed alarms are OK.
+   Earlier native cleanup build
    `5c176bce-ac93-4b5b-a264-be9fcba5eb86` succeeded, verified Down and released its
    lock. Reinvoking the dispatcher while Down started no build. The three required
    service-linked roles are now foundation-owned. Runtime policy `v6` includes the
@@ -104,13 +143,13 @@ audit performed.
    The cleanup permission fix is also represented in Terraform with regression
    coverage. Ensure outstanding fixes are committed/reviewed and their latest
    GitHub CI checks pass; do not infer current merge status from this document.
-- **Step 8 publication is not runtime readiness:** the latest Up on `c452d5e`
-   failed at the RDS instance. The account-plan incompatibility above blocks the
-   unchanged design, and the exact original provider error was discarded.
-   Review the diagnostics repair above, preserve the immutable cleanup-source
+- **Step 8 publication is not runtime readiness:** the latest Up on `b3e0b6d`
+   passed RDS and initialization but hit the proven ECS deployment-read denial.
+   Full application startup and HTTPS smoke checks have not passed.
+   Review the scoped IAM and inactive-metadata repairs above, preserve the immutable cleanup-source
    process and require exact-SHA CI/release success before an explicitly approved
    cycle. Failed cycles retain their four-hour reservation. Do not apply an old
-   saved foundation plan or treat the unresolved failure as a verified IAM defect.
+   saved foundation plan or assume these repairs prove application readiness.
 
 The cleanup IAM repair was applied separately to avoid an unrelated ECS Exec
 configuration reset in a foundation plan. Review that remaining plan difference
@@ -134,14 +173,19 @@ before a future foundation apply; do not apply an old saved plan indiscriminatel
 | Owned-VPC security-group read | Support the pinned provider's `GetSecurityGroupsForVpc` call | Scoped network canary using the pinned provider |
 | Delegated Route 53 lifecycle | Let Cloud Map create, inspect and delete its private DNS zone without direct DNS access | Private-DNS lifecycle canary, not an HTTP namespace test |
 | Allowlisted Terraform failure diagnostics | Distinguish the failed phase and safe error metadata from successful rollback without exposing raw output | Native JSON diagnostic fixtures with secret sentinels, malformed events, timeout/rollback regressions and an actual offline Terraform error |
-| Provider summary-field classification (local) | Extract only known codes from the provider SDK's actual error field without printing the message | Summary-only and detail-only redaction fixtures based on the pinned provider helper |
+| Provider summary-field classification | Extract only known codes from the provider SDK's actual error field without printing the message | Summary-only and detail-only redaction fixtures based on the pinned provider helper |
 | Approved RDS micro resize | Replace the free-plan-incompatible small class without changing storage, networking or credentials | Account-plan metadata, documented RDS plan limits, exact engine/class/storage availability, Terraform validation and a class contract regression |
+| ECS deployment reads | Allow the pinned provider's list-then-describe steady-state waiter without adding deployment writes | Actual waiter code, exact CloudTrail denial, official IAM resource types, scoped regression and 112 positive/negative role simulations |
+| Inactive ECS exact-ARN proof | Distinguish retained inactive service tags from running resources without ignoring unknown records | Native `INACTIVE`/zero-count response fixtures, complete batched proofs, active/malformed/foreign negative cases and successful native cleanup finalization |
 
 Most configuration, permission and response-shape fixes were predictable. In
 particular, the Route 53 dependency should have been checked earlier: an HTTP
 namespace does not exercise private DNS, and Sydney-only CloudTrail lookup misses
 global Route 53 events recorded in `us-east-1`. Passing regex/unit contracts or a
 single-action IAM simulation is not proof that dependent AWS calls will succeed.
+An ECS create check must also complete the pinned provider's steady-state waiter:
+service creation alone does not exercise its deployment list/describe calls.
+Cleanup fixtures must represent inactive ECS records as well as deleted EC2 tags.
 
 Before another full cycle, review the pinned provider's API/dependency surface,
 validate actual supported IAM resource/condition keys and test creation, reads and
@@ -159,7 +203,7 @@ secret consumption and all-service HTTPS readiness remain unverified by the DNS
 canary. Live quotas, throttling, provisioning delays and eventual-consistency timing
 cannot be guaranteed by static checks. Treat these as untested boundaries, not
 proven additional bugs; do not preemptively grant administrator access or unrelated
-actions. No new Demo Up was started for this repair.
+actions. No further Demo Up was started for this repair.
 
 ## Ownership
 

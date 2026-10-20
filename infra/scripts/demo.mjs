@@ -562,6 +562,23 @@ export class DemoController {
       requireThat(!live.NextToken && Array.isArray(live[field]) && live[field].length === 0, 'Tagged runtime resources remain');
       taggedResiduals = taggedResiduals.filter(resource => !pattern.test(resource.ResourceARN));
     }
+    const servicePattern = new RegExp(`^arn:aws:ecs:${config.region}:${config.account_id}:service/languagewise/languagewise-demo-[a-z0-9-]+$`);
+    const serviceArns = [...new Set(taggedResiduals.map(resource => resource.ResourceARN).filter(arn => servicePattern.test(arn)))];
+    for (let offset = 0; offset < serviceArns.length; offset += 10) {
+      const batch = serviceArns.slice(offset, offset + 10);
+      const result = this.aws('ecs', 'describe-services', {
+        cluster: `arn:aws:ecs:${config.region}:${config.account_id}:cluster/languagewise`, services: batch,
+      });
+      requireThat(Array.isArray(result.services) && Array.isArray(result.failures)
+        && !result.nextToken && !result.NextToken, 'Tagged ECS service inventory is incomplete');
+      requireThat(result.services.every(service => batch.includes(service?.serviceArn) && service.status === 'INACTIVE'
+        && service.desiredCount === 0 && service.runningCount === 0 && service.pendingCount === 0)
+        && result.failures.every(failure => batch.includes(failure?.arn) && failure.reason === 'MISSING'),
+      'Tagged ECS services remain or cannot be verified absent');
+      const verified = [...result.services.map(service => service.serviceArn), ...result.failures.map(failure => failure.arn)];
+      requireThat(verified.length === batch.length && new Set(verified).size === batch.length, 'Tagged ECS service inventory is incomplete');
+    }
+    taggedResiduals = taggedResiduals.filter(resource => !servicePattern.test(resource.ResourceARN));
     requireThat(taggedResiduals.length === 0, 'Tagged runtime resources remain');
     const vpcs = this.aws('ec2', 'describe-vpcs', { Filters: [{ Name: 'tag:Project', Values: ['languagewise'] }, { Name: 'tag:Lifecycle', Values: ['disposable-demo'] }] }).Vpcs ?? [];
     requireThat(vpcs.length === 0, 'Demo VPC remains; dependent ALB/NAT/ENIs/endpoints may survive');
