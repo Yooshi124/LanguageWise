@@ -17,8 +17,8 @@ retained and supplied as nonsecret values, not remote-state secret lookups.
   `service_execution_role_arns`, `service_task_role_arns` and `secret_arns`.
   The deployment/control roles and retained control identifiers belong to the
   controller; this root does not assume or modify those roles.
-- Both service role maps contain every Compose name except `shared-db`, plus
-  `database-initializer`. Supply a minimal task role even for containers that do
+- Both service role maps contain every Compose name except `shared-db`,
+  `mcp-server` and `rag-server`, plus `database-initializer`. Supply a minimal task role even for containers that do
   not use AWS APIs directly.
 - `secret_arns` contains `db-shared`, `db-mini-games`, `db-quizzes-courses`,
   `db-chat-discussion`, `db-quests`, `openrouter-api-key`, `signing-private-key`

@@ -95,8 +95,8 @@ service_execution_role_arns service_task_role_arns secret_arns
 state_bucket_name demo_state_key
 ```
 
-Service role maps have the 18 Compose service names excluding `shared-db`, plus
-`database-initializer`. Secret keys are `db-shared`, `db-mini-games`,
+Service role maps have the 18 Compose service names excluding `shared-db`,
+`mcp-server` and `rag-server`, plus `database-initializer`. Secret keys are `db-shared`, `db-mini-games`,
 `db-quizzes-courses`, `db-chat-discussion`, `db-quests`, `openrouter-api-key`,
 `signing-private-key`, `signing-public-key`.
 

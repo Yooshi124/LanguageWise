@@ -161,11 +161,12 @@ test('flat output names exactly match the script interface', () => {
   assert.match(cleanup, /name\s*= "TF_VAR_foundation"/);
 });
 
-test('role keys are precisely Compose minus shared-db plus the initializer', () => {
+test('role keys are precisely Compose minus shared-db and MCP/RAG plus the initializer', () => {
   const compose = read('../../docker-compose.yml').split(/^services:\s*$/m)[1];
   assert.ok(compose);
   const expected = [...compose.matchAll(/^  ([a-z][a-z0-9-]*):\s*$/gm)]
-    .map((match) => match[1]).filter((name) => name !== 'shared-db');
+    .map((match) => match[1])
+    .filter((name) => !['shared-db', 'mcp-server', 'rag-server'].includes(name));
   assert.equal(expected.length, 18);
   const serviceBlock = main.match(/services\s*= toset\(\[([\s\S]*?)\]\)/)[1];
   const actual = [...serviceBlock.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
