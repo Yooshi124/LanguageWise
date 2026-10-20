@@ -22,12 +22,12 @@ export function loadFoundation(input, read = readFileSync) {
   return validateFoundation(JSON.parse(json.trim()));
 }
 
-export function nativeDependencies(env = process.env, request = fetch) {
+export function nativeDependencies(env = process.env, request = fetch, execute = execFileSync) {
   return {
     env, now: Date.now, sleep,
     run(binary, args, options = {}) {
       try {
-        return execFileSync(binary, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+        return execute(binary, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
           maxBuffer: 16 * 1024 * 1024, timeout: 60_000, killSignal: 'SIGKILL', shell: false,
           env: { ...env, AWS_PAGER: '', AWS_CLI_AUTO_PROMPT: 'off', TF_IN_AUTOMATION: 'true', TF_INPUT: 'false' }, ...options });
       } catch (error) {
@@ -35,6 +35,32 @@ export function nativeDependencies(env = process.env, request = fetch) {
         const code = String(error.stderr ?? '').match(/\b(ConditionalCheckFailedException|TransactionCanceledException|NoSuchKey|NoSuchEntity|ResourceNotFoundException)\b/);
         safe.code = code?.[1];
         safe.uncertainWriter = error.code === 'ETIMEDOUT' || Boolean(error.signal);
+        if (binary === 'terraform' && args.includes('-json')) {
+          const resourceTypes = ['aws_db_instance', 'aws_db_subnet_group', 'aws_db_parameter_group',
+            'aws_cloudfront_distribution', 'aws_cloudfront_vpc_origin', 'aws_ecs_task_definition', 'aws_ecs_service',
+            'aws_service_discovery_private_dns_namespace', 'aws_service_discovery_service', 'aws_security_group',
+            'aws_vpc_security_group_ingress_rule', 'aws_vpc_security_group_egress_rule', 'aws_vpc', 'aws_subnet'];
+          const errorCodes = ['AccessDenied', 'AccessDeniedException', 'UnauthorizedOperation', 'InvalidParameterCombination',
+            'InvalidParameterValue', 'InvalidParameterValueException', 'InvalidArgument', 'InvalidInput',
+            'InsufficientDBInstanceCapacity', 'DBInstanceAlreadyExists', 'DBSubnetGroupDoesNotCoverEnoughAZs',
+            'InvalidVPCNetworkStateFault', 'InvalidSubnet', 'KMSKeyNotAccessibleFault', 'ThrottlingException',
+            'LimitExceededException', 'ServiceQuotaExceededException'];
+          const summaries = ['Invalid combination of arguments', 'Missing required argument', 'Unsupported argument',
+            'Unsupported attribute', 'Provider produced inconsistent final plan', 'Invalid function argument', 'Invalid index'];
+          const diagnostics = [];
+          for (const line of `${error.stdout ?? ''}\n${error.stderr ?? ''}`.split('\n')) {
+            let event;
+            try { event = JSON.parse(line); } catch { continue; }
+            if (event?.type !== 'diagnostic' || event.diagnostic?.severity !== 'error') continue;
+            const diagnostic = event.diagnostic;
+            const type = typeof diagnostic.address === 'string' ? diagnostic.address.split('.')[0] : undefined;
+            const detail = typeof diagnostic.detail === 'string' ? diagnostic.detail : '';
+            diagnostics.push(`resource_type=${resourceTypes.includes(type) ? type : 'unknown'}; code=${errorCodes.find(value =>
+              new RegExp(`\\b${value}\\b`).test(detail)) ?? 'unknown'}; category=${summaries.includes(diagnostic.summary)
+              ? diagnostic.summary : 'provider-or-unknown'}`);
+          }
+          safe.diagnostic = [...new Set(diagnostics)].slice(0, 10).join(' | ');
+        }
         throw safe;
       }
     },
@@ -419,14 +445,16 @@ export class DemoController {
         } });
       } catch (error) {
         if (error.uncertainWriter) this.uncertainWriter = true;
+        this.dependencies.report(`Terraform ${destroy ? 'destroy' : enabled ? 'services' : 'infrastructure'} ${args[0]} failed; ${
+          error.uncertainWriter ? 'writer termination uncertain' : error.diagnostic || 'diagnostics unavailable'}; raw output suppressed.`);
         throw error;
       }
     };
     invoke(['init', '-input=false', '-reconfigure', `-backend-config=bucket=${this.config.state_bucket_name}`,
       `-backend-config=key=${this.config.demo_state_key}`, `-backend-config=region=${this.config.region}`,
       '-backend-config=workspace_key_prefix=demo/workspaces', '-backend-config=use_lockfile=true']);
-    invoke(['plan', '-input=false', '-lock-timeout=60s', ...(destroy ? ['-destroy'] : []), `-var-file=${variables}`, `-out=${plan}`]);
-    invoke(['apply', '-input=false', '-lock-timeout=60s', plan]);
+    invoke(['plan', '-json', '-input=false', '-lock-timeout=60s', ...(destroy ? ['-destroy'] : []), `-var-file=${variables}`, `-out=${plan}`]);
+    invoke(['apply', '-json', '-input=false', '-lock-timeout=60s', plan]);
     this.assertLock();
     return JSON.parse(invoke(['output', '-json']));
   }
