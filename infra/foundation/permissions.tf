@@ -254,13 +254,17 @@ locals {
       Resource = "arn:aws:ec2:${local.region}:aws:prefix-list/*"
     },
     {
-      Sid      = "DiscoveryInitialOwnershipTags", Effect = "Allow"
+      Sid      = "DiscoveryDemoTagging", Effect = "Allow"
       Action   = ["servicediscovery:TagResource"]
-      Resource = "arn:aws:servicediscovery:${local.region}:${local.account_id}:*/*"
+      Resource = "*"
       Condition = merge(local.demo_creation, {
-        Null                        = { "aws:ResourceTag/Project" = "true" }
         "ForAllValues:StringEquals" = { "aws:TagKeys" = ["Project", "Layer", "Lifecycle"] }
       })
+    },
+    {
+      Sid      = "DemoVpcSecurityGroupRead", Effect = "Allow", Condition = local.demo_tagged
+      Action   = ["ec2:GetSecurityGroupsForVpc"]
+      Resource = "arn:aws:ec2:${local.region}:${local.account_id}:vpc/*"
     }
   ]
   image_read_statements = [
@@ -287,7 +291,7 @@ locals {
     for name, statements in local.runtime_policy_parts : name => [
       for statement in statements : merge(statement, {
         Action = [for action in statement.Action : action if !can(regex(":(Create|Register|RunTask)", action)) && !(statement.Sid == "RdsManagedSecretMetadata" && !contains(["secretsmanager:DescribeSecret", "secretsmanager:GetResourcePolicy"], action))]
-      }) if !contains(["CloudFrontInitialOwnershipTags", "DiscoveryInitialOwnershipTags"], statement.Sid) && length([for action in statement.Action : action if !can(regex(":(Create|Register|RunTask)", action)) && !(statement.Sid == "RdsManagedSecretMetadata" && !contains(["secretsmanager:DescribeSecret", "secretsmanager:GetResourcePolicy"], action))]) > 0
+      }) if !contains(["CloudFrontInitialOwnershipTags", "DiscoveryDemoTagging"], statement.Sid) && length([for action in statement.Action : action if !can(regex(":(Create|Register|RunTask)", action)) && !(statement.Sid == "RdsManagedSecretMetadata" && !contains(["secretsmanager:DescribeSecret", "secretsmanager:GetResourcePolicy"], action))]) > 0
     ]
   }
 }
