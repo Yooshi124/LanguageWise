@@ -17,7 +17,9 @@ const conditional = error => error?.code === 'ConditionalCheckFailedException' |
 
 export function loadFoundation(input, read = readFileSync) {
   requireThat(typeof input === 'string' && input.trim().length > 0, 'FOUNDATION_CONFIG is required');
-  return validateFoundation(JSON.parse(input.trim().startsWith('{') ? input : read(resolve(input), 'utf8')));
+  const source = input.trim();
+  const json = source.startsWith('{') ? source : read(resolve(source), 'utf8');
+  return validateFoundation(JSON.parse(json.trim()));
 }
 
 export function nativeDependencies(env = process.env, request = fetch) {
