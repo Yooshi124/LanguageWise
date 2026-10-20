@@ -16,7 +16,7 @@ resource "aws_db_instance" "demo" {
   identifier                   = "languagewise-demo-postgres"
   engine                       = "postgres"
   engine_version               = "18.6"
-  instance_class               = "db.t4g.small"
+  instance_class               = "db.t4g.micro"
   allocated_storage            = 20
   storage_type                 = "gp3"
   storage_encrypted            = true

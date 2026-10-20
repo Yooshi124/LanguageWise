@@ -255,23 +255,26 @@ test('missing release never discards an existing disposable state', async () => 
   assert.ok(!fixture.calls.some(call => call.binary === 'terraform'));
 });
 
-test('native Terraform failures retain allowlisted diagnostics but never raw output or secrets', () => {
-  const sentinel = 'private-diagnostic-test-sentinel';
-  const event = { type: 'diagnostic', diagnostic: { severity: 'error', address: `aws_db_instance.${sentinel}`,
-    summary: `creating database ${sentinel}`, detail: `operation error RDS: CreateDBInstance, InvalidParameterCombination: ${sentinel}` } };
-  const dependencies = nativeDependencies({}, undefined, () => {
-    throw Object.assign(new Error(sentinel), { stdout: `${JSON.stringify(event)}\n`, stderr: sentinel });
+for (const field of ['summary', 'detail']) {
+  test(`native Terraform failures classify ${field} without retaining raw output or secrets`, () => {
+    const sentinel = 'private-diagnostic-test-sentinel';
+    const event = { type: 'diagnostic', diagnostic: { severity: 'error', address: `aws_db_instance.${sentinel}`,
+      summary: `creating database ${sentinel}`, detail: '',
+      [field]: `creating RDS DB Instance (demo): operation error RDS: CreateDBInstance, InvalidParameterCombination: ${sentinel}` } };
+    const dependencies = nativeDependencies({}, undefined, () => {
+      throw Object.assign(new Error(sentinel), { stdout: `${JSON.stringify(event)}\n`, stderr: sentinel });
+    });
+    assert.throws(() => dependencies.run('terraform', ['apply', '-json']), error => {
+      assert.equal(error.diagnostic, 'resource_type=aws_db_instance; code=InvalidParameterCombination; category=provider-or-unknown');
+      assert.ok(!JSON.stringify(error).includes(sentinel));
+      assert.ok(!error.message.includes(sentinel));
+      assert.equal(error.stdout, undefined);
+      assert.equal(error.stderr, undefined);
+      assert.equal(error.uncertainWriter, false);
+      return true;
+    });
   });
-  assert.throws(() => dependencies.run('terraform', ['apply', '-json']), error => {
-    assert.equal(error.diagnostic, 'resource_type=aws_db_instance; code=InvalidParameterCombination; category=provider-or-unknown');
-    assert.ok(!JSON.stringify(error).includes(sentinel));
-    assert.ok(!error.message.includes(sentinel));
-    assert.equal(error.stdout, undefined);
-    assert.equal(error.stderr, undefined);
-    assert.equal(error.uncertainWriter, false);
-    return true;
-  });
-});
+}
 
 test('native Terraform diagnostics ignore malformed, unknown and non-error events and preserve timeout safety', () => {
   const events = [null, { type: 'planned_change', '@message': 'private-sentinel' },

@@ -54,9 +54,9 @@ export function nativeDependencies(env = process.env, request = fetch, execute =
             if (event?.type !== 'diagnostic' || event.diagnostic?.severity !== 'error') continue;
             const diagnostic = event.diagnostic;
             const type = typeof diagnostic.address === 'string' ? diagnostic.address.split('.')[0] : undefined;
-            const detail = typeof diagnostic.detail === 'string' ? diagnostic.detail : '';
+            const diagnosticText = [diagnostic.summary, diagnostic.detail].filter(value => typeof value === 'string').join('\n');
             diagnostics.push(`resource_type=${resourceTypes.includes(type) ? type : 'unknown'}; code=${errorCodes.find(value =>
-              new RegExp(`\\b${value}\\b`).test(detail)) ?? 'unknown'}; category=${summaries.includes(diagnostic.summary)
+              new RegExp(`\\b${value}\\b`).test(diagnosticText)) ?? 'unknown'}; category=${summaries.includes(diagnostic.summary)
               ? diagnostic.summary : 'provider-or-unknown'}`);
           }
           safe.diagnostic = [...new Set(diagnostics)].slice(0, 10).join(' | ');
