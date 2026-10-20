@@ -104,6 +104,20 @@ test('CodeBuild worker metadata reads authorize the exact project rather than no
   assert.doesNotMatch(grant, /:build\/|Resource\s*= "\*"/);
 });
 
+test('ECS deployment inventory reads stay within regional demo service scope', () => {
+  const grant = statement('EcsServices');
+  assert.match(grant, /"ecs:ListServiceDeployments"/);
+  assert.match(grant, /"ecs:DescribeServiceDeployments"/);
+  assert.match(grant, /Condition = local\.regional/);
+  assert.match(grant, /Resource\s*= "arn:aws:ecs:\$\{local\.region\}:\$\{local\.account_id\}:service\/languagewise\/\$\{local\.prefix\}-\*"/);
+  assert.doesNotMatch(grant, /Resource\s*= "\*"|"ecs:\*"/);
+  const deployment = statement('EcsDeploymentRead');
+  assert.match(deployment, /Action\s*= \["ecs:DescribeServiceDeployments"\]/);
+  assert.match(deployment, /Condition = local\.regional/);
+  assert.match(deployment, /Resource\s*= "arn:aws:ecs:\$\{local\.region\}:\$\{local\.account_id\}:service-deployment\/languagewise\/\$\{local\.prefix\}-\*\/\*"/);
+  assert.doesNotMatch(deployment, /Resource\s*= "\*"|"ecs:\*"|ecs:StopServiceDeployment/);
+});
+
 test('approved free-plan database uses micro while preserving storage and private managed credentials', () => {
   const instance = demoDatabase.split('resource "aws_db_instance" "demo" {')[1].split('resource "aws_ecs_task_definition"')[0];
   assert.match(instance, /instance_class\s*= "db\.t4g\.micro"/);
