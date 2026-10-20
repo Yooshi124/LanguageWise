@@ -157,6 +157,14 @@ in its environment. The script must translate the contract into the demo root's
 CodeBuild is nonprivileged, limited to one concurrent build and 120 minutes
 (30-minute queue timeout); its CloudWatch log retention is seven days.
 
+CodeBuild source access needs both `s3:GetObject` on the exact cleanup ZIP key
+and `s3:GetObjectVersion` restricted to its approved version. The former permits
+current-object reads, not just metadata; no other cleanup keys or writes are
+authorized. The project still selects the explicit reviewed source version.
+If `DOWNLOAD_SOURCE` returns 403, check these separate grants before changing the
+bundle or widening bucket access. Apply reviewed foundation policy changes and
+rerun the build; a delivered failure alert does not make cleanup operational.
+
 Scheduler runs every 15 minutes and invokes only the retained Node.js 22 Lambda
 dispatcher. Its 128 MB, 15-second, concurrency-one function performs one strongly
 consistent read of the exact DynamoDB `control` item, then starts only the exact
