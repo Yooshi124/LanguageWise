@@ -26,6 +26,13 @@ resource "aws_iam_role_policy" "cleanup" {
     Version = "2012-10-17"
     Statement = concat(local.control_statements, local.state_statements, [
       {
+        Sid       = "CleanupSourceCurrentObjectRead"
+        Effect    = "Allow", Action = ["s3:GetObject"]
+        Resource  = "${data.aws_s3_bucket.artifacts.arn}/${var.cleanup_bundle_key}"
+        Condition = local.regional
+      },
+      {
+        Sid       = "CleanupSourcePinnedVersionRead"
         Effect    = "Allow", Action = ["s3:GetObjectVersion"]
         Resource  = "${data.aws_s3_bucket.artifacts.arn}/${var.cleanup_bundle_key}"
         Condition = { StringEquals = { "s3:VersionId" = var.cleanup_bundle_version, "aws:RequestedRegion" = local.region } }

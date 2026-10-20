@@ -1,10 +1,13 @@
 # GitHub AWS Authentication Setup
 
-This connects GitHub-hosted runners to the existing read-only AWS validation
-role. It does not provision the application, grant deployment permissions, or
-implement Demo Up/Down yet. No AWS key belongs on the homebox.
+This records the initial GitHub-hosted AWS authentication setup and retains
+environment/key maintenance guidance. The read-only validation workflow was
+retired on 2026-10-20 after its successful check. Current deployment and Demo
+Up/Down instructions are in the [infrastructure runbook](../infra/README.md).
+Removing the diagnostic workflow does not revoke the IAM user, its key, or its
+validation role. No AWS key belongs on the homebox.
 
-## Current State
+## Validation Bootstrap Record
 
 - AWS account: `047754151573`; region: `ap-southeast-2`.
 - Dedicated user: `arn:aws:iam::047754151573:user/languagewise/languagewise-runner`.
@@ -19,7 +22,7 @@ implement Demo Up/Down yet. No AWS key belongs on the homebox.
 - The admin created `aws-demo`. API checks confirm only the branch `master` is
    allowed, with no required reviewers/wait timer. Environment-secret writes from
    Amber's GitHub CLI account succeeded.
-- [The validation workflow](../.github/workflows/aws-validation.yml) is merged.
+- The former validation workflow was merged and has since been retired.
    [Run 39247442861](https://github.com/Yooshi124/LanguageWise/actions/runs/39247442861)
    passed, verifying GitHub-hosted role assumption and the two scoped reads.
 
@@ -37,7 +40,7 @@ In [repository environments](https://github.com/Yooshi124/LanguageWise/settings/
 4. Confirm protected `master` requires reviewed PRs and passing checks. Workflow
    and infrastructure changes must be reviewed; avoid routine direct pushes.
 5. Under Actions settings, permit GitHub-hosted runners and the official
-   `aws-actions/configure-aws-credentials` action. This workflow pins v6.3.0 to
+   `aws-actions/configure-aws-credentials` action. The AWS workflows pin v6.3.0 to
    commit `e1253824e5c10ff9df46874f81ed3ec929e19cfd`.
 6. Confirm who can add **environment secrets**. If Amber's existing access cannot
    do that, the admin must perform the secret-entry step; sharing a personal AWS
@@ -47,23 +50,19 @@ Do this before running the workflow. GitHub can automatically create a missing
 environment referenced by a workflow, but that does not configure its protections.
 Do not put the AWS key in repository-wide secrets as a workaround.
 
-## 2. Team: Merge the Validation Workflow
+## 2. Retired Validation Workflow
 
-The team merged [aws-validation.yml](../.github/workflows/aws-validation.yml) into
-`master`. Its Git blob hash was checked against the locally validated version
-before the successful run. Future changes still go through reviewed PRs; the
-assistant has not committed, pushed, or merged changes.
+The team merged the former **AWS Read-Only Validation** workflow into `master`.
+Its Git blob hash was checked against the locally validated version before the
+successful run. It has been removed; do not recreate it as a deployment prerequisite.
 
-The workflow is named **AWS Read-Only Validation**. It runs only through
-`workflow_dispatch`, only in the expected repository on `master`, and only on a
-GitHub-hosted Ubuntu runner. It checks missing secrets without printing their
-values, assumes the exact validation role for 15 minutes, and checks identity
-and the two permitted metadata reads. It does not check out repository code,
-run PR code, request a GitHub OIDC token, or change AWS resources.
+It ran only through manual dispatch on `master` using a GitHub-hosted Ubuntu
+runner. It assumed the validation role for 15 minutes and checked identity and
+the two permitted metadata reads without checking out code or changing AWS resources.
 
-The credentials action skips session tags because the IAM user is intentionally
-not allowed `sts:TagSession`. Account, region, and validation role are fixed in
-this workflow, so no GitHub variables are needed for this first test.
+The current AWS workflows retain the credentials action's session-tag skip
+because the IAM user is intentionally not allowed `sts:TagSession`. Follow the
+infrastructure runbook for their scoped roles and required configuration.
 
 ## 3. AWS Operator: Create and Deliver One Key
 
@@ -113,29 +112,24 @@ must not be overwritten or deleted without checking its owner/use.
    delivery fails, deactivate/delete the new key and create a replacement later;
    do not create repeated active keys or grant broader permissions to fix delivery.
 
-## 4. Team: Run and Verify
+## 4. Historical Verification and Maintenance
 
 Completed: [run 39247442861](https://github.com/Yooshi124/LanguageWise/actions/runs/39247442861)
 passed on 2026-10-19 after the key was installed. The earlier missing-secrets
-failure is resolved. The following steps can be used to repeat the check:
-
-In [repository Actions](https://github.com/Yooshi124/LanguageWise/actions), choose
-**AWS Read-Only Validation** > **Run workflow** > branch `master` > **Run workflow**.
-
-Expect the role identity to contain
-`assumed-role/languagewise-runner-validation/`, followed by a success message for
-the Sydney cluster and repository. Credentials must not appear in output. Share
-the run URL or error text for troubleshooting, not secret values.
+failure is resolved. This run remains the historical authentication evidence;
+the retired workflow is no longer available for dispatch. Use the current
+infrastructure runbook for deployment verification. Share run URLs or error text
+for troubleshooting, not secret values.
 
 If secrets are missing, check their exact names and environment. If authentication
 fails, check that both values belong to the same dedicated user's active key.
 Do not widen IAM permissions to troubleshoot an expired/incorrect key. If IAM
-reports a session-tagging error, verify the merged workflow still sets
+reports a session-tagging error, verify the current AWS workflow still sets
 `role-skip-session-tagging: true`.
 
-A successful run proves GitHub-to-AWS authentication only. The migration plan's
-budget, Terraform state, scoped deployment/control roles, application deployment,
-Demo Up/Down, and independent AWS expiry cleanup remain subsequent work.
+That successful run proved GitHub-to-AWS authentication only, not application
+deployment or expiry cleanup. Current implementation/setup status is recorded in
+the infrastructure runbook.
 
 Rotate the source key at least every 90 days and at handover. On exposure, disable
 it immediately, replace the GitHub secrets, and consider revoking issued role

@@ -1,27 +1,37 @@
 # AWS Demo Infrastructure
 
-**Bootstrap is applied; foundation and demo are not yet applied.** Protected local
-bootstrap state records both S3 buckets and their protections. Budget creation and
-the cost proposals were owner-confirmed on 2026-10-20. This does not constitute
-new API verification of alert recipients, tax, notification delivery, or AWS drift.
+**Bootstrap and foundation are applied; the application demo has not been started.**
+The empty/down cleanup smoke test succeeded, and its earlier failure notification
+was received. Budget creation and the cost proposals were owner-confirmed on
+2026-10-20. Secret setup, spending limit and smoke-test completion below are
+owner-reported; no secret values were retrieved or fresh billing/drift audit performed.
 
 ## Current Progress: 2026-10-20
 
-- [PR #70](https://github.com/Yooshi124/LanguageWise/pull/70) is open. The three
-   Terraform CI failures were traced to Windows-only provider package hashes;
-   verified Linux hashes were added without changing provider versions.
-- The separate security-hook failures were addressed with line-scoped annotations
-   for reviewed SQL/subprocess lint false positives and explicitly fake fixtures.
-   No repository-wide checks were disabled.
-- Local verification passes in clean Linux containers: all three Terraform roots
-   validate with read-only lockfiles, all three mocked demo scenarios pass, and the
-   affected Ruff/secret-scan checks and eleven initializer tests pass. The updated
-   PR's GitHub checks still need confirmation before merging.
-- Continue at **step 3** after committing/pushing the fixes and confirming CI.
-   Package the exact reviewed commit, then upload its cleanup ZIP and record the
-   real S3 version. Cleanup publication, foundation apply, application secrets,
-   GitHub output configuration, SNS delivery checks and live rehearsals remain
-   pending. Demo Up/Down is not operational yet.
+- **Steps 2-4 complete:** protected buckets and foundation are applied. The reviewed
+   cleanup ZIP is uploaded with its real S3 VersionId, and the Terraform 1.16.6
+   Linux amd64 checksum was verified against HashiCorp's signed manifest.
+- **Steps 5-6 complete, owner-confirmed:** the three application secrets are saved,
+   OpenRouter's separate $10 key limit is set, and the nonsecret foundation contract
+   is configured as `AWS_FOUNDATION_CONFIG` in GitHub's `aws-demo` environment.
+- **Step 7 complete, owner-confirmed:** the cleanup failure email arrived and the
+   empty/down CodeBuild run subsequently succeeded. Source download initially
+   failed because the cleanup role lacked `s3:GetObject` on its exact ZIP; the
+   scoped IAM repair resolved it. This smoke test does not prove real teardown or
+   independent lease-expiry cleanup yet.
+- The earlier Terraform and security-hook fixes for
+   [PR #70](https://github.com/Yooshi124/LanguageWise/pull/70) passed local checks.
+   The cleanup permission fix is also represented in Terraform with regression
+   coverage. Ensure outstanding fixes are committed/reviewed and their latest
+   GitHub CI checks pass; do not infer current merge status from this document.
+- **Next: step 8.** Merge outstanding implementation/fix changes into protected
+   `master`, or check the resulting release if already merged. Wait for successful
+   exact-SHA CI and `AWS Release`; while Down this publishes images only. Then run
+   Demo Up and complete the live gates below before using it for a presentation.
+
+The cleanup IAM repair was applied separately to avoid an unrelated ECS Exec
+configuration reset in a foundation plan. Review that remaining plan difference
+before a future foundation apply; do not apply an old saved plan indiscriminately.
 
 ## Ownership
 
@@ -55,7 +65,8 @@ and access key remain outside Terraform; no replacement key is required.
    terraform -chdir=infra/bootstrap apply bootstrap.tfplan
    ```
 
-3. After code is reviewed/committed, package its exact committed cleanup source:
+3. **Completed for the current setup.** For a new reviewed cleanup revision,
+   package its exact committed source:
 
    ```powershell
    node infra/scripts/package-cleanup.mjs
@@ -68,7 +79,8 @@ and access key remain outside Terraform; no replacement key is required.
    Record the returned **VersionId**, not an invented placeholder. Keep that
    version available for as long as foundation references it. Review the actual
    Linux amd64 Terraform 1.16.6 ZIP checksum against HashiCorp's signed checksums.
-4. Supply private, ignored foundation tfvars containing `cleanup_bundle_key`,
+4. **Completed for the current setup.** For initial setup or a reviewed update,
+   supply private, ignored foundation tfvars containing `cleanup_bundle_key`,
    `cleanup_bundle_version`, and `terraform_sha256` (only nonsecret values).
    Initialize foundation's backend, inspect its saved plan/imports, and apply:
 
@@ -81,7 +93,8 @@ and access key remain outside Terraform; no replacement key is required.
    Review adoption of ECS `languagewise`, ECR `41026release2/languagewise`, and
    IAM `languagewise-runner`; do not recreate/delete them. No application tasks,
    network, RDS or CloudFront runtime are created by these two roots.
-5. Enter **three** real application values directly in Secrets Manager: the
+5. **Completed, owner-confirmed.** For setup or rotation, enter **three** real
+   application values directly in Secrets Manager: the
    dedicated OpenRouter key, a fresh signing private PEM, and matching public PEM.
    Their names are `languagewise/demo/openrouter-api-key`,
    `languagewise/demo/signing-private-key`, and
@@ -90,7 +103,8 @@ and access key remain outside Terraform; no replacement key is required.
    separate $10 spending limit. Leave email delivery unconfigured/disabled unless
    separately costed and approved. The initializer populates the five database
    secrets; do not copy local development database passwords into them.
-6. Export the **nonsecret** flat output contract and set the `aws-demo`
+6. **Completed, owner-confirmed.** After foundation output changes, export the
+   **nonsecret** flat output contract and set the `aws-demo`
    environment variable `AWS_FOUNDATION_CONFIG`. For example, in PowerShell:
 
    ```powershell
@@ -103,12 +117,15 @@ and access key remain outside Terraform; no replacement key is required.
    This contains identifiers/ARNs only. Preserve the existing environment AWS
    access-key secrets and its **master-only** deployment rule. Require reviewed
    workflow/infrastructure changes and passing CI on protected master.
-7. Confirm an SNS subscription to the cleanup-failure topic. Start the cleanup
+7. **Completed, owner-confirmed.** For setup/reverification, confirm an SNS
+   subscription to the cleanup-failure topic. Start the cleanup
    CodeBuild project administratively once and verify success with an empty/down
    demo. Test actual failure notification delivery. Up checks the schedule,
    dispatcher, alarms, confirmed subscription, recent successful build, service
    trusts, and content-addressed versioned cleanup source before paid provisioning.
-8. Merge the implementation. The `AWS Release` workflow waits for successful
+8. **Current step:** merge the reviewed implementation and outstanding fixes into
+   protected `master` only after their latest CI passes. If already merged, check
+   the resulting release rather than merging again. The `AWS Release` workflow waits for successful
    CI of that exact SHA, publishes all nineteen immutable image digests and records
    the release. It must **not** create runtime resources while mode is Down.
    A manual release dispatch reuses an already-published SHA instead of changing

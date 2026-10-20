@@ -161,6 +161,23 @@ test('cleanup has real mandatory source inputs, pinned source, and verified tool
   assert.match(cleanup, /Action = "codebuild:StartBuild", Resource = aws_codebuild_project\.cleanup\.arn/);
 });
 
+test('CodeBuild can inspect only its source object while the download stays version-pinned', () => {
+  const policy = cleanup.split('resource "aws_iam_role_policy" "cleanup"')[1]
+    .split('resource "aws_cloudwatch_log_group" "cleanup"')[0];
+  const current = policy.split('Sid       = "CleanupSourceCurrentObjectRead"')[1].split('\n      },')[0];
+  const pinned = policy.split('Sid       = "CleanupSourcePinnedVersionRead"')[1].split('\n      },')[0];
+  for (const grant of [current, pinned]) {
+    assert.match(grant, /Resource\s*= "\$\{data\.aws_s3_bucket\.artifacts\.arn\}\/\$\{var\.cleanup_bundle_key\}"/);
+    assert.doesNotMatch(grant, /Resource\s*= "\*"|s3:PutObject|s3:DeleteObject/);
+  }
+  assert.match(current, /Action = \["s3:GetObject"\]/);
+  assert.match(current, /Condition = local\.regional/);
+  assert.doesNotMatch(current, /s3:VersionId/);
+  assert.match(pinned, /Action = \["s3:GetObjectVersion"\]/);
+  assert.match(pinned, /"s3:VersionId" = var\.cleanup_bundle_version/);
+  assert.match(cleanup, /source_version\s*= var\.cleanup_bundle_version/);
+});
+
 test('retained state and application values stay outside disposable control', () => {
   assert.match(bootstrap, /prevent_destroy = true/);
   assert.match(bootstrap, /status = "Enabled"/);
