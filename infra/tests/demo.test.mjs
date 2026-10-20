@@ -255,6 +255,52 @@ test('missing release never discards an existing disposable state', async () => 
   assert.ok(!fixture.calls.some(call => call.binary === 'terraform'));
 });
 
+test('native Terraform failures retain allowlisted diagnostics but never raw output or secrets', () => {
+  const sentinel = 'private-diagnostic-test-sentinel';
+  const event = { type: 'diagnostic', diagnostic: { severity: 'error', address: `aws_db_instance.${sentinel}`,
+    summary: `creating database ${sentinel}`, detail: `operation error RDS: CreateDBInstance, InvalidParameterCombination: ${sentinel}` } };
+  const dependencies = nativeDependencies({}, undefined, () => {
+    throw Object.assign(new Error(sentinel), { stdout: `${JSON.stringify(event)}\n`, stderr: sentinel });
+  });
+  assert.throws(() => dependencies.run('terraform', ['apply', '-json']), error => {
+    assert.equal(error.diagnostic, 'resource_type=aws_db_instance; code=InvalidParameterCombination; category=provider-or-unknown');
+    assert.ok(!JSON.stringify(error).includes(sentinel));
+    assert.ok(!error.message.includes(sentinel));
+    assert.equal(error.stdout, undefined);
+    assert.equal(error.stderr, undefined);
+    assert.equal(error.uncertainWriter, false);
+    return true;
+  });
+});
+
+test('native Terraform diagnostics ignore malformed, unknown and non-error events and preserve timeout safety', () => {
+  const events = [null, { type: 'planned_change', '@message': 'private-sentinel' },
+    { type: 'diagnostic', diagnostic: { severity: 'warning', summary: 'private-sentinel' } },
+    { type: 'diagnostic', diagnostic: { severity: 'error', address: 'private-sentinel', detail: { private: true },
+      summary: 'Missing required argument' } }];
+  const dependencies = nativeDependencies({}, undefined, () => {
+    throw Object.assign(new Error('private-sentinel'), { stdout: `not-json\n${events.map(event => JSON.stringify(event)).join('\n')}`,
+      stderr: 'private-sentinel', code: 'ETIMEDOUT', signal: 'SIGKILL' });
+  });
+  assert.throws(() => dependencies.run('terraform', ['plan', '-json']), error => {
+    assert.equal(error.diagnostic, 'resource_type=unknown; code=unknown; category=Missing required argument');
+    assert.equal(error.uncertainWriter, true);
+    assert.ok(!JSON.stringify(error).includes('private-sentinel'));
+    return true;
+  });
+});
+
+test('a failed Up reports its exact Terraform phase before successful rollback', async () => {
+  const fixture = harness({ failApply: 1 });
+  await assert.rejects(fixture.controller.execute('up'), /Terraform apply failed/);
+  assert.ok(fixture.reports.some(report => report === 'Terraform infrastructure apply failed; diagnostics unavailable; raw output suppressed.'));
+  assert.ok(fixture.reports.findIndex(report => report.startsWith('Terraform infrastructure apply failed'))
+    < fixture.reports.findIndex(report => report.startsWith('Demo Down verified')));
+  assert.equal(fixture.state().status, 'down');
+  assert.ok(fixture.calls.filter(call => call.binary === 'terraform' && ['plan', 'apply'].some(command => call.args.includes(command)))
+    .every(call => call.args.includes('-json')));
+});
+
 test('foundation accepts JSON or a file path, but never Terraform output wrappers', () => {
   assert.deepEqual(loadFoundation(JSON.stringify(foundation)), foundation);
   assert.deepEqual(loadFoundation('infra/generated/foundation.json', () => JSON.stringify(foundation)), foundation);
