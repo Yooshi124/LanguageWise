@@ -104,7 +104,10 @@ function harness(options = {}) {
       assert.ok(!args.includes('get-secret-value'));
       const [service, operation] = args;
       const inputIndex = args.indexOf('--cli-input-json');
-      const input = JSON.parse(args[inputIndex + 1]);
+      const s3Fields = { '--bucket': 'Bucket', '--key': 'Key', '--version-id': 'VersionId',
+        '--body': 'Body', '--content-type': 'ContentType', '--if-match': 'IfMatch', '--if-none-match': 'IfNoneMatch' };
+      const input = inputIndex >= 0 ? JSON.parse(args[inputIndex + 1]) : Object.fromEntries(
+        Object.entries(s3Fields).filter(([flag]) => args.includes(flag)).map(([flag, name]) => [name, args[args.indexOf(flag) + 1]]));
       calls.push({ service, operation, input, args, settings });
       options.beforeAws?.({ service, operation, input, rows, store, state });
       let response = {};
@@ -139,7 +142,7 @@ function harness(options = {}) {
         if (operation === 'get-object') {
           const content = input.Key.startsWith('cleanup/') ? archive : objects.get(input.Key);
           if (content === undefined) throw Object.assign(new Error('Missing object'), { code: 'NoSuchKey' });
-          writeFileSync(args[inputIndex + 2], content);
+          writeFileSync(args.at(-1), content);
           response.ETag = '"original-etag"';
         }
         if (operation === 'delete-object') {
@@ -501,11 +504,35 @@ test('preflight uses only secret metadata and bounded structured CLI arguments',
   const fixture = harness();
   await fixture.controller.execute('up');
   for (const call of fixture.calls.filter(call => call.service)) {
-    assert.ok(call.args.includes('--cli-input-json'));
+    if (call.service === 's3api' && ['get-object', 'put-object'].includes(call.operation)) {
+      assert.ok(call.args.includes('--bucket') && call.args.includes('--key'));
+    } else assert.ok(call.args.includes('--cli-input-json'));
     assert.ok(call.settings.timeout > 0 && call.settings.timeout <= 60_000);
   }
   assert.deepEqual(new Set(fixture.calls.filter(call => call.service === 'secretsmanager').map(call => call.operation)), new Set(['describe-secret']));
   assert.ok(fixture.calls.some(call => call.operation === 'update-item'));
+});
+
+test('S3 file transfers use explicit source and file arguments instead of JSON-only CLI input', () => {
+  const fixture = harness();
+  const calls = [];
+  fixture.dependencies.run = (binary, args) => { calls.push(args); return '{}'; };
+  try {
+    fixture.controller.aws('s3api', 'get-object', { Bucket: foundation.artifact_bucket_name,
+      Key: 'cleanup/source.zip', VersionId: 'approved-version' }, 60_000, ['download.zip']);
+    fixture.controller.aws('s3api', 'put-object', { Bucket: foundation.artifact_bucket_name,
+      Key: 'releases/latest.json', Body: 'manifest.json', ContentType: 'application/json', IfNoneMatch: '*' });
+    for (const args of calls) {
+      assert.ok(!args.includes('--cli-input-json'));
+      assert.equal(args[args.indexOf('--bucket') + 1], foundation.artifact_bucket_name);
+      assert.ok(args.includes('--key'));
+    }
+    assert.equal(calls[0][calls[0].indexOf('--version-id') + 1], 'approved-version');
+    assert.equal(calls[0].at(-1), 'download.zip');
+    assert.equal(calls[1][calls[1].indexOf('--body') + 1], 'manifest.json');
+    assert.equal(calls[1][calls[1].indexOf('--content-type') + 1], 'application/json');
+    assert.equal(calls[1][calls[1].indexOf('--if-none-match') + 1], '*');
+  } finally { rmSync(fixture.controller.directory, { recursive: true, force: true }); }
 });
 
 test('independent cleanup configured for another state is rejected before provisioning', async () => {
