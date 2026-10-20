@@ -505,11 +505,24 @@ export class DemoController {
 
   verifyResiduals() {
     const config = this.config;
-    const tags = this.aws('resourcegroupstaggingapi', 'get-resources', { TagFilters: [
-      { Key: 'Project', Values: ['languagewise'] }, { Key: 'Lifecycle', Values: ['disposable-demo'] }], ResourcesPerPage: 100 });
+    const resources = [];
+    const tokens = new Set();
+    let token;
+    do {
+      const page = this.aws('resourcegroupstaggingapi', 'get-resources', { TagFilters: [
+        { Key: 'Project', Values: ['languagewise'] }, { Key: 'Lifecycle', Values: ['disposable-demo'] }],
+      ResourcesPerPage: 100, ...(token ? { PaginationToken: token } : {}) }, 60_000, ['--no-paginate']);
+      requireThat(Array.isArray(page.ResourceTagMappingList), 'Tagged runtime inventory is incomplete');
+      resources.push(...page.ResourceTagMappingList);
+      token = page.PaginationToken;
+      requireThat(token === undefined || typeof token === 'string', 'Tagged runtime inventory is incomplete');
+      if (token) {
+        requireThat(!tokens.has(token) && tokens.size < 99, 'Tagged runtime inventory is incomplete');
+        tokens.add(token);
+      }
+    } while (token);
     const retainedDefinition = new RegExp(`^arn:aws:ecs:${config.region}:${config.account_id}:task-definition/languagewise-demo-[a-z0-9-]+:[1-9][0-9]*$`);
-    requireThat(!tags.PaginationToken, 'Tagged runtime inventory is incomplete');
-    let taggedResiduals = (tags.ResourceTagMappingList ?? []).filter(resource => !retainedDefinition.test(resource.ResourceARN));
+    let taggedResiduals = resources.filter(resource => !retainedDefinition.test(resource.ResourceARN));
     for (const [kind, operation, field, filter, prefix] of [
       ['subnet', 'describe-subnets', 'Subnets', 'subnet-id', 'subnet'],
       ['security-group-rule', 'describe-security-group-rules', 'SecurityGroupRules', 'security-group-rule-id', 'sgr'],

@@ -1,10 +1,12 @@
 # AWS Demo Infrastructure
 
-**Bootstrap and foundation are applied; the application demo has not been started.**
-The empty/down cleanup smoke test succeeded, and its earlier failure notification
-was received. Budget creation and the cost proposals were owner-confirmed on
-2026-10-20. Secret setup, spending limit and smoke-test completion below are
-owner-reported; no secret values were retrieved or fresh billing/drift audit performed.
+**The latest Demo Up failed before readiness; application readiness is unverified.**
+Run `39369047280` was denied `ec2:GetSecurityGroupsForVpc` on its demo VPC.
+That read is now allowed only for owned demo VPCs in Sydney. Cleanup also needed
+complete tag-inventory pagination; its committed repair is published and pinned.
+Read-only verification found no runtime residuals. Budget creation and the cost proposals
+were owner-confirmed on 2026-10-20. No secret values were retrieved or fresh billing
+audit performed.
 
 ## Current Progress: 2026-10-20
 
@@ -14,20 +16,28 @@ owner-reported; no secret values were retrieved or fresh billing/drift audit per
 - **Steps 5-6 complete, owner-confirmed:** the three application secrets are saved,
    OpenRouter's separate $10 key limit is set, and the nonsecret foundation contract
    is configured as `AWS_FOUNDATION_CONFIG` in GitHub's `aws-demo` environment.
-- **Step 7 complete, owner-confirmed:** the cleanup failure email arrived and the
-   empty/down CodeBuild run subsequently succeeded. Source download initially
-   failed because the cleanup role lacked `s3:GetObject` on its exact ZIP; the
-   scoped IAM repair resolved it. This smoke test does not prove real teardown or
-   independent lease-expiry cleanup yet.
+- **Step 7 verified:** native cleanup build
+   `5c176bce-ac93-4b5b-a264-be9fcba5eb86` succeeded, verified Down and released its
+   lock. Reinvoking the dispatcher while Down started no build. The three required
+   service-linked roles are now foundation-owned. Runtime policy `v5` includes the
+   owner-approved Cloud Map tagging exception described below; live scoped-role
+   tests allowed intended demo tags and denied foreign project request tags.
+   Runtime `v5` and cleanup `v3` also include the restricted VPC security-group
+   read. Cleanup commit `a45ada2` follows bounded tag pagination while retaining
+   repeated-token, malformed-page and unknown-resource rejection. Its native
+   worker verified Down; the dispatcher then started no new build and all four
+   alarms were OK with actions enabled. Never set Down manually.
 - The earlier Terraform and security-hook fixes for
    [PR #70](https://github.com/Yooshi124/LanguageWise/pull/70) passed local checks.
    The cleanup permission fix is also represented in Terraform with regression
    coverage. Ensure outstanding fixes are committed/reviewed and their latest
    GitHub CI checks pass; do not infer current merge status from this document.
-- **Next: step 8.** Merge outstanding implementation/fix changes into protected
-   `master`, or check the resulting release if already merged. Wait for successful
-   exact-SHA CI and `AWS Release`; while Down this publishes images only. Then run
-   Demo Up and complete the live gates below before using it for a presentation.
+- **Step 8 verified for `9db4094`:** exact-SHA CI and `AWS Release` succeeded.
+   The subsequent Up failed, so successful image publication does not establish
+   runtime readiness. Merge the cleanup repair and remaining foundation/runbook
+   corrections, wait for exact-SHA CI/release success and verified native Down,
+   then explicitly request another cycle. Failed cycles retain their four-hour
+   reservation. Do not apply an old saved foundation plan.
 
 The cleanup IAM repair was applied separately to avoid an unrelated ECS Exec
 configuration reset in a foundation plan. Review that remaining plan difference
@@ -210,6 +220,13 @@ state. Only administrative foundation setup can change this provenance.
 
 ## Security Boundaries Requiring Review
 
+- Cloud Map `TagResource` requires wildcard resource scope and does not support
+   existing-resource ownership conditions. Its grant requires Sydney, the fixed
+   Project/Layer request tags and only Project/Layer/Lifecycle tag keys, but can
+   retag other Cloud Map resources in this account. The owner approved this
+   exception on 2026-10-20 because this account is exclusively for LanguageWise.
+   Independent cleanup does not receive the grant. Do not reuse this permission
+   design in a shared account without a different provisioning boundary.
 - CloudFront `CreateDistributionWithTags` also requires `TagResource`. The initial
   grant is restricted to this account's resources with **neither Project nor Layer
   set**, the fixed LanguageWise request tags, and the three allowed tag keys.

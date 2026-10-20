@@ -51,14 +51,22 @@ test('CloudFront managed prefix-list entries have a regional AWS-owned read gran
   assert.doesNotMatch(grant, /Resource\s*= "\*"|ec2:\*|ModifyManagedPrefixList|CreateManagedPrefixList/);
 });
 
-test('Cloud Map creation can tag only initial demo ownership without granting cleanup that ability', () => {
-  const grant = statement('DiscoveryInitialOwnershipTags');
+test('VPC security-group enumeration is restricted to owned demo VPCs in the configured region', () => {
+  const grant = statement('DemoVpcSecurityGroupRead');
+  assert.match(grant, /Action\s*= \["ec2:GetSecurityGroupsForVpc"\]/);
+  assert.match(grant, /Condition = local\.demo_tagged/);
+  assert.match(grant, /Resource\s*= "arn:aws:ec2:\$\{local\.region\}:\$\{local\.account_id\}:vpc\/\*"/);
+  assert.doesNotMatch(grant, /Resource\s*= "\*"|ec2:\*|ec2:(Create|Modify|Delete)/);
+});
+
+test('Cloud Map tagging requires demo request tags with supported wildcard scope and excludes cleanup', () => {
+  const grant = statement('DiscoveryDemoTagging');
   assert.match(grant, /Action\s*= \["servicediscovery:TagResource"\]/);
-  assert.match(grant, /Resource\s*= "arn:aws:servicediscovery:\$\{local\.region\}:\$\{local\.account_id\}:\*\/\*"/);
+  assert.match(grant, /Resource\s*= "\*"/);
   assert.match(grant, /merge\(local\.demo_creation/);
-  assert.match(grant, /Null\s*= \{ "aws:ResourceTag\/Project" = "true" \}/);
+  assert.doesNotMatch(grant, /aws:ResourceTag|\bNull\b/);
   assert.match(grant, /"aws:TagKeys" = \["Project", "Layer", "Lifecycle"\]/);
-  assert.match(permissions, /!contains\(\["CloudFrontInitialOwnershipTags", "DiscoveryInitialOwnershipTags"\], statement\.Sid\)/);
+  assert.match(permissions, /!contains\(\["CloudFrontInitialOwnershipTags", "DiscoveryDemoTagging"\], statement\.Sid\)/);
   assert.match(statement('MutateTaggedDiscovery'), /Condition = local\.demo_tagged/);
 });
 
@@ -330,7 +338,7 @@ test('CloudFront initial tagging cannot take over differently owned resources or
   assert.match(grant, /"aws:ResourceTag\/Project" = "true"/);
   assert.match(grant, /"aws:ResourceTag\/Layer" = "true"/);
   assert.match(grant, /"aws:TagKeys" = \["Project", "Layer", "Lifecycle"\]/);
-  assert.match(permissions, /!contains\(\["CloudFrontInitialOwnershipTags", "DiscoveryInitialOwnershipTags"\], statement\.Sid\)/);
+  assert.match(permissions, /!contains\(\["CloudFrontInitialOwnershipTags", "DiscoveryDemoTagging"\], statement\.Sid\)/);
   assert.match(permissions, /Action = \["s3:GetBucketLocation", "s3:ListBucket"\]/);
 });
 
