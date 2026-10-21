@@ -1,0 +1,50 @@
+# =============================================================================
+# Post-commit AI-assisted unit test generation
+# =============================================================================
+# After a commit lands on master, asks the shared OpenRouter model to propose
+# unit test cases for each student's two assigned endpoints, then uploads the
+# per-student JSON and summary.md as an artifact. Requires the repository
+# secret OPENROUTER_API_KEY.
+# =============================================================================
+
+name: post-commit-ai-unit-tests
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: post-commit-ai-unit-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generate-ai-unit-tests:
+    name: generate-ai-unit-tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Generate AI-assisted unit test cases
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: python tools/testing/ai_unit_tests.py
+
+      - name: Upload AI unit test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-unit-test-reports
+          path: reports/post-commit/ai-unit-tests/
+          if-no-files-found: warn
