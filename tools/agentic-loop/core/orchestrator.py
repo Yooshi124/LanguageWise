@@ -76,6 +76,18 @@ MULTI_AGENT_DESCRIPTION = (
     "Worker agent executes the plan against the evidence; reviewer agent assesses the risk."
 )
 
+REVIEWER_NOT_INDEPENDENT = (
+    "The reviewer agent is running on the same model as the worker agent, so its review "
+    "is not independent. Set OPENROUTER_REVIEW_MODEL to a different model for a "
+    "separate second opinion."
+)
+
+ALLOWED_DECISIONS = [
+    WorkflowDecision.ACCEPT.value,
+    WorkflowDecision.PARTIALLY_ACCEPT.value,
+    WorkflowDecision.REJECT.value,
+]
+
 
 @dataclass
 class WorkflowRun:
@@ -86,8 +98,12 @@ class WorkflowRun:
     worker_output: WorkerOutput | None = None
     assessment: ReviewerAssessment | None = None
     decision: WorkflowDecision = WorkflowDecision.PENDING
-    decision_note: str = ""
+    decision_reason: str = ""
+    decision_evidence: str = ""
     evidence_files: list[str] = field(default_factory=list)
+    agent_status: dict[str, str] = field(
+        default_factory=lambda: {agent: workflow_log.NOT_REACHED for agent in workflow_log.AGENT_KEYS}
+    )
 
 
 class RoundAborted(RuntimeError):
@@ -653,16 +669,20 @@ class Orchestrator:
                 client=self.client,
             )
         except OpenRouterError as exc:
+            workflow.agent_status["planner"] = workflow_log.FAILED
             self.writer.write_note(f"**Planner agent failed:** {exc}")
             raise RoundAborted(stages.PLAN, f"planner agent failed: {exc}") from exc
 
         round_state.tokens += result.response.total_tokens
         workflow.plan = result.plan
+        workflow.agent_status["planner"] = workflow_log.COMPLETED
         console.print_workflow_plan(result.plan)
         self.writer.write_note(
             "\n".join(
                 [
                     "#### Planner Agent",
+                    "",
+                    f"- Status: `{workflow_log.COMPLETED}`",
                     "",
                     _plan_markdown(result.plan),
                     "",
@@ -697,20 +717,30 @@ class Orchestrator:
                 client=self.client,
             )
         except OpenRouterError as exc:
+            workflow.agent_status["worker"] = workflow_log.FAILED
             self.writer.write_agent_stage(f"**Worker agent failed:** {exc}")
             raise RoundAborted(stages.AGENT, f"worker agent failed: {exc}") from exc
 
         round_state.tokens += work.response.total_tokens
         workflow.worker_output = work.output
+        workflow.agent_status["worker"] = workflow_log.COMPLETED
         console.print_worker_output(work.output)
         worker_section = [
             "#### 4a. Worker Agent",
+            "",
+            f"- Status: `{workflow_log.COMPLETED}`",
+            f"- Evidence count: {len(bundle.files)} file(s)",
             "",
             _worker_markdown(work.output),
             "",
             f"_Call: {work.response.usage_line()}_",
             "",
         ]
+
+        reviewer_section = ["#### 4b. Reviewer Agent", ""]
+        if self.settings.review_model == self.settings.model:
+            console.print_warning(REVIEWER_NOT_INDEPENDENT)
+            reviewer_section += [f"> **Warning:** {REVIEWER_NOT_INDEPENDENT}", ""]
 
         console.print_info(
             f"Reviewer agent assessing with {self.settings.review_model} via OpenRouter..."
@@ -727,20 +757,23 @@ class Orchestrator:
                 client=self.review_client,
             )
         except OpenRouterError as exc:
+            workflow.agent_status["reviewer"] = workflow_log.FAILED
             self.writer.write_agent_stage(
-                "\n".join(worker_section + [f"**Reviewer agent failed:** {exc}"])
+                "\n".join(worker_section + reviewer_section + [f"**Reviewer agent failed:** {exc}"])
             )
             raise RoundAborted(stages.AGENT, f"reviewer agent failed: {exc}") from exc
 
         round_state.tokens += review.response.total_tokens
         workflow.assessment = review.assessment
+        workflow.agent_status["reviewer"] = workflow_log.COMPLETED
         console.print_review(review.assessment)
         self.writer.write_agent_stage(
             "\n".join(
                 [f"_{MULTI_AGENT_DESCRIPTION}_", ""]
                 + worker_section
+                + reviewer_section
                 + [
-                    "#### 4b. Reviewer Agent",
+                    f"- Status: `{workflow_log.COMPLETED}`",
                     "",
                     _review_markdown(review.assessment),
                     "",
@@ -760,37 +793,36 @@ class Orchestrator:
             console.print_info("Non-interactive run - the human decision is left pending.")
             self.writer.write_human_review_stage(
                 f"- Reviewer recommendation: `{recommended}`\n"
-                f"- Human decision: **{WorkflowDecision.PENDING.value}** (non-interactive run)"
+                f"- Human decision: **{WorkflowDecision.PENDING.value}** (non-interactive run)\n"
+                f"- Record it after reviewing the output: "
+                f'`python main.py --decide {workflow.workflow_id} "<accept|partial|reject> <reason>" '
+                f'--evidence-used "<what informed the decision>"`'
             )
             return
 
         console.print_info(f"Reviewer recommendation: {recommended}")
         while True:
             reply = self.input_fn(
-                "Your decision on this output? (accept / partial / reject, optionally followed by a note):"
+                "Your decision on this output? (accept / partial / reject, followed by your reason):"
             ).strip()
-            decision, note = WorkflowDecision.parse(reply)
+            decision, reason = WorkflowDecision.parse(reply)
             if decision:
                 break
             console.print_warning("Reply with accept, partial or reject (or a / p / r).")
+        evidence_used = self.input_fn(
+            "Which evidence informed this decision? (files, agent fields or checks; Enter to skip):"
+        ).strip()
 
         workflow.decision = decision
-        workflow.decision_note = note
+        workflow.decision_reason = reason
+        workflow.decision_evidence = evidence_used
         console.print_success(f"Human decision: {decision.value}")
-
-        lines = [
-            "**User response (verbatim):**",
-            "",
-            f"```text\n{reply}\n```",
-            "",
-            f"- Reviewer recommendation: `{recommended}`",
-            f"- Human decision: **{decision.value}**",
-        ]
-        if note:
-            lines.append(f"- Note: {note}")
-        if recommendation and decision.name.lower() != recommendation.value:
-            lines.append("- The human overrode the reviewer recommendation.")
-        self.writer.write_human_review_stage("\n".join(lines))
+        self.writer.write_human_review_stage(
+            _decision_markdown(
+                reply, recommended, decision, reason, evidence_used,
+                overrode=bool(recommendation) and decision.name.lower() != recommendation.value,
+            )
+        )
 
     def _stage_record_workflow(self, workflow: WorkflowRun, round_state: RoundState) -> None:
         console.print_stage_banner(stages.ADAPT, "Record the workflow history and coordination audit.")
@@ -798,6 +830,7 @@ class Orchestrator:
         history_path, audit_path = workflow_log.append_workflow(
             self.settings.sessions_dir, history, audit
         )
+        self.session.workflows.append((workflow.workflow_id, workflow.decision.value))
         console.print_workflow_recorded(history_path, audit_path)
         self.writer.write_adapt_stage(
             "\n".join(
@@ -809,6 +842,10 @@ class Orchestrator:
                     f"- Workflow history: `{history_path}`",
                     f"- Coordination audit: `{audit_path}`",
                     f"- Round duration: {round_state.duration_seconds():.1f}s",
+                    "",
+                    "#### Evidence Log",
+                    "",
+                    workflow_log.evidence_log_markdown(history, self.settings.sessions_dir),
                 ]
             )
         )
@@ -823,6 +860,16 @@ class Orchestrator:
         timestamp = utc_now().isoformat()
         duration_ms = int(round_state.duration_seconds() * 1000)
         assessment = workflow.assessment
+        models = {
+            "planner": self.settings.model,
+            "worker": self.settings.model,
+            "reviewer": self.settings.review_model,
+        }
+        outputs = {
+            "planner": workflow.plan,
+            "worker": workflow.worker_output,
+            "reviewer": assessment,
+        }
         common = {
             "workflow_id": workflow.workflow_id,
             "timestamp": timestamp,
@@ -836,24 +883,25 @@ class Orchestrator:
             "round": round_state.number,
             "user_request": round_state.prompt,
             "scope": str(self.settings.scope),
-            "models": {
-                "planner_agent": self.settings.model,
-                "worker_agent": self.settings.model,
-                "reviewer_agent": self.settings.review_model,
-            },
+            "models": {f"{agent}_agent": model for agent, model in models.items()},
+            "evidence_count": len(workflow.evidence_files),
             "evidence_files": workflow.evidence_files,
-            "planner_result": _dump(workflow.plan),
-            "worker_result": _dump(workflow.worker_output),
-            "reviewer_result": _dump(assessment),
+            **{
+                f"{agent}_result": {
+                    "agent": f"{agent}_agent",
+                    "model": models[agent],
+                    "status": workflow.agent_status[agent],
+                    "human_approval_required": True,
+                    "output": _dump(outputs[agent]),
+                }
+                for agent in workflow_log.AGENT_KEYS
+            },
             "human_decision": {
                 "required": True,
                 "status": workflow.decision.value,
-                "note": workflow.decision_note,
-                "allowed_values": [
-                    WorkflowDecision.ACCEPT.value,
-                    WorkflowDecision.PARTIALLY_ACCEPT.value,
-                    WorkflowDecision.REJECT.value,
-                ],
+                "reason": workflow.decision_reason,
+                "evidence_used": workflow.decision_evidence,
+                "allowed_values": ALLOWED_DECISIONS,
             },
             "tokens": round_state.tokens,
         }
@@ -861,6 +909,8 @@ class Orchestrator:
             **common,
             "human_approval_required": True,
             "human_decision": workflow.decision.value,
+            **{f"{agent}_status": workflow.agent_status[agent] for agent in workflow_log.AGENT_KEYS},
+            "reviewer_independent": self.settings.review_model != self.settings.model,
             "reviewer_risk": assessment.risk.value if assessment else None,
             "reviewer_recommendation": assessment.recommendation.value if assessment else None,
             "evidence_count": len(workflow.evidence_files),
@@ -922,6 +972,95 @@ def _selection_prompt(user_request: str, plan: WorkflowPlan) -> str:
 
 def _dump(model: Any) -> dict[str, Any] | None:
     return model.model_dump(mode="json") if model is not None else None
+
+
+def _decision_markdown(
+    reply: str,
+    recommended: str,
+    decision: WorkflowDecision,
+    reason: str,
+    evidence_used: str,
+    overrode: bool,
+) -> str:
+    lines = [
+        "**User response (verbatim):**",
+        "",
+        f"```text\n{reply}\n```",
+        "",
+        f"- Reviewer recommendation: `{recommended}`",
+        f"- Decision: **{decision.value}**",
+        f"- Reason: {reason or '(not given)'}",
+        f"- Evidence used: {evidence_used or '(not given)'}",
+    ]
+    if overrode:
+        lines.append("- The human overrode the reviewer recommendation.")
+    return "\n".join(lines)
+
+
+def record_human_decision(
+    sessions_dir: Path, workflow_id: str, reply: str, evidence_used: str = ""
+) -> tuple[dict[str, Any], Path | None]:
+    """Record the human decision for a workflow that was run non-interactively.
+
+    The decision is appended to the workflow history and coordination audit as a
+    separate event, and a dated addendum (decision plus the updated evidence log)
+    is appended to the session log that recorded the workflow.
+    Returns the updated workflow record and the session log path, if it exists.
+    """
+    decision, reason = WorkflowDecision.parse(reply)
+    if decision is None:
+        raise workflow_log.WorkflowLogError(
+            "The decision must start with accept, partial or reject (or a / p / r)."
+        )
+    record = workflow_log.load_workflow(sessions_dir, workflow_id)
+    if record.get("status") != "completed":
+        raise workflow_log.WorkflowLogError(
+            f"Workflow {record['workflow_id']} did not complete ({record.get('status')}); "
+            "there is no reviewed output to decide on."
+        )
+
+    decided_at = utc_now()
+    workflow_log.record_decision(
+        sessions_dir,
+        record,
+        decision.value,
+        reason,
+        evidence_used.strip(),
+        decided_at.isoformat(),
+        ALLOWED_DECISIONS,
+    )
+    record = workflow_log.load_workflow(sessions_dir, record["workflow_id"])
+
+    session_path = workflow_log.session_log_path(sessions_dir, record.get("session_guid", ""))
+    if not session_path.is_file():
+        return record, None
+
+    reviewer_result = record.get("reviewer_result") or {}
+    review = (reviewer_result.get("output") if "agent" in reviewer_result else reviewer_result) or {}
+    recommended = review.get("recommendation") or "(none)"
+    workflow_log.append_to_session_log(
+        session_path,
+        "\n".join(
+            [
+                "---",
+                "",
+                f"## Human Decision — Workflow `{record['workflow_id']}` (Round {record.get('round', '?')})",
+                "",
+                f"_Recorded after the run on {format_timestamp(decided_at)}; the reviewer "
+                "output above was read before deciding._",
+                "",
+                _decision_markdown(
+                    reply, recommended, decision, reason, evidence_used.strip(),
+                    overrode=recommended != "(none)" and decision.name.lower() != recommended,
+                ),
+                "",
+                "#### Evidence Log",
+                "",
+                workflow_log.evidence_log_markdown(record, sessions_dir),
+            ]
+        ),
+    )
+    return record, session_path
 
 
 def _bullets(label: str, items: list[str]) -> list[str]:

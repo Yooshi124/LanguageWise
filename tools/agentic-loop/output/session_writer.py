@@ -84,6 +84,12 @@ class SessionWriter:
             f"- **Plans created:** {len(plans)}",
         ]
         lines.extend(f"  - `{path}`" for path in plans)
+        if self.session.workflows:
+            lines.append(f"- **Multi-agent workflows:** {len(self.session.workflows)}")
+            lines.extend(
+                f"  - `{workflow_id}` — human decision: **{decision}**"
+                for workflow_id, decision in self.session.workflows
+            )
         lines.extend([f"- **Closing note:** {reason}", ""])
         self._append("\n".join(lines))
 

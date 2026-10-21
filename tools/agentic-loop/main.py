@@ -7,6 +7,7 @@ Run from this directory:
     python main.py --scope ..\..\DatabaseService
     python main.py --ci-failures            # diagnose the latest failed CI run
     python main.py --multi-agent "summarise the quests API"  # planner/worker/reviewer workflow
+    python main.py --decide <workflow-id> "partial <reason>"  # record a pending human decision
 """
 
 from __future__ import annotations
@@ -35,11 +36,12 @@ from core.mcp_client import McpClient, McpError  # noqa: E402
 from core.rag_client import RagClient, RagError  # noqa: E402
 from core import console, stages  # noqa: E402
 from core.openrouter_client import OpenRouterClient  # noqa: E402
-from core.orchestrator import Orchestrator  # noqa: E402
+from core.orchestrator import Orchestrator, record_human_decision  # noqa: E402
 from core.prompt_registry import PromptError, PromptRegistry  # noqa: E402
 from core.redaction import register_secret  # noqa: E402
 from core.session import SessionState, format_timestamp  # noqa: E402
 from output.session_writer import SessionWriter  # noqa: E402
+from output.workflow_log import WorkflowLogError  # noqa: E402
 
 BANNER_TITLE = "Agentic Loop - Rubber Duck Code Review"
 
@@ -60,6 +62,8 @@ Commands
   /multi-agent <req> Run the planner -> worker -> reviewer workflow, then decide
                      accept / partial / reject (logged to workflow_history.jsonl
                      and coordination_audit.jsonl in the sessions dir)
+  /decide <id> <d>   Record the human decision (accept / partial / reject + reason)
+                     for a multi-agent workflow that was left pending
   /exit              End the session and write the log footer
 
 Anything else is treated as a review prompt, for example:
@@ -127,6 +131,22 @@ def build_parser() -> argparse.ArgumentParser:
             "with the human decision left pending, then exit."
         ),
     )
+    parser.add_argument(
+        "--decide",
+        nargs=2,
+        metavar=("WORKFLOW_ID", "DECISION"),
+        help=(
+            "Record the human decision for a multi-agent workflow left pending, e.g. "
+            "--decide 7212a99a \"partial seed row clashes with Id 1\". DECISION is "
+            "accept / partial / reject followed by the reason. No model is called."
+        ),
+    )
+    parser.add_argument(
+        "--evidence-used",
+        default="",
+        metavar="TEXT",
+        help="With --decide: which evidence (files, agent fields, checks) informed the decision.",
+    )
     return parser
 
 
@@ -159,6 +179,23 @@ def session_details(settings: Settings, session_path: Path) -> dict[str, str]:
         "Evidence log": str(session_path),
         "Mode": "read-only - no source file is ever modified",
     }
+
+
+def run_decide(sessions_dir: Path, workflow_id: str, reply: str, evidence_used: str) -> int:
+    try:
+        record, session_path = record_human_decision(sessions_dir, workflow_id, reply, evidence_used)
+    except (WorkflowLogError, ValueError) as exc:
+        console.print_error(str(exc))
+        return 1
+    console.print_success(
+        f"Human decision for workflow {record['workflow_id']}: "
+        f"{record['human_decision']['status']}"
+    )
+    if session_path:
+        console.print_success(f"Evidence log updated: {session_path}")
+    else:
+        console.print_warning("The session log for this workflow was not found; JSONL logs updated.")
+    return 0
 
 
 def run_repl(
@@ -318,6 +355,14 @@ def run_repl(
                     logging.getLogger(__name__).exception("Multi-agent round failed")
                     console.print_error(f"Multi-agent round failed: {exc}")
                 continue
+            if command == "/decide":
+                workflow_id, _, reply = argument.partition(" ")
+                if not workflow_id or not reply.strip():
+                    console.print_warning("Usage: /decide <workflow-id> <accept|partial|reject> <reason>")
+                    continue
+                evidence_used = console.ask("Which evidence informed this decision? (Enter to skip):")
+                run_decide(orchestrator.settings.sessions_dir, workflow_id, reply, evidence_used)
+                continue
             if command == "/rag":
                 if not argument:
                     console.print_warning("Usage: /rag <question>")
@@ -418,6 +463,10 @@ def main(argv: list[str] | None = None) -> int:
         format="%(levelname)s %(name)s: %(message)s",
     )
     _quieten_third_party_logs(settings.log_level)
+
+    if args.decide:
+        workflow_id, reply = args.decide
+        return run_decide(settings.sessions_dir, workflow_id, reply, args.evidence_used)
 
     session = SessionState()
     writer = SessionWriter(settings.sessions_dir, session)

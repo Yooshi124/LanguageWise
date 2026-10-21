@@ -78,8 +78,11 @@ python main.py --mcp-validate
   the observed behaviour; `/mcp [tool]` lists or calls tools directly
 - **Multi-agent workflow mode:** `--multi-agent "<request>"` (or `/multi-agent`)
   runs a planner -> worker -> reviewer workflow over the code in scope, asks the
-  human to accept / partially accept / reject, and appends the result to
-  `workflow_history.jsonl` and `coordination_audit.jsonl` in the sessions directory
+  human to accept / partially accept / reject (with a reason and the evidence
+  used), and appends the result to `workflow_history.jsonl` and
+  `coordination_audit.jsonl` in the sessions directory; `--decide` records a
+  decision for a workflow left pending. Use a different `OPENROUTER_REVIEW_MODEL`
+  so the reviewer is independent of the worker
 - **Prompts:** every prompt lives in `prompts/` as markdown — change behaviour without touching Python
 - **Privacy:** `.env` files, keys, certificates and binaries are never sent to the API
 

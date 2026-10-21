@@ -39,6 +39,8 @@ class SessionState:
     guid: str = field(default_factory=new_guid)
     started_at: datetime = field(default_factory=utc_now)
     rounds: list[RoundState] = field(default_factory=list)
+    workflows: list[tuple[str, str]] = field(default_factory=list)
+    """(workflow ID, human decision) for each multi-agent workflow recorded."""
 
     def start_round(self, prompt: str) -> RoundState:
         state = RoundState(number=len(self.rounds) + 1, prompt=prompt)
