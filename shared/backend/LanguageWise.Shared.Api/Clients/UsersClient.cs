@@ -109,6 +109,24 @@ public sealed class UsersClient(HttpClient httpClient)
         return true;
     }
 
+    internal async Task<IReadOnlyList<AdminSetting>> GetAdminSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        var settings = await httpClient.GetFromJsonAsync<List<AdminSetting>>("api/admin-settings", cancellationToken);
+        return settings ?? [];
+    }
+
+    internal async Task<AdminSetting?> SetAdminSettingAsync(string name, bool isEnabled, CancellationToken cancellationToken = default)
+    {
+        using var response = await httpClient.PutAsJsonAsync($"api/admin-settings/{Uri.EscapeDataString(name)}", new { IsEnabled = isEnabled }, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<AdminSetting>(cancellationToken);
+    }
+
     private static async Task<AccountChange> ReadAccountChangeAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         switch (response.StatusCode)
@@ -137,6 +155,8 @@ internal sealed record AccountChange(AccountChangeStatus Status, UserAccount? Ac
 internal sealed record UserAccount(int Id, string Username);
 
 internal sealed record LoginStreakResponse(int Value);
+
+internal sealed record AdminSetting(string Name, bool IsEnabled);
 
 internal sealed record ProfilePicture(
     string StorageKey,

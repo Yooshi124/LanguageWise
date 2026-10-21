@@ -11,6 +11,7 @@ vi.mock('../composables/useAuth', () => ({
     status: ref('authenticated'),
     username: ref('amber'),
     isAuthenticated: computed(() => true),
+    isAdmin: computed(() => false),
     loginUrl: () => '/login',
     logout,
   }),

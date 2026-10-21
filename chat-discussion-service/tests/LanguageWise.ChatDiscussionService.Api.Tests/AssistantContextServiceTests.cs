@@ -123,6 +123,14 @@ public sealed class AssistantContextServiceTests
         });
     }
 
+    [Test]
+    public async Task BuildCanonicalContext_NamesThePostIdSoGarryCanReadTheOpenThread()
+    {
+        var context = await Context("Summarise this thread", "post", postId: 7);
+
+        Assert.That(context.GetProperty("postId").GetInt32(), Is.EqualTo(7));
+    }
+
     // -----------------------------------------------------------------------
     // The fallback answer, used when there is no model to hand the context to.
     // -----------------------------------------------------------------------

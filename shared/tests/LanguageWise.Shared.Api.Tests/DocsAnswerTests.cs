@@ -105,6 +105,24 @@ public sealed class DocsAnswerTests
     }
 
     [Test]
+    public async Task RagAnswer_WhenRagSwitchedOff_ReturnsServiceUnavailableWithoutCallingRag()
+    {
+        using var fixture = new ApiFixture(ragSwitchedOn: false);
+        using var client = fixture.CreateCookieClient(fixture.CreateToken());
+
+        var response = await client.PostAsJsonAsync("/api/rag/answer", new { query = "mini games" });
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.ServiceUnavailable));
+            Assert.That(body.RootElement.GetProperty("code").GetString(), Is.EqualTo("rag_disabled"));
+            Assert.That(fixture.RagHandler.Path, Is.Null);
+            Assert.That(fixture.GarryHandler.RequestCount, Is.Zero);
+        });
+    }
+
+    [Test]
     public void RagClient_WhenDisabled_RejectsBeforeSendingRequest()
     {
         using var fixture = new ApiFixture(ragEnabled: false);

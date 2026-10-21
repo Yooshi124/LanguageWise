@@ -19,6 +19,7 @@ import {
 import garryImage from '../assets/garry.png'
 import GarryToolResultCard from './GarryToolResultCard.vue'
 import { useGarryAssistant } from '../composables/useGarryAssistant'
+import { useAdminSettings } from '../composables/useAdminSettings'
 import {
   featureAssistants,
   type FeatureAssistant,
@@ -42,6 +43,7 @@ const router = useRouter()
 const garry = useGarryAssistant(props.userId, props.sessionId, () => {
   void router.push({ path: '/login', query: { returnUrl: route.fullPath } })
 })
+const adminSettings = useAdminSettings()
 const draft = ref('')
 const messageList = ref<HTMLElement | null>(null)
 const composer = ref<HTMLTextAreaElement | null>(null)
@@ -106,7 +108,9 @@ function toolLabel(name: string, featureKey?: string) {
 async function runTool(chip: FeatureAssistantTool) {
   const tool = garry.tools.value.find((item) => item.name === chip.tool)
   if (!tool || chip.unavailable?.(route)) return
-  await garry.runTool(tool, chip.arguments(route))
+  const args = chip.arguments(route)
+  if (args === null) return
+  await garry.runTool(tool, args)
 }
 
 function render(content: string) {
@@ -291,6 +295,7 @@ onBeforeUnmount(() => {
             @click="emit('newChat')"
           />
           <v-btn
+            v-if="adminSettings.rag.value"
             :icon="mdiBookSearchOutline"
             variant="text"
             size="small"
@@ -299,7 +304,7 @@ onBeforeUnmount(() => {
             @click="emit('docs')"
           />
           <v-btn
-            v-if="assistant?.tools"
+            v-if="assistant?.tools && adminSettings.mcp.value"
             :icon="mdiToolboxOutline"
             :variant="garry.toolsEnabled.value ? 'tonal' : 'text'"
             size="small"
@@ -344,7 +349,7 @@ onBeforeUnmount(() => {
         </header>
 
         <div class="garry-tools">
-          <template v-if="assistant?.tools && garry.toolsEnabled.value">
+          <template v-if="assistant?.tools && adminSettings.mcp.value && garry.toolsEnabled.value">
             <p v-if="garry.toolsLoading.value" class="garry-tools-status">Loading tools…</p>
             <p v-else-if="garry.toolsError.value" class="garry-tools-status">
               {{ garry.toolsError.value }}

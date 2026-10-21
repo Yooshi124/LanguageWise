@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import AppIcon from './components/AppIcon.vue'
 import AppSidebar from './components/AppSidebar.vue'
 import GarryAssistant from './components/GarryAssistant.vue'
+import { useAdminSettings } from './composables/useAdminSettings'
 import { useAuth } from './composables/useAuth'
 import { featureAssistants } from './federation/featureAssistants'
 import HostErrorView from './views/HostErrorView.vue'
@@ -11,6 +12,7 @@ import HostLoadingView from './views/HostLoadingView.vue'
 
 const route = useRoute()
 const auth = useAuth()
+const adminSettings = useAdminSettings()
 const sidebarExpanded = ref(false)
 const mobileSidebarOpen = ref(false)
 const hostError = ref('')
@@ -49,6 +51,14 @@ onErrorCaptured((error) => {
 watch(() => route.fullPath, () => {
   hostError.value = ''
 })
+watch(
+  () => auth.user.value?.id,
+  (userId) => {
+    // Garry stays hidden if the switches cannot be read.
+    if (userId !== undefined) adminSettings.load().catch(() => {})
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -84,7 +94,7 @@ watch(() => route.fullPath, () => {
     <router-view />
   </v-app>
   <GarryAssistant
-    v-if="showShell && auth.user.value"
+    v-if="showShell && auth.user.value && adminSettings.aiMode.value"
     :key="auth.user.value.id"
     :feature-key="garry?.featureKey"
     :user-id="auth.user.value.id"

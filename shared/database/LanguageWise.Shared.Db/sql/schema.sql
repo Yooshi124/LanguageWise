@@ -11,5 +11,13 @@ CREATE TABLE IF NOT EXISTS Users (
     ProfilePictureFileName    TEXT,
     ProfilePictureContentType TEXT,
     ProfilePictureSizeBytes   BIGINT,
-    ProfilePictureUploadedAt  TIMESTAMP WITH TIME ZONE
+    ProfilePictureUploadedAt  TIMESTAMP WITH TIME ZONE,
+    IsAdmin       BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+ALTER TABLE Users ADD COLUMN IF NOT EXISTS IsAdmin BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE TABLE IF NOT EXISTS AdminSettings (
+    Name      TEXT PRIMARY KEY,
+    IsEnabled BOOLEAN NOT NULL DEFAULT FALSE
 );

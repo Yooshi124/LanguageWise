@@ -13,6 +13,9 @@ const auth = {
 }
 vi.mock('./composables/useAuth', () => ({ useAuth: () => auth }))
 
+const adminSettings = { aiMode: ref(true), load: () => Promise.resolve() }
+vi.mock('./composables/useAdminSettings', () => ({ useAdminSettings: () => adminSettings }))
+
 afterEach(() => { featureAssistants.clear() })
 
 it('keeps the workspace above route content and resets it only when the signed-in user changes', async () => {

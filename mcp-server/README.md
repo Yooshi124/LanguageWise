@@ -50,6 +50,7 @@ and every downstream URL with internal DNS names.
 | `Services:QuestsAchievements` | `http://localhost:5004` | quests-achievements-notifications-service API |
 | `Services:LeaderboardAnalytics` | `http://localhost:5005` | leaderboard-analytics-service API |
 | `Services:Rag` | `http://localhost:8100` | RAG server; `docs_search` (offered in every scope) uses its general `POST /query` |
+| `Services:Database` | `http://localhost:6000` | shared-db-api; the admin **MCP** switch (off → `/mcp` returns 503 `mcp_disabled`) and **RAG** switch (off → `docs_*` tools hidden) are read from `GET /api/admin-settings` (cached 5 s, treated as off if unreadable) |
 
 ## Security model
 

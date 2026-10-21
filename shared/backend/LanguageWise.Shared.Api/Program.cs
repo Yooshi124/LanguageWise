@@ -92,9 +92,10 @@ AuthenticatedUser? ValidateToken(string token)
         var claims = tokenHandler.ValidateToken(token, validationParams, out _);
         var subject = claims.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
         var name = claims.FindFirst(JwtRegisteredClaimNames.Name)?.Value;
+        var isAdmin = claims.FindFirst("is_admin")?.Value == "true";
 
         return int.TryParse(subject, out var id) && id > 0 && !string.IsNullOrWhiteSpace(name)
-            ? new AuthenticatedUser(id, name)
+            ? new AuthenticatedUser(id, name, isAdmin)
             : null;
     }
     catch
@@ -109,14 +110,15 @@ AuthenticatedUser? ReadSessionUser(HttpContext ctx)
     return string.IsNullOrEmpty(token) ? null : ValidateToken(token);
 }
 
-void IssueSessionCookie(HttpContext ctx, int userId, string username)
+void IssueSessionCookie(HttpContext ctx, int userId, string username, bool isAdmin)
 {
     var tokenHandler = new JwtSecurityTokenHandler();
     var tokenDescriptor = new SecurityTokenDescriptor
     {
         Subject = new ClaimsIdentity([
             new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
-            new Claim(JwtRegisteredClaimNames.Name, username)
+            new Claim(JwtRegisteredClaimNames.Name, username),
+            new Claim("is_admin", isAdmin ? "true" : "false")
         ]),
         Expires = DateTime.UtcNow.AddHours(1),
         SigningCredentials = new SigningCredentials(signingKey, SecurityAlgorithms.RsaSha256)
@@ -170,7 +172,7 @@ app.MapPost("/api/login", async (HttpContext ctx, UsersClient usersClient) =>
         return Results.Unauthorized();
     }
 
-    IssueSessionCookie(ctx, response.UserId, body.Username);
+    IssueSessionCookie(ctx, response.UserId, body.Username, response.IsAdmin);
     return Results.Ok();
 });
 
@@ -223,12 +225,54 @@ app.MapPost("/api/logout", (HttpContext ctx) =>
     return Results.Ok();
 });
 
+// Settings are global, so any signed-in user may read them but only admins may change them.
+app.MapGet("/api/admin-settings", async (
+    HttpContext ctx,
+    UsersClient usersClient,
+    CancellationToken cancellationToken) =>
+{
+    if (ReadSessionUser(ctx) is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    return Results.Ok(await usersClient.GetAdminSettingsAsync(cancellationToken));
+});
+
+app.MapPut("/api/admin-settings/{name}", async (
+    string name,
+    UpdateAdminSettingRequest? body,
+    HttpContext ctx,
+    UsersClient usersClient,
+    CancellationToken cancellationToken) =>
+{
+    var user = ReadSessionUser(ctx);
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!user.IsAdmin)
+    {
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+
+    if (body is null)
+    {
+        return Results.BadRequest();
+    }
+
+    var updated = await usersClient.SetAdminSettingAsync(name, body.IsEnabled, cancellationToken);
+    return updated is null ? Results.NotFound() : Results.Ok(updated);
+});
+
 // "Ask the docs" for Garry on every feature: a cited answer from the RAG server's general
 // endpoint (never TECHNICAL- passages), or a fixed insufficient-context reply without calling Garry.
 app.MapPost("/api/rag/answer", async (
     HttpContext ctx,
     DocsAnswerApiRequest? request,
     IConfiguration configuration,
+    UsersClient usersClient,
     RagClient ragClient,
     GarryClient garryClient,
     CancellationToken cancellationToken) =>
@@ -239,7 +283,8 @@ app.MapPost("/api/rag/answer", async (
     }
 
     // Isolated CI tests disable RAG; integrated E2E exercises the real service.
-    if (!configuration.GetValue("Rag:Enabled", true))
+    if (!configuration.GetValue("Rag:Enabled", true)
+        || !await IsRagSwitchedOnAsync(usersClient, app.Logger, cancellationToken))
     {
         return Results.Problem(
             title: "Ask the docs is turned off on this server.",
@@ -397,8 +442,8 @@ app.MapPatch("/api/users/{userId:int}", async (
     }
 
     // The name claim is read by other services, so the session must carry the new username.
-    IssueSessionCookie(ctx, result.Account!.Id, result.Account.Username);
-    return Results.Ok(new AuthenticatedUser(result.Account.Id, result.Account.Username));
+    IssueSessionCookie(ctx, result.Account!.Id, result.Account.Username, user.IsAdmin);
+    return Results.Ok(new AuthenticatedUser(result.Account.Id, result.Account.Username, user.IsAdmin));
 });
 
 // Bytes are proxied rather than redirected to: the database service is not reachable from the browser.
@@ -500,6 +545,24 @@ app.MapDelete("/api/users/{userId:int}/profile-picture", async (
 
 app.Run();
 
+static async Task<bool> IsRagSwitchedOnAsync(UsersClient usersClient, ILogger logger, CancellationToken cancellationToken)
+{
+    try
+    {
+        var settings = await usersClient.GetAdminSettingsAsync(cancellationToken);
+        return settings.Any(setting => setting.Name == "AIMode" && setting.IsEnabled)
+            && settings.Any(setting => setting.Name == "RAG" && setting.IsEnabled);
+    }
+    catch (Exception exception) when (
+        exception is HttpRequestException or System.Text.Json.JsonException
+        || (exception is TaskCanceledException && !cancellationToken.IsCancellationRequested))
+    {
+        // Fail closed: RAG stays off until the switches can be read.
+        logger.LogWarning("Could not read admin settings: {ErrorType}.", exception.GetType().Name);
+        return false;
+    }
+}
+
 // The storage key is dropped: the browser addresses the picture by user ID.
 static ProfilePictureDetail ToProfilePictureDetail(ProfilePicture picture) => new(
     picture.FileName,
@@ -522,13 +585,15 @@ internal sealed record LoginRequest(string Username, string Password);
 
 internal sealed record DocsAnswerApiRequest(string? Query);
 
+internal sealed record UpdateAdminSettingRequest(bool IsEnabled);
+
 internal sealed record CreateAccountRequest(string? Username, string? Password);
 
 internal sealed record UpdateAccountRequest(string? Username, string? NewPassword, string? CurrentPassword);
 
-internal sealed record VerifyResponse(bool Authenticated, int UserId);
+internal sealed record VerifyResponse(bool Authenticated, int UserId, bool IsAdmin = false);
 
-internal sealed record AuthenticatedUser(int Id, string Name);
+internal sealed record AuthenticatedUser(int Id, string Name, bool IsAdmin = false);
 
 internal sealed record ProfilePictureDetail(string FileName, string ContentType, long SizeBytes, DateTime UploadedAt);
 
