@@ -32,7 +32,7 @@ locals {
       shared-backend                        = ["shared-db-api", "quests-achievements-notifications-service-backend", "garry-ai-service-backend", "rag-server"]
       leaderboard-analytics-service-backend = ["quizzes-courses-service-backend", "garry-ai-service-backend", "mcp-server"]
       garry-ai-service-backend              = ["mcp-server", "shared-db-api"]
-      mcp-server                            = concat([for feature in local.features : "${feature}-service-backend"], ["rag-server"])
+      mcp-server                            = concat([for feature in local.features : "${feature}-service-backend"], ["rag-server", "shared-db-api"])
       chat-discussion-service-db            = ["quizzes-courses-service-db", "shared-db-api"]
     }
   )
@@ -74,6 +74,8 @@ locals {
       }
       mcp-server = {
         ASPNETCORE_HTTP_PORTS          = "8080"
+        AllowedHosts                   = "localhost;127.0.0.1;mcp-server;mcp-server.languagewise.internal"
+        Services__Database             = local.endpoint["shared-db-api"]
         Services__QuizzesCourses       = local.endpoint["quizzes-courses-service-backend"]
         Services__MiniGames            = local.endpoint["mini-games-service-backend"]
         Services__ChatDiscussion       = local.endpoint["chat-discussion-service-backend"]

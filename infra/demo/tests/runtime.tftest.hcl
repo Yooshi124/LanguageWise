@@ -120,9 +120,21 @@ run "infrastructure_before_seed" {
     condition = (
       toset([for edge in values(local.caller_edges) : edge.caller if edge.target == "mcp-server"]) == local.mcp_callers &&
       toset([for edge in values(local.caller_edges) : edge.caller if edge.target == "rag-server"]) == toset(["shared-backend", "mcp-server"]) &&
-      toset([for edge in values(local.caller_edges) : edge.target if edge.caller == "mcp-server"]) == setunion(toset([for feature in local.features : "${feature}-service-backend"]), toset(["rag-server"]))
+      toset([for edge in values(local.caller_edges) : edge.target if edge.caller == "mcp-server"]) == setunion(toset([for feature in local.features : "${feature}-service-backend"]), toset(["rag-server", "shared-db-api"]))
     )
     error_message = "Only approved private callers may reach MCP/RAG and the tool server may reach only its declared downstream services."
+  }
+  assert {
+    condition = alltrue([for name in ["garry-ai-service-backend", "mcp-server"] : lookup({
+      for entry in jsondecode(aws_ecs_task_definition.app[name].container_definitions)[0].environment : entry.name => entry.value
+    }, "Services__Database", "") == "http://shared-db-api.languagewise.internal:8080"])
+    error_message = "Garry and MCP must read admin switches through the private shared database API, not localhost."
+  }
+  assert {
+    condition = toset(split(";", lookup({
+      for entry in jsondecode(aws_ecs_task_definition.app["mcp-server"].container_definitions)[0].environment : entry.name => entry.value
+    }, "AllowedHosts", ""))) == toset(["localhost", "127.0.0.1", "mcp-server", "mcp-server.languagewise.internal"])
+    error_message = "MCP must allow local health probes and its private discovery hostname without wildcard host access."
   }
   assert {
     condition = (

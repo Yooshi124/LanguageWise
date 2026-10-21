@@ -100,6 +100,12 @@ The current app-side changes are outside this root's ownership:
   receive the MCP key; MCP also receives the public verification key, never
   OpenRouter or the private signing key. RAG receives no injected secrets.
 
+Garry and MCP independently read admin switches through `Services__Database`
+at the private shared database API. MCP has a caller-scoped HTTP ingress edge
+to that API, not direct PostgreSQL access. Its AWS-only `AllowedHosts` override
+admits local health probes and `mcp-server.languagewise.internal`, without a
+wildcard. Compose and host configuration remain unchanged.
+
 MCP listens on 8080 and RAG on 8100. RAG's ECS health probe uses Python urllib,
 with a 300-second startup grace, not unavailable curl. The image contains the
 model cache; corpus/index and technical key are ephemeral per task. No EFS or
