@@ -90,6 +90,31 @@ jobs:
           path: TestResults/
           if-no-files-found: warn
 
+      # Post-commit (push to master only): runs each student's two assigned
+      # endpoint tests and writes per-student reports. See tools/testing/.
+      - name: Run student endpoint tests
+        if: github.event_name == 'push'
+        run: |
+          filter=$(python3 tools/testing/student_endpoints.py filter --service leaderboard-analytics-service)
+          dotnet test "${{ env.SOLUTION }}" -c Release --no-build \
+            --filter "$filter" \
+            --logger "trx;LogFileName=student-endpoints.trx" \
+            --results-directory reports/post-commit/leaderboard-analytics-service
+
+      - name: Write student endpoint reports
+        if: always() && github.event_name == 'push'
+        run: >
+          python3 tools/testing/student_endpoints.py report --service leaderboard-analytics-service
+          --results-dir reports/post-commit/leaderboard-analytics-service
+
+      - name: Upload post-commit reports
+        if: always() && github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: leaderboard-analytics-service-post-commit-reports
+          path: reports/post-commit/
+          if-no-files-found: warn
+
       - name: Build the backend image
         run: docker build -t languagewise/leaderboard-analytics-service-backend:ci ./leaderboard-analytics-service/backend
 
