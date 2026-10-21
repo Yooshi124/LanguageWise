@@ -95,10 +95,19 @@ service_execution_role_arns service_task_role_arns secret_arns
 state_bucket_name demo_state_key
 ```
 
-Service role maps have the 18 Compose service names excluding `shared-db`, plus
-`database-initializer`. Secret keys are `db-shared`, `db-mini-games`,
+Service role maps have the 20 Compose service names excluding `shared-db`,
+plus `database-initializer`. Secret keys are `db-shared`, `db-mini-games`,
 `db-quizzes-courses`, `db-chat-discussion`, `db-quests`, `openrouter-api-key`,
-`signing-private-key`, `signing-public-key`.
+`signing-private-key`, `signing-public-key`, `mcp-api-key`.
+
+The MCP key is a dedicated AWS raw-plaintext secret, not the developer file key.
+Only MCP and its six backend callers receive it through exact execution-role
+injection. MCP receives only that key and the public signing key; RAG has no
+secret-read grant and neither new task role has application permissions.
+Create/populate secret values directly, never through Terraform or chat. During
+the Down-only cutover, update immutable cleanup source and its embedded foundation
+metadata together, then match GitHub's nonsecret metadata contract. A version 2
+Up must fail closed until compatible cleanup provenance/readiness is verified.
 
 Demo backend requirements: bucket from `state_bucket_name`, key from
 `demo_state_key` (`demo/terraform.tfstate`), region from `region`,
@@ -204,7 +213,7 @@ minutes. Review actual duration and rounding against the migration plan's
 600-minute cleanup allowance; no free-tier assumption is required.
 
 ECR automatically expires **only untagged images older than one day**. All tagged
-images are excluded from automatic expiry. The shared repository holds 19 images
+images are excluded from automatic expiry. The shared repository holds 21 images
 per complete release: a global image-count policy could erase a service's current
 digest even if enough other tags remain. An administrator must review storage at
 each release and weekly during demo months, target at most **7 GiB** of ECR stored

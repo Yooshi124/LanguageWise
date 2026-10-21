@@ -19,6 +19,14 @@ const demoDatabase = read('../demo/database.tf');
 const statement = sid => permissions.split(`Sid`).slice(1)
   .find(block => new RegExp(`^\\s*= "${sid}"`).test(block)).split(/\r?\n    \},?/)[0];
 
+test('discovery preserves the existing absent custom-health configuration on reapply', () => {
+  const discovery = demoServices.split('resource "aws_service_discovery_service" "app" {')[1]
+    .split('resource "aws_ecs_task_definition"')[0];
+  assert.doesNotMatch(discovery, /health_check_custom_config|force_destroy|ignore_changes/);
+  assert.match(discovery, /routing_policy = "MULTIVALUE"/);
+  assert.match(discovery, /type = "A"/);
+});
+
 test('EC2 creation authorizes new tagged resources separately from tagged parents', () => {
   const creation = statement('CreateTaggedNetwork');
   assert.match(creation, /Condition = local\.demo_creation/);
@@ -51,14 +59,38 @@ test('CloudFront managed prefix-list entries have a regional AWS-owned read gran
   assert.doesNotMatch(grant, /Resource\s*= "\*"|ec2:\*|ModifyManagedPrefixList|CreateManagedPrefixList/);
 });
 
-test('Cloud Map creation can tag only initial demo ownership without granting cleanup that ability', () => {
-  const grant = statement('DiscoveryInitialOwnershipTags');
+test('VPC security-group enumeration is restricted to owned demo VPCs in the configured region', () => {
+  const grant = statement('DemoVpcSecurityGroupRead');
+  assert.match(grant, /Action\s*= \["ec2:GetSecurityGroupsForVpc"\]/);
+  assert.match(grant, /Condition = local\.demo_tagged/);
+  assert.match(grant, /Resource\s*= "arn:aws:ec2:\$\{local\.region\}:\$\{local\.account_id\}:vpc\/\*"/);
+  assert.doesNotMatch(grant, /Resource\s*= "\*"|ec2:\*|ec2:(Create|Modify|Delete)/);
+});
+
+test('Cloud Map private DNS dependencies require global-endpoint service delegation rather than direct Route 53 access', () => {
+  const delegation = permissions.split('discovery_dns_delegation = {')[1].split('demo_tagged =')[0];
+  assert.match(delegation, /"aws:RequestedRegion" = "us-east-1"/);
+  assert.match(delegation, /"ForAnyValue:StringEquals"\s*= \{ "aws:CalledVia" = \["servicediscovery\.amazonaws\.com"\] \}/);
+  assert.doesNotMatch(delegation, /IfExists|\bNull\b/);
+  for (const sid of ['DiscoveryDnsZoneCreate', 'DiscoveryDnsZoneLifecycle', 'DiscoveryDnsZoneLookup']) {
+    assert.match(statement(sid), /Condition = local\.discovery_dns_delegation/);
+  }
+  assert.match(statement('DiscoveryDnsZoneCreate'), /Action\s*= \["route53:CreateHostedZone"\]/);
+  assert.match(statement('DiscoveryDnsZoneLookup'), /Action\s*= \["route53:ListHostedZonesByName"\]/);
+  const lifecycle = statement('DiscoveryDnsZoneLifecycle');
+  assert.match(lifecycle, /Resource\s*= "arn:aws:route53:::hostedzone\/\*"/);
+  for (const action of ['GetHostedZone', 'DeleteHostedZone', 'ChangeResourceRecordSets']) assert.ok(lifecycle.includes(`route53:${action}`));
+  assert.doesNotMatch(lifecycle, /route53:\*|HealthCheck/);
+});
+
+test('Cloud Map tagging requires demo request tags with supported wildcard scope and excludes cleanup', () => {
+  const grant = statement('DiscoveryDemoTagging');
   assert.match(grant, /Action\s*= \["servicediscovery:TagResource"\]/);
-  assert.match(grant, /Resource\s*= "arn:aws:servicediscovery:\$\{local\.region\}:\$\{local\.account_id\}:\*\/\*"/);
+  assert.match(grant, /Resource\s*= "\*"/);
   assert.match(grant, /merge\(local\.demo_creation/);
-  assert.match(grant, /Null\s*= \{ "aws:ResourceTag\/Project" = "true" \}/);
+  assert.doesNotMatch(grant, /aws:ResourceTag|\bNull\b/);
   assert.match(grant, /"aws:TagKeys" = \["Project", "Layer", "Lifecycle"\]/);
-  assert.match(permissions, /!contains\(\["CloudFrontInitialOwnershipTags", "DiscoveryInitialOwnershipTags"\], statement\.Sid\)/);
+  assert.match(permissions, /!contains\(\["CloudFrontInitialOwnershipTags", "DiscoveryDemoTagging"\], statement\.Sid\)/);
   assert.match(statement('MutateTaggedDiscovery'), /Condition = local\.demo_tagged/);
 });
 
@@ -78,6 +110,31 @@ test('CodeBuild worker metadata reads authorize the exact project rather than no
   assert.match(grant, /Resource\s*= "arn:aws:codebuild:\$\{local\.region\}:\$\{local\.account_id\}:project\/\$\{local\.foundation_contract\.cleanup_project_name\}"/);
   assert.match(grant, /Condition = local\.regional/);
   assert.doesNotMatch(grant, /:build\/|Resource\s*= "\*"/);
+});
+
+test('ECS deployment inventory reads stay within regional demo service scope', () => {
+  const grant = statement('EcsServices');
+  assert.match(grant, /"ecs:ListServiceDeployments"/);
+  assert.match(grant, /"ecs:DescribeServiceDeployments"/);
+  assert.match(grant, /Condition = local\.regional/);
+  assert.match(grant, /Resource\s*= "arn:aws:ecs:\$\{local\.region\}:\$\{local\.account_id\}:service\/languagewise\/\$\{local\.prefix\}-\*"/);
+  assert.doesNotMatch(grant, /Resource\s*= "\*"|"ecs:\*"/);
+  const deployment = statement('EcsDeploymentRead');
+  assert.match(deployment, /Action\s*= \["ecs:DescribeServiceDeployments"\]/);
+  assert.match(deployment, /Condition = local\.regional/);
+  assert.match(deployment, /Resource\s*= "arn:aws:ecs:\$\{local\.region\}:\$\{local\.account_id\}:service-deployment\/languagewise\/\$\{local\.prefix\}-\*\/\*"/);
+  assert.doesNotMatch(deployment, /Resource\s*= "\*"|"ecs:\*"|ecs:StopServiceDeployment/);
+});
+
+test('approved free-plan database uses micro while preserving storage and private managed credentials', () => {
+  const instance = demoDatabase.split('resource "aws_db_instance" "demo" {')[1].split('resource "aws_ecs_task_definition"')[0];
+  assert.match(instance, /instance_class\s*= "db\.t4g\.micro"/);
+  assert.match(instance, /engine_version\s*= "18\.6"/);
+  assert.match(instance, /allocated_storage\s*= 20/);
+  assert.match(instance, /storage_type\s*= "gp3"/);
+  assert.match(instance, /storage_encrypted\s*= true/);
+  assert.match(instance, /publicly_accessible\s*= false/);
+  assert.match(instance, /manage_master_user_password\s*= true/);
 });
 
 test('task definitions are prefix-scoped at registration and retained without deregistration rights', () => {
@@ -130,12 +187,13 @@ test('role keys are precisely Compose minus shared-db plus the initializer', () 
   const compose = read('../../docker-compose.yml').split(/^services:\s*$/m)[1];
   assert.ok(compose);
   const expected = [...compose.matchAll(/^  ([a-z][a-z0-9-]*):\s*$/gm)]
-    .map((match) => match[1]).filter((name) => name !== 'shared-db');
-  assert.equal(expected.length, 18);
+    .map((match) => match[1])
+    .filter((name) => name !== 'shared-db');
+  assert.equal(expected.length, 20);
   const serviceBlock = main.match(/services\s*= toset\(\[([\s\S]*?)\]\)/)[1];
   const actual = [...serviceBlock.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
   assert.deepEqual(actual.toSorted(), [...expected, 'database-initializer'].toSorted());
-  assert.equal(new Set(actual).size, 19);
+  assert.equal(new Set(actual).size, 21);
   assert.match(identity, /for_each\s*= local\.services/g);
   for (const service of actual) {
     assert.ok(`lw-demo-exec-${service}`.length <= 64, service);
@@ -154,7 +212,14 @@ test('secret consumers do not leak signing or OpenRouter to other services', () 
     'garry-ai-service-backend', 'leaderboard-analytics-service-backend',
     'quests-achievements-notifications-service-backend',
   ]);
-  assert.equal(using('signing-public-key').length, 6);
+  assert.equal(using('signing-public-key').length, 7);
+  assert.deepEqual(using('mcp-api-key'), [
+    'chat-discussion-service-backend', 'garry-ai-service-backend', 'leaderboard-analytics-service-backend',
+    'mcp-server', 'mini-games-service-backend', 'quests-achievements-notifications-service-backend',
+    'quizzes-courses-service-backend',
+  ]);
+  assert.deepEqual(consumers['mcp-server'], ['signing-public-key', 'mcp-api-key']);
+  assert.equal(consumers['rag-server'], undefined);
   for (const [service, secrets] of Object.entries(consumers)) {
     assert.ok(!service.endsWith('-frontend'));
     assert.ok(secrets.length > 0);
@@ -330,7 +395,7 @@ test('CloudFront initial tagging cannot take over differently owned resources or
   assert.match(grant, /"aws:ResourceTag\/Project" = "true"/);
   assert.match(grant, /"aws:ResourceTag\/Layer" = "true"/);
   assert.match(grant, /"aws:TagKeys" = \["Project", "Layer", "Lifecycle"\]/);
-  assert.match(permissions, /!contains\(\["CloudFrontInitialOwnershipTags", "DiscoveryInitialOwnershipTags"\], statement\.Sid\)/);
+  assert.match(permissions, /!contains\(\["CloudFrontInitialOwnershipTags", "DiscoveryDemoTagging"\], statement\.Sid\)/);
   assert.match(permissions, /Action = \["s3:GetBucketLocation", "s3:ListBucket"\]/);
 });
 

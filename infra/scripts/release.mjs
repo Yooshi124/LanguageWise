@@ -9,7 +9,7 @@ export const REQUIRED_WORKFLOWS = Object.freeze([
   'shared.yml', 'mini-games-service.yml', 'quizzes-courses-service.yml',
   'chat-discussion-service.yml', 'quests-achievements-notifications-service.yml',
   'leaderboard-analytics-service.yml', 'mcp-server.yml', 'pre-commit-security.yml',
-  'aws-infrastructure.yml',
+  'aws-infrastructure.yml', 'rag-server.yml', 'ai-e2e.yml',
 ]);
 
 export function checkRuns(runs, sha) {
@@ -59,6 +59,7 @@ export function buildArguments(service, image, sha) {
   const common = ['build', '--platform', 'linux/amd64', '--tag', image];
   if (service === 'database-initializer') return [...common, '--file', 'infra/images/database-initializer/Dockerfile', '.'];
   if (service === 'quests-achievements-notifications-service-db') return [...common, '--file', 'infra/images/postgrest/Dockerfile', '.'];
+  if (['mcp-server', 'rag-server'].includes(service)) return [...common, service];
   const base = service.startsWith('shared-') ? 'shared' : service === 'garry-ai-service-backend' ? 'garry-ai-service'
     : service.slice(0, service.lastIndexOf('-'));
   const tier = service.endsWith('-frontend') ? 'frontend' : service.endsWith('-backend') ? 'backend' : 'database';
@@ -108,7 +109,7 @@ function build(sha, config, sequence) {
       run('docker', ['image', 'rm', tag], { stdio: ['ignore', 'pipe', 'pipe'] });
       run('docker', ['builder', 'prune', '--force'], { stdio: ['ignore', 'pipe', 'pipe'] });
     }
-    const release = validateRelease({ sha, images, sequence }, config);
+    const release = validateRelease({ schemaVersion: 2, sha, images, sequence }, config);
     mkdirSync('infra/generated', { recursive: true });
     writeFileSync('infra/generated/release.json', JSON.stringify(release, null, 2), { mode: 0o600 });
   } finally {

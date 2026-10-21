@@ -22,12 +22,12 @@ export function loadFoundation(input, read = readFileSync) {
   return validateFoundation(JSON.parse(json.trim()));
 }
 
-export function nativeDependencies(env = process.env, request = fetch) {
+export function nativeDependencies(env = process.env, request = fetch, execute = execFileSync) {
   return {
     env, now: Date.now, sleep,
     run(binary, args, options = {}) {
       try {
-        return execFileSync(binary, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+        return execute(binary, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
           maxBuffer: 16 * 1024 * 1024, timeout: 60_000, killSignal: 'SIGKILL', shell: false,
           env: { ...env, AWS_PAGER: '', AWS_CLI_AUTO_PROMPT: 'off', TF_IN_AUTOMATION: 'true', TF_INPUT: 'false' }, ...options });
       } catch (error) {
@@ -35,6 +35,32 @@ export function nativeDependencies(env = process.env, request = fetch) {
         const code = String(error.stderr ?? '').match(/\b(ConditionalCheckFailedException|TransactionCanceledException|NoSuchKey|NoSuchEntity|ResourceNotFoundException)\b/);
         safe.code = code?.[1];
         safe.uncertainWriter = error.code === 'ETIMEDOUT' || Boolean(error.signal);
+        if (binary === 'terraform' && args.includes('-json')) {
+          const resourceTypes = ['aws_db_instance', 'aws_db_subnet_group', 'aws_db_parameter_group',
+            'aws_cloudfront_distribution', 'aws_cloudfront_vpc_origin', 'aws_ecs_task_definition', 'aws_ecs_service',
+            'aws_service_discovery_private_dns_namespace', 'aws_service_discovery_service', 'aws_security_group',
+            'aws_vpc_security_group_ingress_rule', 'aws_vpc_security_group_egress_rule', 'aws_vpc', 'aws_subnet'];
+          const errorCodes = ['AccessDenied', 'AccessDeniedException', 'UnauthorizedOperation', 'InvalidParameterCombination',
+            'InvalidParameterValue', 'InvalidParameterValueException', 'InvalidArgument', 'InvalidInput',
+            'InsufficientDBInstanceCapacity', 'DBInstanceAlreadyExists', 'DBSubnetGroupDoesNotCoverEnoughAZs',
+            'InvalidVPCNetworkStateFault', 'InvalidSubnet', 'KMSKeyNotAccessibleFault', 'ThrottlingException',
+            'LimitExceededException', 'ServiceQuotaExceededException', 'ResourceInUse'];
+          const summaries = ['Invalid combination of arguments', 'Missing required argument', 'Unsupported argument',
+            'Unsupported attribute', 'Provider produced inconsistent final plan', 'Invalid function argument', 'Invalid index'];
+          const diagnostics = [];
+          for (const line of `${error.stdout ?? ''}\n${error.stderr ?? ''}`.split('\n')) {
+            let event;
+            try { event = JSON.parse(line); } catch { continue; }
+            if (event?.type !== 'diagnostic' || event.diagnostic?.severity !== 'error') continue;
+            const diagnostic = event.diagnostic;
+            const type = typeof diagnostic.address === 'string' ? diagnostic.address.split('.')[0] : undefined;
+            const diagnosticText = [diagnostic.summary, diagnostic.detail].filter(value => typeof value === 'string').join('\n');
+            diagnostics.push(`resource_type=${resourceTypes.includes(type) ? type : 'unknown'}; code=${errorCodes.find(value =>
+              new RegExp(`\\b${value}\\b`).test(diagnosticText)) ?? 'unknown'}; category=${summaries.includes(diagnostic.summary)
+              ? diagnostic.summary : 'provider-or-unknown'}`);
+          }
+          safe.diagnostic = [...new Set(diagnostics)].slice(0, 10).join(' | ');
+        }
         throw safe;
       }
     },
@@ -286,7 +312,7 @@ export class DemoController {
     const path = join(this.directory, 'latest.json');
     try {
       this.aws('s3api', 'get-object', { Bucket: this.config.artifact_bucket_name, Key: 'releases/latest.json' }, 60_000, [path]);
-      return validateRelease(JSON.parse(readFileSync(path, 'utf8')), this.config);
+      return validateRelease(JSON.parse(readFileSync(path, 'utf8')), this.config, { allowLegacy: true });
     } catch (error) { if (error.code === 'NoSuchKey') return undefined; throw error; }
   }
 
@@ -299,7 +325,7 @@ export class DemoController {
     } catch (error) {
       const archive = join(this.directory, 'archive.json');
       this.aws('s3api', 'get-object', { Bucket: input.Bucket, Key: `releases/${release.sha}.json` }, 60_000, [archive]);
-      requireThat(releaseOrder(release, validateRelease(JSON.parse(readFileSync(archive, 'utf8')), this.config)) === 'same', 'Immutable archive conflict');
+      requireThat(releaseOrder(release, validateRelease(JSON.parse(readFileSync(archive, 'utf8')), this.config, { allowLegacy: true })) === 'same', 'Immutable archive conflict');
     }
     const previous = this.readRelease();
     releaseOrder(release, previous);
@@ -419,14 +445,16 @@ export class DemoController {
         } });
       } catch (error) {
         if (error.uncertainWriter) this.uncertainWriter = true;
+        this.dependencies.report(`Terraform ${destroy ? 'destroy' : enabled ? 'services' : 'infrastructure'} ${args[0]} failed; ${
+          error.uncertainWriter ? 'writer termination uncertain' : error.diagnostic || 'diagnostics unavailable'}; raw output suppressed.`);
         throw error;
       }
     };
     invoke(['init', '-input=false', '-reconfigure', `-backend-config=bucket=${this.config.state_bucket_name}`,
       `-backend-config=key=${this.config.demo_state_key}`, `-backend-config=region=${this.config.region}`,
       '-backend-config=workspace_key_prefix=demo/workspaces', '-backend-config=use_lockfile=true']);
-    invoke(['plan', '-input=false', '-lock-timeout=60s', ...(destroy ? ['-destroy'] : []), `-var-file=${variables}`, `-out=${plan}`]);
-    invoke(['apply', '-input=false', '-lock-timeout=60s', plan]);
+    invoke(['plan', '-json', '-input=false', '-parallelism=2', '-lock-timeout=60s', ...(destroy ? ['-destroy'] : []), `-var-file=${variables}`, `-out=${plan}`]);
+    invoke(['apply', '-json', '-input=false', '-parallelism=2', '-lock-timeout=60s', plan]);
     this.assertLock();
     return JSON.parse(invoke(['output', '-json']));
   }
@@ -461,7 +489,7 @@ export class DemoController {
   async smoke(outputs) {
     const state = this.phase();
     const names = outputs.service_names?.value;
-    requireThat(Array.isArray(names) && names.length === SERVICES.length && SERVICES.every(name => names.includes(`languagewise-demo-${name}`)), 'Expected 18 ECS service names');
+    requireThat(Array.isArray(names) && names.length === SERVICES.length && SERVICES.every(name => names.includes(`languagewise-demo-${name}`)), 'Expected complete version 2 ECS service inventory');
     while (true) {
       this.phase();
       const services = [];
@@ -470,7 +498,7 @@ export class DemoController {
         requireThat(!result.failures?.length, 'ECS services missing');
         services.push(...(result.services ?? []));
       }
-      if (services.length === 18 && services.every(service => service.status === 'ACTIVE' && service.desiredCount === 1
+      if (services.length === SERVICES.length && services.every(service => service.status === 'ACTIVE' && service.desiredCount === 1
         && service.runningCount === 1 && service.pendingCount === 0 && service.deployments?.length === 1
         && service.deployments[0].rolloutState === 'COMPLETED')) break;
       this.dependencies.sleep(10_000);
@@ -505,11 +533,24 @@ export class DemoController {
 
   verifyResiduals() {
     const config = this.config;
-    const tags = this.aws('resourcegroupstaggingapi', 'get-resources', { TagFilters: [
-      { Key: 'Project', Values: ['languagewise'] }, { Key: 'Lifecycle', Values: ['disposable-demo'] }], ResourcesPerPage: 100 });
+    const resources = [];
+    const tokens = new Set();
+    let token;
+    do {
+      const page = this.aws('resourcegroupstaggingapi', 'get-resources', { TagFilters: [
+        { Key: 'Project', Values: ['languagewise'] }, { Key: 'Lifecycle', Values: ['disposable-demo'] }],
+      ResourcesPerPage: 100, ...(token ? { PaginationToken: token } : {}) }, 60_000, ['--no-paginate']);
+      requireThat(Array.isArray(page.ResourceTagMappingList), 'Tagged runtime inventory is incomplete');
+      resources.push(...page.ResourceTagMappingList);
+      token = page.PaginationToken;
+      requireThat(token === undefined || typeof token === 'string', 'Tagged runtime inventory is incomplete');
+      if (token) {
+        requireThat(!tokens.has(token) && tokens.size < 99, 'Tagged runtime inventory is incomplete');
+        tokens.add(token);
+      }
+    } while (token);
     const retainedDefinition = new RegExp(`^arn:aws:ecs:${config.region}:${config.account_id}:task-definition/languagewise-demo-[a-z0-9-]+:[1-9][0-9]*$`);
-    requireThat(!tags.PaginationToken, 'Tagged runtime inventory is incomplete');
-    let taggedResiduals = (tags.ResourceTagMappingList ?? []).filter(resource => !retainedDefinition.test(resource.ResourceARN));
+    let taggedResiduals = resources.filter(resource => !retainedDefinition.test(resource.ResourceARN));
     for (const [kind, operation, field, filter, prefix] of [
       ['subnet', 'describe-subnets', 'Subnets', 'subnet-id', 'subnet'],
       ['security-group-rule', 'describe-security-group-rules', 'SecurityGroupRules', 'security-group-rule-id', 'sgr'],
@@ -521,6 +562,23 @@ export class DemoController {
       requireThat(!live.NextToken && Array.isArray(live[field]) && live[field].length === 0, 'Tagged runtime resources remain');
       taggedResiduals = taggedResiduals.filter(resource => !pattern.test(resource.ResourceARN));
     }
+    const servicePattern = new RegExp(`^arn:aws:ecs:${config.region}:${config.account_id}:service/languagewise/languagewise-demo-[a-z0-9-]+$`);
+    const serviceArns = [...new Set(taggedResiduals.map(resource => resource.ResourceARN).filter(arn => servicePattern.test(arn)))];
+    for (let offset = 0; offset < serviceArns.length; offset += 10) {
+      const batch = serviceArns.slice(offset, offset + 10);
+      const result = this.aws('ecs', 'describe-services', {
+        cluster: `arn:aws:ecs:${config.region}:${config.account_id}:cluster/languagewise`, services: batch,
+      });
+      requireThat(Array.isArray(result.services) && Array.isArray(result.failures)
+        && !result.nextToken && !result.NextToken, 'Tagged ECS service inventory is incomplete');
+      requireThat(result.services.every(service => batch.includes(service?.serviceArn) && service.status === 'INACTIVE'
+        && service.desiredCount === 0 && service.runningCount === 0 && service.pendingCount === 0)
+        && result.failures.every(failure => batch.includes(failure?.arn) && failure.reason === 'MISSING'),
+      'Tagged ECS services remain or cannot be verified absent');
+      const verified = [...result.services.map(service => service.serviceArn), ...result.failures.map(failure => failure.arn)];
+      requireThat(verified.length === batch.length && new Set(verified).size === batch.length, 'Tagged ECS service inventory is incomplete');
+    }
+    taggedResiduals = taggedResiduals.filter(resource => !servicePattern.test(resource.ResourceARN));
     requireThat(taggedResiduals.length === 0, 'Tagged runtime resources remain');
     const vpcs = this.aws('ec2', 'describe-vpcs', { Filters: [{ Name: 'tag:Project', Values: ['languagewise'] }, { Name: 'tag:Lifecycle', Values: ['disposable-demo'] }] }).Vpcs ?? [];
     requireThat(vpcs.length === 0, 'Demo VPC remains; dependent ALB/NAT/ENIs/endpoints may survive');
@@ -545,7 +603,7 @@ export class DemoController {
     this.assertLock();
     const state = this.state();
     requireThat(state?.desiredMode === 'down', 'Down intent changed');
-    const release = state.release ? validateRelease(state.release, this.config) : this.readRelease();
+    const release = state.release ? validateRelease(state.release, this.config, { allowLegacy: true }) : this.readRelease();
     if (!release) {
       try {
         this.aws('s3api', 'get-object', { Bucket: this.config.state_bucket_name, Key: this.config.demo_state_key },
@@ -600,6 +658,7 @@ export class DemoController {
           this.dependencies.report('Demo already requested Up; lease, quota and initializer unchanged.');
           return;
         }
+        validateRelease(release, this.config);
         this.verifySecrets(true);
         const next = this.reserve(previous, release);
         try {
@@ -625,7 +684,8 @@ export class DemoController {
         requireThat(state.status === 'ready', 'Cannot release into an incomplete Up');
         this.phase();
         this.verifySecrets();
-        const previous = validateRelease(state.release, this.config);
+        const previous = validateRelease(state.release, this.config, { allowLegacy: true });
+        requireThat(previous.schemaVersion === 2, 'Run Down before migrating a legacy live runtime');
         try {
           const outputs = this.terraform(release, true);
           await this.smoke(outputs);

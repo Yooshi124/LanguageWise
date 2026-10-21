@@ -1,14 +1,49 @@
 # RAG Server
 
-A small, **non-containerised** retrieval-augmented-generation server for
+A small, containerised retrieval-augmented-generation server for
 LanguageWise. It indexes the service documentation corpus with
 [ChromaDB](https://www.trychroma.com/) and exposes a single MCP tool,
 `retrieve_context`, through [FastMCP](https://gofastmcp.com/) over HTTP.
 
-It runs on the host so Docker containers can reach it via
-`host.docker.internal:8100`. It is intentionally simple — no separate
-backend/frontend/database/test folders — and is meant to be integrated into the
-Garry AI assistant later.
+It runs on the Compose network at `http://rag-server:8100`; host tools can reach
+`http://localhost:8100` (loopback only). Shared Ask the docs and the central MCP
+`docs_search` tool use its REST API. Chroma is embedded, so no separate vector
+database server is required.
+
+## Compose startup and indexing
+
+From the repository root, use `docker compose up -d --build`. The RAG container
+rebuilds and verifies its searchable index before starting HTTP on every start or
+restart. Missing/empty corpus or failed ingestion prevents startup instead of
+serving an empty index. `/health` becomes available only after this verification.
+
+The image build downloads the CPU-local `all-MiniLM-L6-v2` embedding model;
+a fresh container can index and serve queries offline, without a GPU or embedding API key. Named volumes
+persist `/data` (Chroma and the generated technical key) and the embedding cache.
+The image runs as a non-root user.
+
+ONNX inference uses one native thread per direction, so container CPU quotas do
+not compete with a thread pool sized for all host CPUs. Existing host index
+configuration and Compose volumes remain compatible. An embedding adapter retains
+Chroma's serialized `default` identity without subclassing `DefaultEmbeddingFunction`,
+whose subclasses Chroma bypasses when dispatching collection queries. The AWS task uses ephemeral
+index/key storage; `node infra/scripts/measure-rag.mjs IMAGE` measures fresh-task
+startup, memory, disk and retrieval under the approved 0.5-CPU/1-GiB limits.
+
+The corpus is bundled Markdown, not generated documentation. After editing it:
+
+```powershell
+docker compose up -d --build rag-server
+```
+
+Restarting an existing image reindexes its existing bundled corpus:
+
+```powershell
+docker compose restart rag-server
+```
+
+There is no need to delete volumes to reindex. The old host `.chroma` directory
+is not imported; Compose builds a fresh index from the corpus.
 
 ## Layout
 
@@ -16,6 +51,7 @@ Garry AI assistant later.
 rag-server/
   server.py            # FastMCP HTTP server exposing retrieve_context
   ingest.py            # (re)builds the ChromaDB index from the corpus
+  startup.py           # container startup: index, verify, then serve
   rag/
     config.py          # settings loaded from environment / .env
     store.py           # chunking, ingestion, and retrieval over ChromaDB
@@ -24,7 +60,9 @@ rag-server/
   .env.example
 ```
 
-## Setup
+## Host-only development
+
+Stop the Compose RAG service first to avoid a port conflict.
 
 From this directory:
 
@@ -54,7 +92,7 @@ python server.py
 ```
 
 The MCP endpoint is served at `http://0.0.0.0:8100/mcp`. Containers on the
-Compose network reach it at `http://host.docker.internal:8100/mcp`.
+Compose network reach the containerised service at `http://rag-server:8100/mcp`.
 
 ## REST endpoints
 
@@ -77,6 +115,10 @@ The technical key is read from `RAG_TECHNICAL_KEY_PATH` (default
 `.rag-technical-key`, git-ignored) and generated on first start if missing. The
 agentic loop reads the same file by default.
 
+In Compose, the generated key is `/data/.rag-technical-key` in the persistent
+`rag-data` volume, not the old host key file. Existing host clients must use that
+key to call the technical endpoint; no agentic-loop configuration is changed.
+
 ## Marking internal content
 
 Start a heading with `TECHNICAL-<topic>` (lowercase letters, digits, and dashes)
@@ -88,7 +130,8 @@ to mark that section, and every sub-heading under it, as internal:
 
 Technical sections are only returned by `POST /query/technical`. Never put
 secrets such as passwords, keys, or tokens in the corpus, even in technical
-sections. Re-run `python ingest.py` after editing the corpus.
+sections. Rebuild/recreate the Compose RAG image after editing the corpus
+(or run `python ingest.py` for host-only development).
 
 ## The `retrieve_context` tool
 
@@ -107,3 +150,10 @@ passage clears the relevance floor it says the context is insufficient.
 All settings come from environment variables (see `.env.example`):
 `RAG_HOST`, `RAG_PORT`, `RAG_CHROMA_DIR`, `RAG_CORPUS_DIR`, `RAG_COLLECTION`,
 `RAG_TECHNICAL_KEY_PATH`.
+
+## Tests
+
+From `rag-server`, run `python -m unittest discover -s tests -v`. The
+`rag-server-build-and-test` GHA job runs these startup/boundary tests and builds
+the image. The separate `ai-e2e` job exercises real embeddings, REST/MCP retrieval,
+all five feature assistants and shared docs answers; see `tests\e2e\README.md`.

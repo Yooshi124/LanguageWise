@@ -31,6 +31,22 @@ docker compose up -d --build
 
 On machines using Podman, run `podman compose up -d --build` instead.
 
+MCP and RAG run inside the Compose network; no host-side server processes are
+required. Containers use `mcp-server:8080` and `rag-server:8100`. Host debugging
+remains available on loopback-only ports `8200` and `8100`. RAG rebuilds its search
+index at each start and caches its CPU embedding model in a named volume; the
+first start downloads that model. Corpus edits require rebuilding the RAG image.
+See `mcp-server\README.md` and `rag-server\README.md` for setup details.
+
+Real cross-service MCP/RAG tests run in the `ai-e2e` GitHub Actions job without
+GPUs or paid APIs. To run the same isolated suite locally:
+
+```powershell
+pwsh tests\e2e\Invoke-E2E.ps1
+```
+
+See `tests\e2e\README.md` for coverage and diagnostics.
+
 ## Local PostgreSQL
 
 All five data owners use PostgreSQL 18 on one shared-owned server. The

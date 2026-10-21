@@ -1,5 +1,9 @@
 locals {
   regional = { StringEquals = { "aws:RequestedRegion" = local.region } }
+  discovery_dns_delegation = {
+    StringEquals               = { "aws:RequestedRegion" = "us-east-1" }
+    "ForAnyValue:StringEquals" = { "aws:CalledVia" = ["servicediscovery.amazonaws.com"] }
+  }
   demo_tagged = { StringEquals = {
     "aws:RequestedRegion"     = local.region
     "aws:ResourceTag/Project" = "languagewise"
@@ -193,7 +197,7 @@ locals {
     },
     {
       Sid      = "EcsServices", Effect = "Allow", Condition = local.regional
-      Action   = ["ecs:CreateService", "ecs:UpdateService", "ecs:DeleteService", "ecs:DescribeServices", "ecs:TagResource", "ecs:UntagResource", "ecs:ListTagsForResource"]
+      Action   = ["ecs:CreateService", "ecs:UpdateService", "ecs:DeleteService", "ecs:DescribeServices", "ecs:ListServiceDeployments", "ecs:DescribeServiceDeployments", "ecs:TagResource", "ecs:UntagResource", "ecs:ListTagsForResource"]
       Resource = "arn:aws:ecs:${local.region}:${local.account_id}:service/languagewise/${local.prefix}-*"
     },
     {
@@ -254,13 +258,37 @@ locals {
       Resource = "arn:aws:ec2:${local.region}:aws:prefix-list/*"
     },
     {
-      Sid      = "DiscoveryInitialOwnershipTags", Effect = "Allow"
+      Sid      = "DiscoveryDemoTagging", Effect = "Allow"
       Action   = ["servicediscovery:TagResource"]
-      Resource = "arn:aws:servicediscovery:${local.region}:${local.account_id}:*/*"
+      Resource = "*"
       Condition = merge(local.demo_creation, {
-        Null                        = { "aws:ResourceTag/Project" = "true" }
         "ForAllValues:StringEquals" = { "aws:TagKeys" = ["Project", "Layer", "Lifecycle"] }
       })
+    },
+    {
+      Sid      = "DemoVpcSecurityGroupRead", Effect = "Allow", Condition = local.demo_tagged
+      Action   = ["ec2:GetSecurityGroupsForVpc"]
+      Resource = "arn:aws:ec2:${local.region}:${local.account_id}:vpc/*"
+    },
+    {
+      Sid      = "DiscoveryDnsZoneCreate", Effect = "Allow", Condition = local.discovery_dns_delegation
+      Action   = ["route53:CreateHostedZone"]
+      Resource = "*"
+    },
+    {
+      Sid      = "DiscoveryDnsZoneLifecycle", Effect = "Allow", Condition = local.discovery_dns_delegation
+      Action   = ["route53:GetHostedZone", "route53:DeleteHostedZone", "route53:ChangeResourceRecordSets"]
+      Resource = "arn:aws:route53:::hostedzone/*"
+    },
+    {
+      Sid      = "DiscoveryDnsZoneLookup", Effect = "Allow", Condition = local.discovery_dns_delegation
+      Action   = ["route53:ListHostedZonesByName"]
+      Resource = "*"
+    },
+    {
+      Sid      = "EcsDeploymentRead", Effect = "Allow", Condition = local.regional
+      Action   = ["ecs:DescribeServiceDeployments"]
+      Resource = "arn:aws:ecs:${local.region}:${local.account_id}:service-deployment/languagewise/${local.prefix}-*/*"
     }
   ]
   image_read_statements = [
@@ -287,7 +315,7 @@ locals {
     for name, statements in local.runtime_policy_parts : name => [
       for statement in statements : merge(statement, {
         Action = [for action in statement.Action : action if !can(regex(":(Create|Register|RunTask)", action)) && !(statement.Sid == "RdsManagedSecretMetadata" && !contains(["secretsmanager:DescribeSecret", "secretsmanager:GetResourcePolicy"], action))]
-      }) if !contains(["CloudFrontInitialOwnershipTags", "DiscoveryInitialOwnershipTags"], statement.Sid) && length([for action in statement.Action : action if !can(regex(":(Create|Register|RunTask)", action)) && !(statement.Sid == "RdsManagedSecretMetadata" && !contains(["secretsmanager:DescribeSecret", "secretsmanager:GetResourcePolicy"], action))]) > 0
+      }) if !contains(["CloudFrontInitialOwnershipTags", "DiscoveryDemoTagging"], statement.Sid) && length([for action in statement.Action : action if !can(regex(":(Create|Register|RunTask)", action)) && !(statement.Sid == "RdsManagedSecretMetadata" && !contains(["secretsmanager:DescribeSecret", "secretsmanager:GetResourcePolicy"], action))]) > 0
     ]
   }
 }

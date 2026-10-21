@@ -11,6 +11,10 @@ const runs = REQUIRED_WORKFLOWS.map((workflow, index) => ({ id: index + 1,
   event: 'push', status: 'completed', conclusion: 'success' }));
 
 test('all exact-SHA workflows are mandatory', () => {
+  for (const workflow of ['mcp-server.yml', 'rag-server.yml', 'ai-e2e.yml', 'aws-infrastructure.yml']) {
+    assert.ok(REQUIRED_WORKFLOWS.includes(workflow));
+    assert.equal(checkRuns(runs.filter(run => run.path !== `.github/workflows/${workflow}`), sha), false);
+  }
   assert.equal(checkRuns(runs, sha), true);
   assert.equal(checkRuns(runs.slice(1), sha), false);
   assert.equal(checkRuns(runs.map(run => ({ ...run, head_sha: 'b'.repeat(40) })), sha), false);
@@ -34,7 +38,9 @@ test('build contexts match every Compose application image', () => {
   assert.equal(buildArguments('garry-ai-service-backend', 'example', sha).at(-1), 'garry-ai-service/backend');
   assert.equal(buildArguments('mini-games-service-backend', 'example', sha).at(-1), 'mini-games-service/backend');
   assert.ok(buildArguments('shared-db-api', 'example', sha).includes('APPLICATION_IMAGE=languagewise-build/shared-db-api:' + sha));
-  assert.throws(() => buildArguments('rag-server', 'example', sha), /Unknown/);
+  assert.equal(buildArguments('mcp-server', 'example', sha).at(-1), 'mcp-server');
+  assert.equal(buildArguments('rag-server', 'example', sha).at(-1), 'rag-server');
+  assert.throws(() => buildArguments('untrusted-server', 'example', sha), /Unknown/);
 });
 
 test('cleanup packaging admits only runtime configuration and controller source', () => {
@@ -69,7 +75,7 @@ test('secret-bearing workflows are trusted, pinned, bounded and serialized', () 
 
 test('candidate content must match its exact tested workflow SHA', () => {
   const config = { repository_url: '047754151573.dkr.ecr.ap-southeast-2.amazonaws.com/41026release2/languagewise' };
-  const manifest = { sha, sequence: 7, images: Object.fromEntries(IMAGE_KEYS.map(name => [name, `${config.repository_url}@sha256:${'b'.repeat(64)}`])) };
+  const manifest = { schemaVersion: 2, sha, sequence: 7, images: Object.fromEntries(IMAGE_KEYS.map(name => [name, `${config.repository_url}@sha256:${'b'.repeat(64)}`])) };
   assert.equal(validateCandidate(manifest, sha, config).sequence, 7);
   assert.throws(() => validateCandidate(manifest, 'c'.repeat(40), config), /tested workflow SHA/);
   const source = readFileSync(new URL('../scripts/release.mjs', import.meta.url), 'utf8');

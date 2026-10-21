@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { DemoController, loadFoundation, nativeDependencies } from '../scripts/demo.mjs';
-import { SERVICES, IMAGE_KEYS, HOUR, LOCK_WINDOW, beginUp, cleanupDue, canAcquireLock,
+import { SERVICES, IMAGE_KEYS, LEGACY_IMAGE_KEYS, HOUR, LOCK_WINDOW, beginUp, cleanupDue, canAcquireLock,
   assertPhase, releaseOrder, terraformVariables, validateFoundation, validateRelease } from '../scripts/control.mjs';
 
 const now = Date.parse('2026-10-20T10:00:00Z');
@@ -27,10 +27,10 @@ const foundation = {
   service_execution_role_arns: Object.fromEntries(IMAGE_KEYS.map(name => [name, role(`${name}-execution`)])),
   service_task_role_arns: Object.fromEntries(IMAGE_KEYS.map(name => [name, role(`${name}-task`)])),
   secret_arns: Object.fromEntries(['db-shared', 'db-mini-games', 'db-quizzes-courses', 'db-chat-discussion', 'db-quests',
-    'signing-private-key', 'signing-public-key', 'openrouter-api-key'].map(name =>
+    'signing-private-key', 'signing-public-key', 'openrouter-api-key', 'mcp-api-key'].map(name =>
     [name, `arn:aws:secretsmanager:${region}:${account}:secret:languagewise/demo/${name}-123456`])),
 };
-const release = (sequence = 1, character = 'a') => ({ sha: character.repeat(40), sequence,
+const release = (sequence = 1, character = 'a') => ({ schemaVersion: 2, sha: character.repeat(40), sequence,
   images: Object.fromEntries(IMAGE_KEYS.map(name => [name, `${foundation.repository_url}@sha256:${character.repeat(64)}`])) });
 const ready = () => ({ ...beginUp(undefined, undefined, release(), now).state, status: 'ready' });
 const conflict = () => Object.assign(new Error('Conditional write failed'), { code: 'ConditionalCheckFailedException' });
@@ -217,9 +217,14 @@ function harness(options = {}) {
           initialized = !options.initializerFailure;
           response.tasks = [{ lastStatus: 'STOPPED', containers: [{ exitCode: options.initializerFailure ? 1 : 0 }] }];
         }
-        if (operation === 'describe-services') response.services = input.services.map(serviceName => ({ serviceName, status: 'ACTIVE', desiredCount: 1,
-          runningCount: 1, pendingCount: 0, deployments: [{ rolloutState: 'COMPLETED' }] }));
-      } else if (service === 'resourcegroupstaggingapi') response = {
+        if (operation === 'describe-services') {
+          if (input.services[0]?.startsWith('arn:')) response = options.ecsResidualResponse ?? {
+            services: input.services.map(serviceArn => ({ serviceArn, status: 'INACTIVE', desiredCount: 0, runningCount: 0, pendingCount: 0 })), failures: [],
+          };
+          else response.services = input.services.map(serviceName => ({ serviceName, status: 'ACTIVE', desiredCount: 1,
+            runningCount: 1, pendingCount: 0, deployments: [{ rolloutState: 'COMPLETED' }] }));
+        }
+      } else if (service === 'resourcegroupstaggingapi') response = options.tagPages?.[input.PaginationToken ?? 'first'] ?? {
         ResourceTagMappingList: (options.taggedResources ?? []).map(ResourceARN => ({ ResourceARN })),
         ...(options.tagPagination ? { PaginationToken: 'more' } : {}),
       };
@@ -255,6 +260,57 @@ test('missing release never discards an existing disposable state', async () => 
   assert.ok(!fixture.calls.some(call => call.binary === 'terraform'));
 });
 
+for (const [resource, code] of [
+  ['aws_db_instance', 'InvalidParameterCombination'], ['aws_service_discovery_service', 'ResourceInUse'],
+]) for (const field of ['summary', 'detail']) {
+  test(`native Terraform failures classify ${resource} ${field} without retaining raw output or secrets`, () => {
+    const sentinel = 'private-diagnostic-test-sentinel';
+    const event = { type: 'diagnostic', diagnostic: { severity: 'error', address: `${resource}.${sentinel}`,
+      summary: `provider operation ${sentinel}`, detail: '',
+      [field]: `operation error: ${code}: ${sentinel}` } };
+    const dependencies = nativeDependencies({}, undefined, () => {
+      throw Object.assign(new Error(sentinel), { stdout: `${JSON.stringify(event)}\n`, stderr: sentinel });
+    });
+    assert.throws(() => dependencies.run('terraform', ['apply', '-json']), error => {
+      assert.equal(error.diagnostic, `resource_type=${resource}; code=${code}; category=provider-or-unknown`);
+      assert.ok(!JSON.stringify(error).includes(sentinel));
+      assert.ok(!error.message.includes(sentinel));
+      assert.equal(error.stdout, undefined);
+      assert.equal(error.stderr, undefined);
+      assert.equal(error.uncertainWriter, false);
+      return true;
+    });
+  });
+}
+
+test('native Terraform diagnostics ignore malformed, unknown and non-error events and preserve timeout safety', () => {
+  const events = [null, { type: 'planned_change', '@message': 'private-sentinel' },
+    { type: 'diagnostic', diagnostic: { severity: 'warning', summary: 'private-sentinel' } },
+    { type: 'diagnostic', diagnostic: { severity: 'error', address: 'private-sentinel', detail: { private: true },
+      summary: 'Missing required argument' } }];
+  const dependencies = nativeDependencies({}, undefined, () => {
+    throw Object.assign(new Error('private-sentinel'), { stdout: `not-json\n${events.map(event => JSON.stringify(event)).join('\n')}`,
+      stderr: 'private-sentinel', code: 'ETIMEDOUT', signal: 'SIGKILL' });
+  });
+  assert.throws(() => dependencies.run('terraform', ['plan', '-json']), error => {
+    assert.equal(error.diagnostic, 'resource_type=unknown; code=unknown; category=Missing required argument');
+    assert.equal(error.uncertainWriter, true);
+    assert.ok(!JSON.stringify(error).includes('private-sentinel'));
+    return true;
+  });
+});
+
+test('a failed Up reports its exact Terraform phase before successful rollback', async () => {
+  const fixture = harness({ failApply: 1 });
+  await assert.rejects(fixture.controller.execute('up'), /Terraform apply failed/);
+  assert.ok(fixture.reports.some(report => report === 'Terraform infrastructure apply failed; diagnostics unavailable; raw output suppressed.'));
+  assert.ok(fixture.reports.findIndex(report => report.startsWith('Terraform infrastructure apply failed'))
+    < fixture.reports.findIndex(report => report.startsWith('Demo Down verified')));
+  assert.equal(fixture.state().status, 'down');
+  assert.ok(fixture.calls.filter(call => call.binary === 'terraform' && ['plan', 'apply'].some(command => call.args.includes(command)))
+    .every(call => call.args.includes('-json')));
+});
+
 test('foundation accepts JSON or a file path, but never Terraform output wrappers', () => {
   assert.deepEqual(loadFoundation(JSON.stringify(foundation)), foundation);
   assert.deepEqual(loadFoundation('infra/generated/foundation.json', () => JSON.stringify(foundation)), foundation);
@@ -272,8 +328,8 @@ test('foundation handles a UTF-8 BOM in inline or file JSON without bypassing va
   assert.throws(() => loadFoundation('\uFEFF \r\n'), /FOUNDATION_CONFIG is required/);
 });
 
-test('manifest contains exact 18 Compose services plus initializer and immutable repository digests', () => {
-  assert.equal(SERVICES.length, 18);
+test('version 2 manifest contains exact 20 private services plus initializer and immutable repository digests', () => {
+  assert.equal(SERVICES.length, 20);
   assert.deepEqual(validateRelease(release(), foundation), release());
   for (const invalid of [
     { ...release(), sha: 'abc' }, { ...release(), sequence: '1' },
@@ -282,6 +338,32 @@ test('manifest contains exact 18 Compose services plus initializer and immutable
     { ...release(), images: { ...release().images, 'database-initializer': `other@sha256:${'a'.repeat(64)}` } },
     { ...release(), images: { ...release().images, 'database-initializer': `${foundation.repository_url}@sha256:${'a'.repeat(65)}` } },
   ]) assert.throws(() => validateRelease(invalid, foundation));
+});
+
+test('legacy manifests remain readable and destroyable but cannot start or replace a runtime', async () => {
+  const legacy = { sha: 'a'.repeat(40), sequence: 1,
+    images: Object.fromEntries(LEGACY_IMAGE_KEYS.map(name => [name, release().images[name]])) };
+  assert.deepEqual(validateRelease(legacy, foundation, { allowLegacy: true }), legacy);
+  assert.throws(() => validateRelease(legacy, foundation), /schema version 2/);
+  assert.throws(() => validateRelease({ ...legacy, schemaVersion: 2 }, foundation), /inventory/);
+  assert.throws(() => validateRelease({ ...release(), schemaVersion: 3 }, foundation, { allowLegacy: true }), /schema/);
+  assert.throws(() => terraformVariables(foundation, legacy, true), /only be destroyed/);
+  assert.throws(() => releaseOrder(release(), legacy), /conflict/);
+  const up = harness({ latest: legacy });
+  await assert.rejects(up.controller.execute('up'), /schema version 2/);
+  assert.ok(!up.calls.some(call => call.binary === 'terraform'));
+  assert.ok(!up.rows.has('quota#2026-10'));
+  const down = harness({ state: { ...ready(), desiredMode: 'down', release: legacy } });
+  await down.controller.execute('down');
+  assert.equal(down.state().status, 'down');
+  assert.ok(down.calls.some(call => call.variables?.release.schema_version === 1));
+  const repeated = harness({ state: down.state(), latest: legacy });
+  await repeated.controller.execute('down');
+  assert.equal(repeated.state().status, 'down');
+  assert.ok(repeated.calls.some(call => call.variables?.release.schema_version === 1));
+  const live = harness({ state: { ...ready(), release: legacy }, latest: legacy });
+  await assert.rejects(live.controller.execute('release', release(2, 'b')), /Down before migrating/);
+  assert.ok(!live.calls.some(call => call.binary === 'terraform'));
 });
 
 test('quota atomically reserves four nonrefundable hours and repeated Up preserves deadlines', () => {
@@ -315,8 +397,16 @@ test('release sequence is monotonic and SHA archives cannot change digests', () 
 
 test('Terraform variables expose only foundation, immutable release and boolean services switch', () => {
   assert.deepEqual(terraformVariables(foundation, release(), false), { foundation,
-    release: { sha: release().sha, images: release().images }, services_enabled: false });
+    release: { sha: release().sha, images: release().images, schema_version: 2 }, services_enabled: false });
   assert.throws(() => terraformVariables(foundation, release(), 'false'), /boolean/);
+});
+
+test('Terraform plans and applies bound simultaneous rolling service updates', async () => {
+  const fixture = harness();
+  await fixture.controller.execute('up');
+  const commands = fixture.calls.filter(call => call.binary === 'terraform' && ['plan', 'apply'].some(command => call.args.includes(command)));
+  assert.equal(commands.length, 4);
+  assert.ok(commands.every(call => call.args.includes('-parallelism=2')));
 });
 
 test('expired locks are never stolen and competing owner cannot be removed', async () => {
@@ -578,8 +668,8 @@ test('first Up accepts empty database metadata then requires current versions be
   const enable = fixture.calls.findIndex(call => call.variables?.services_enabled);
   const metadata = fixture.calls.map((call, index) => ({ ...call, index }))
     .filter(call => call.service === 'secretsmanager');
-  assert.equal(metadata.filter(call => call.index < seed).length, 8);
-  assert.equal(metadata.filter(call => call.index > seed && call.index < enable).length, 8);
+  assert.equal(metadata.filter(call => call.index < seed).length, 9);
+  assert.equal(metadata.filter(call => call.index > seed && call.index < enable).length, 9);
   assert.equal(fixture.state().status, 'ready');
 });
 
@@ -853,6 +943,85 @@ test('stale EC2 tag records require complete exact-ID proof of deletion before s
       await assert.rejects(live.controller.execute('down'), /Tagged runtime/);
       assert.equal(live.state().status, 'stopping');
     }
+  }
+});
+
+test('residual verification consumes all tag pages and checks deleted EC2 records on later pages', async () => {
+  const fixture = harness({ state: ready(), tagPages: {
+    first: { ResourceTagMappingList: [{ ResourceARN: `arn:aws:ecs:${region}:${account}:task-definition/languagewise-demo-shared-backend:12` }], PaginationToken: 'next' },
+    next: { ResourceTagMappingList: [{ ResourceARN: `arn:aws:ec2:${region}:${account}:subnet/subnet-deadbeef` }] },
+  } });
+  await fixture.controller.execute('down');
+  assert.equal(fixture.state().status, 'down');
+  const pages = fixture.calls.filter(call => call.service === 'resourcegroupstaggingapi');
+  assert.deepEqual(pages.map(call => call.input.PaginationToken), [undefined, 'next']);
+  assert.ok(fixture.calls.some(call => call.operation === 'describe-subnets'));
+});
+
+test('residual verification fails closed for later-page resources and malformed tag pages', async () => {
+  for (const next of [
+    { ResourceTagMappingList: [{ ResourceARN: `arn:aws:rds:${region}:${account}:db:languagewise-demo-postgres` }] },
+    {},
+    { ResourceTagMappingList: [], PaginationToken: 123 },
+  ]) {
+    const fixture = harness({ state: ready(), tagPages: {
+      first: { ResourceTagMappingList: [], PaginationToken: 'next' }, next,
+    } });
+    await assert.rejects(fixture.controller.execute('down'), /Tagged runtime/);
+    assert.equal(fixture.state().status, 'stopping');
+  }
+});
+
+test('inactive ECS tag records require exact complete service proof in batches across tag pages', async () => {
+  const serviceArns = SERVICES.map(name => `arn:aws:ecs:${region}:${account}:service/languagewise/languagewise-demo-${name}`);
+  const fixture = harness({ state: ready(), tagPages: {
+    first: { ResourceTagMappingList: [], PaginationToken: 'next' },
+    next: { ResourceTagMappingList: serviceArns.map(ResourceARN => ({ ResourceARN })) },
+  } });
+  await fixture.controller.execute('down');
+  assert.equal(fixture.state().status, 'down');
+  const checks = fixture.calls.filter(call => call.operation === 'describe-services');
+  assert.deepEqual(checks.map(call => call.input.services.length), [10, 10]);
+  assert.deepEqual(checks.flatMap(call => call.input.services), serviceArns);
+  assert.ok(checks.every(call => call.input.cluster === foundation.cluster_arn));
+});
+
+test('missing ECS service proof accepts only exact MISSING failures', async () => {
+  const arn = `arn:aws:ecs:${region}:${account}:service/languagewise/languagewise-demo-shared-backend`;
+  const fixture = harness({ state: ready(), taggedResources: [arn],
+    ecsResidualResponse: { services: [], failures: [{ arn, reason: 'MISSING' }] } });
+  await fixture.controller.execute('down');
+  assert.equal(fixture.state().status, 'down');
+});
+
+test('ECS residual proof rejects active, incomplete, duplicate, malformed and denied responses', async () => {
+  const arn = `arn:aws:ecs:${region}:${account}:service/languagewise/languagewise-demo-shared-backend`;
+  const inactive = { serviceArn: arn, status: 'INACTIVE', desiredCount: 0, runningCount: 0, pendingCount: 0 };
+  for (const response of [
+    {}, { services: [], failures: [] }, { services: null, failures: [] },
+    { services: [null], failures: [] }, { services: [], failures: [null] },
+    { services: [inactive] }, { services: [inactive, inactive], failures: [] },
+    { services: [inactive], failures: [{ arn, reason: 'MISSING' }] },
+    { services: [], failures: [{ arn, reason: 'ACCESS_DENIED' }] },
+    { services: [], failures: [{ arn: `${arn}-other`, reason: 'MISSING' }] },
+    { services: [inactive], failures: [], nextToken: 'more' },
+    ...[{ status: 'ACTIVE' }, { status: 'DRAINING' }, { desiredCount: 1 }, { runningCount: 1 }, { pendingCount: 1 },
+      { serviceArn: `${arn}-other` }, { runningCount: undefined }].map(change => ({ services: [{ ...inactive, ...change }], failures: [] })),
+  ]) {
+    const fixture = harness({ state: ready(), taggedResources: [arn], ecsResidualResponse: response });
+    await assert.rejects(fixture.controller.execute('down'), /Tagged ECS service/);
+    assert.equal(fixture.state().status, 'stopping');
+  }
+});
+
+test('ECS residual exceptions never admit foreign accounts, regions, clusters or service prefixes', async () => {
+  const arn = `arn:aws:ecs:${region}:${account}:service/languagewise/languagewise-demo-shared-backend`;
+  for (const foreign of [arn.replace(account, '000000000000'), arn.replace(region, 'us-east-1'),
+    arn.replace('/languagewise/', '/another-cluster/'), arn.replace('languagewise-demo-', 'another-app-')]) {
+    const fixture = harness({ state: ready(), taggedResources: [foreign] });
+    await assert.rejects(fixture.controller.execute('down'), /Tagged runtime/);
+    assert.equal(fixture.state().status, 'stopping');
+    assert.ok(!fixture.calls.some(call => call.operation === 'describe-services'));
   }
 });
 

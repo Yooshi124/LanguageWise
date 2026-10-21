@@ -8,6 +8,8 @@ volumes:
   postgres-data:
   shared-images-data:
   chat-images-data:
+  rag-data:
+  rag-embedding-cache:
 
 # Generate using tools/gen-signing-key/gen-signing-key.ps1
 secrets:
@@ -20,6 +22,42 @@ secrets:
     file: ./mcp-server/.mcp-api-key
 
 services:
+  rag-server:
+    build:
+      context: ./rag-server
+    volumes:
+      - rag-data:/data
+      - rag-embedding-cache:/home/app/.cache/chroma
+    ports:
+      - "127.0.0.1:8100:8100"
+    networks: [languagewise]
+    restart: unless-stopped
+
+  mcp-server:
+    build:
+      context: ./mcp-server
+    environment:
+      Urls: http://0.0.0.0:8080
+      Mcp__ApiKeyPath: /run/secrets/mcp_api_key
+      Auth__VerificationKeyPath: /run/secrets/signing_public_key
+      Services__QuizzesCourses: http://quizzes-courses-service-backend:8080
+      Services__MiniGames: http://mini-games-service-backend:8080
+      Services__ChatDiscussion: http://chat-discussion-service-backend:8080
+      Services__QuestsAchievements: http://quests-achievements-notifications-service-backend:8080
+      Services__LeaderboardAnalytics: http://leaderboard-analytics-service-backend:8080
+      Services__Rag: http://rag-server:8100
+      Services__Database: http://shared-db-api:8080
+    secrets:
+      - signing_public_key
+      - mcp_api_key
+    ports:
+      - "127.0.0.1:8200:8080"
+    networks: [languagewise]
+    depends_on:
+      rag-server:
+        condition: service_healthy
+    restart: unless-stopped
+
   garry-ai-service-backend:
     container_name: garry-ai-service-backend
     build:
@@ -29,15 +67,14 @@ services:
       OpenRouter__BaseUrl: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       OpenRouter__Model: ${OPENROUTER_MODEL:-google/gemma-4-26b-a4b-it}
       OpenRouter__MaxOutputTokens: ${OPENROUTER_MAX_OUTPUT_TOKENS:-1024}
+      Services__Database: http://shared-db-api:8080
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
       Mcp__Enabled: "true"
-      Mcp__Endpoint: http://host.docker.internal:8200/mcp
+      Mcp__Endpoint: http://mcp-server:8080/mcp
       Mcp__ApiKeyPath: /run/secrets/mcp_api_key
     secrets:
       - signing_public_key
       - mcp_api_key
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     networks: [languagewise]
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/health"]
@@ -46,6 +83,9 @@ services:
       start_period: 15s
       retries: 6
     restart: unless-stopped
+    depends_on:
+      mcp-server:
+        condition: service_healthy
 
   shared-db:
     container_name: shared-db
@@ -87,18 +127,19 @@ services:
     environment:
       Services__Database: http://shared-db-api:8080
       Services__Achievements: http://quests-achievements-notifications-service-backend:8080
-      Services__Rag: http://host.docker.internal:8100
+      Services__Rag: http://rag-server:8100
+      Rag__Enabled: "true"
       Services__Garry: http://garry-ai-service-backend:8080
       Auth__SigningKeyPath: /run/secrets/signing_private_key
     secrets:
       - signing_private_key
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:5000:8080"
     networks: [languagewise]
     depends_on:
       shared-db-api:
+        condition: service_healthy
+      rag-server:
         condition: service_healthy
     restart: unless-stopped
 
@@ -142,13 +183,11 @@ services:
       Services__Garry: http://garry-ai-service-backend:8080
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
       Mcp__Enabled: "true"
-      Mcp__Endpoint: http://host.docker.internal:8200/mcp
+      Mcp__Endpoint: http://mcp-server:8080/mcp
       Mcp__ApiKeyPath: /run/secrets/mcp_api_key
     secrets:
       - signing_public_key
       - mcp_api_key
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:5001:8080"
     networks: [languagewise]
@@ -194,13 +233,11 @@ services:
       Services__Garry: http://garry-ai-service-backend:8080
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
       Mcp__Enabled: "true"
-      Mcp__Endpoint: http://host.docker.internal:8200/mcp
+      Mcp__Endpoint: http://mcp-server:8080/mcp
       Mcp__ApiKeyPath: /run/secrets/mcp_api_key
     secrets:
       - signing_public_key
       - mcp_api_key
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:5003:8080"
     networks: [languagewise]
@@ -253,13 +290,11 @@ services:
       Services__Garry: http://garry-ai-service-backend:8080
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
       Mcp__Enabled: "true"
-      Mcp__Endpoint: http://host.docker.internal:8200/mcp
+      Mcp__Endpoint: http://mcp-server:8080/mcp
       Mcp__ApiKeyPath: /run/secrets/mcp_api_key
     secrets:
       - signing_public_key
       - mcp_api_key
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:5002:8080"
     networks: [languagewise]
@@ -308,13 +343,11 @@ services:
       OpenRouter__Model: ${OPENROUTER_MODEL:-google/gemma-4-26b-a4b-it}
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
       Mcp__Enabled: "true"
-      Mcp__Endpoint: http://host.docker.internal:8200/mcp
+      Mcp__Endpoint: http://mcp-server:8080/mcp
       Mcp__ApiKeyPath: /run/secrets/mcp_api_key
     secrets:
       - signing_public_key
       - mcp_api_key
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "5004:8080"
     networks: [languagewise]

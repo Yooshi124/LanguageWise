@@ -270,17 +270,19 @@ public sealed class AuthenticationTests
             $"shared-auth-test-key-{Guid.NewGuid():N}.pem");
         private readonly int? streakValue;
         private readonly bool ragEnabled;
+        private readonly bool ragSwitchedOn;
         private readonly bool usePem;
         private readonly bool invalidPem;
         private readonly string? trustedNetwork;
 
-        internal ApiFixture(int? streakValue = null, bool ragEnabled = true, bool usePem = false, bool invalidPem = false, string? trustedNetwork = null)
+        internal ApiFixture(int? streakValue = null, bool ragEnabled = true, bool usePem = false, bool invalidPem = false, string? trustedNetwork = null, bool ragSwitchedOn = true)
         {
             this.streakValue = streakValue;
             this.ragEnabled = ragEnabled;
             this.usePem = usePem;
             this.invalidPem = invalidPem;
             this.trustedNetwork = trustedNetwork;
+            this.ragSwitchedOn = ragSwitchedOn;
             File.WriteAllText(signingKeyPath, signingKey.ExportRSAPrivateKeyPem());
         }
 
@@ -357,7 +359,7 @@ public sealed class AuthenticationTests
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<UsersClient>();
-                services.AddSingleton(new UsersClient(new HttpClient(new LoginStateHandler(streakValue))
+                services.AddSingleton(new UsersClient(new HttpClient(new LoginStateHandler(streakValue, ragSwitchedOn))
                 {
                     BaseAddress = new Uri("http://shared-database/")
                 }));
@@ -393,12 +395,25 @@ public sealed class AuthenticationTests
         }
     }
 
-    private sealed class LoginStateHandler(int? streakValue) : HttpMessageHandler
+    private sealed class LoginStateHandler(int? streakValue, bool ragSwitchedOn) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
+            if (request.RequestUri?.AbsolutePath == "/api/admin-settings")
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new[]
+                    {
+                        new { name = "AIMode", isEnabled = true },
+                        new { name = "MCP", isEnabled = true },
+                        new { name = "RAG", isEnabled = ragSwitchedOn }
+                    })
+                });
+            }
+
             if (request.RequestUri?.AbsolutePath == "/api/users/verify")
             {
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
