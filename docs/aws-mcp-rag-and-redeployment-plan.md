@@ -1,7 +1,7 @@
 # AWS MCP/RAG and Reliable Redeployment Plan
 
-Status: implementation verified locally; preparatory foundation changes applied,
-2026-10-21. The owner authorized local changes/tests/commits and scoped AWS changes,
+Status: implementation verified locally; Down-only foundation/cleanup cutover
+verified, 2026-10-22. The owner authorized local changes/tests/commits and scoped AWS changes,
 but not pushing, merging or another Up. Resource, lease and budget limits are
 unchanged. The original [AWS migration plan](aws-migration-plan.md) is historical
 context; this implementation extends its explicit MCP/RAG exclusion.
@@ -31,14 +31,28 @@ context; this implementation extends its explicit MCP/RAG exclusion.
    regional Fargate quota remains 20 vCPUs. Terraform parallelism two bounds this
    runtime to 11 vCPUs during normal rolling deployment, versus 10 steady-state;
    the initializer is stopped before application startup.
-- Applied exactly four new roles, two new execution policies, six exact MCP-key
-   consumer-policy updates and the empty `languagewise/demo/mcp-api-key` metadata
-   entry. Independent readback verifies exact key access, no task-role policies,
-   no RAG secret access and unchanged cleanup project/control state. No cluster
-   drift, secret value, runtime start, quota or account-plan change was applied.
-- Cutover remains gated on the owner populating that secret as raw plaintext,
-   then coordinated committed cleanup source/pins/configuration and GitHub
-   foundation metadata. Do not push/merge or start Up before the operator handoff.
+- Preparation created four new roles, two execution policies, six exact MCP-key
+   consumer-policy updates and the `languagewise/demo/mcp-api-key` metadata entry.
+   The owner populated the raw-plaintext value directly; only current-version
+   metadata was checked. Exact execution-key access, no task-role policies and no
+   RAG secret access were independently verified.
+- Completed the Down-only cutover: two exact PassRole policy updates and four
+   inline source/metadata policy updates; 44 positive/negative IAM simulation
+   decisions pass. GitHub, Terraform outputs and both CodeBuild contract variables
+   now match the 21-role/nine-secret-ARN inventory. All other project settings,
+   schedule, role, limits and timeouts were preserved.
+- Cleanup archive from implementation commit `e27d053` has SHA256
+   `a136f0ab33c8731cc753d98ce692b6c35eabdcff4742c9d25ca597193dc88018`,
+   version `bGf.5Uq7XS_8A3.PJ13CNqYxk.74efoa`, 26,154 bytes and AES256 encryption;
+   its exact-version download was verified. Native build
+   `7457872b-8928-47a2-baf5-b4b5f2f19880` succeeded while already Down. Fresh full
+   residual/readiness checks pass; revision 46 and no lock remain unchanged.
+   All four alarms are OK/actions enabled; dispatcher invocation started no build.
+   This is not proof of nonempty-stack destruction or an active rolling update.
+- Final non-applied preview has zero IAM/CodeBuild changes; unrelated ECS cluster
+   drift was not applied. Owner PR publication and exact merged-SHA CI/release
+   are next while Down. Cost/storage review and explicit approval still precede
+   any new Up; no secret value, runtime start, quota or account-plan change occurred.
 
 ## 1. Outcome and Boundaries
 
@@ -79,7 +93,7 @@ Current contracts and implementation anchors:
   [release builder/gate](../infra/scripts/release.mjs),
   [foundation identities](../infra/foundation/identity.tf) and
    [runtime services](../infra/demo/services.tf): version 2 includes private MCP/RAG;
-   the deployed cleanup source/configuration still uses the legacy inventory until cutover.
+   deployed cleanup now uses the matching contract and retains legacy-release destruction support.
 - [MCP JWT loader](../mcp-server/src/LanguageWise.McpServer/Security/UserTokenValidator.cs)
   already supports `Auth__VerificationKeyPem` with file fallback; reuse it.
 - [Real-container E2E](../tests/e2e/README.md) already exercises scoped MCP tools,

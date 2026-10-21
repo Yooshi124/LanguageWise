@@ -1,6 +1,6 @@
 # AWS Demo Infrastructure
 
-## Current Follow-up: 2026-10-21
+## Current Follow-up: 2026-10-22
 
 See the [MCP/RAG and reliable redeployment plan](../docs/aws-mcp-rag-and-redeployment-plan.md)
 for implementation evidence, continued local development and the live-update
@@ -14,10 +14,32 @@ The private 20-service/21-image integration passes local contracts, Terraform
 tests and 26 real-container E2E checks. RAG fits 0.5 CPU/1 GiB offline after
 bounding ONNX threads and baking its model cache; no size or limit was raised.
 Authorized AWS preparation created four roles, two execution policies and an
-empty MCP secret entry, and updated six exact secret-consumer policies. Cleanup
-source/configuration and control state are unchanged. The owner must populate
-`languagewise/demo/mcp-api-key` as raw plaintext before coordinated cleanup and
-GitHub metadata cutover. No push, merge or Up has been performed or authorized.
+MCP secret metadata entry, and updated six exact secret-consumer policies. The
+owner populated `languagewise/demo/mcp-api-key` directly; only its current-version
+metadata was verified, never its value. The Down-only cleanup cutover is complete:
+GitHub, Terraform outputs and both CodeBuild contract variables match 21 roles
+and nine secret ARNs. Two PassRole policies add only the four new role ARNs;
+four inline policies update exact source pins and MCP metadata access. All 44
+positive/negative IAM simulation decisions pass, including secret-value denials.
+
+Cleanup uses reviewed implementation commit `e27d053`, content-addressed object
+`cleanup/a136f0ab33c8731cc753d98ce692b6c35eabdcff4742c9d25ca597193dc88018.zip`,
+S3 version `bGf.5Uq7XS_8A3.PJ13CNqYxk.74efoa` (26,154 bytes, AES256; exact-version
+download checksum verified). Native cleanup build
+`7457872b-8928-47a2-baf5-b4b5f2f19880` succeeded while already Down. Fresh independent
+readiness/residual checks pass, revision 46 and no lock remain unchanged, all four
+alarms are OK with actions enabled, and the dispatcher starts no build while Down.
+This verifies the already-Down path, not destruction of a newly populated stack.
+The final non-applied preview has zero IAM/CodeBuild changes; unrelated ECS cluster
+drift was not applied. Role, schedule, timeouts, quotas and budget limits were not
+changed. No application secret value was read and no Demo Up was started.
+
+Owner publication is next: push the local commits through a normal PR, require
+passing CI, merge, then wait for the exact merged-SHA 21-image release while Down.
+No push or merge was performed by the assistant. Do not run Up until that release,
+cleanup readiness and the remaining cost/storage gates have been checked and a
+new timed demo is explicitly approved. The cleanup archive remains pinned to
+`e27d053`; later documentation-only commits do not change its implementation.
 Keep the temporary Down-before-merge procedure until a real active-demo image
 update succeeds. Notes below retain earlier rollout history.
 
