@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.Extensions.DependencyInjection;
 using System.Net.Http.Json;
 using System.Text.Json;
 using static LanguageWise.Shared.Api.Tests.AuthenticationTests;
@@ -119,6 +120,16 @@ public sealed class DocsAnswerTests
             Assert.That(fixture.RagHandler.Path, Is.Null);
             Assert.That(fixture.GarryHandler.RequestCount, Is.Zero);
         });
+    }
+
+    [Test]
+    public void RagClient_WhenDisabled_RejectsBeforeSendingRequest()
+    {
+        using var fixture = new ApiFixture(ragEnabled: false);
+        var client = fixture.Services.GetRequiredService<LanguageWise.Shared.Api.Clients.RagClient>();
+
+        Assert.ThrowsAsync<InvalidOperationException>(async () => await client.QueryAsync("mini games", 3));
+        Assert.That(fixture.RagHandler.Path, Is.Null);
     }
 
     [Test]

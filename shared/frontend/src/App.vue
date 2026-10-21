@@ -21,7 +21,7 @@ const showShell = computed(() => route.name !== 'login' && route.name !== 'creat
 const garry = computed(() => {
   const featureKey = route.meta.federatedFeature
   const user = auth.user.value
-  if (typeof featureKey !== 'string' || !user || route.meta.hideAssistant || hostError.value || !adminSettings.aiMode.value) {
+  if (typeof featureKey !== 'string' || !user || route.meta.hideAssistant || hostError.value) {
     return null
   }
   const assistant = featureAssistants.get(featureKey)
@@ -89,15 +89,15 @@ watch(
         <router-view v-else :key="`${route.fullPath}:${renderKey}`" />
       </v-main>
     </div>
-    <GarryAssistant
-      v-if="garry"
-      :key="`${garry.featureKey}:${garry.userId}`"
-      :feature-key="garry.featureKey"
-      :user-id="garry.userId"
-      :assistant="garry.assistant"
-    />
   </v-app>
   <v-app v-else>
     <router-view />
   </v-app>
+  <GarryAssistant
+    v-if="showShell && auth.user.value && adminSettings.aiMode.value"
+    :key="auth.user.value.id"
+    :feature-key="garry?.featureKey"
+    :user-id="auth.user.value.id"
+    :assistant="garry?.assistant"
+  />
 </template>

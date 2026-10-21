@@ -40,7 +40,7 @@ builder.Services.AddSingleton<IAssistantPromptBuilder, AssistantPromptBuilder>()
 
 var verificationKeyPath = builder.Configuration["Auth:VerificationKeyPath"] ?? "/run/secrets/signing_public_key";
 var rsa = RSA.Create();
-rsa.ImportFromPem(File.ReadAllText(verificationKeyPath));
+rsa.ImportFromPem(builder.Configuration["Auth:VerificationKeyPem"] ?? File.ReadAllText(verificationKeyPath));
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

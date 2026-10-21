@@ -142,7 +142,7 @@ def rebuild(settings: Settings) -> int:
     client = chromadb.PersistentClient(path=str(settings.chroma_dir))
     try:
         client.delete_collection(settings.collection)
-    except Exception:  # noqa: S110 - collection may not exist yet on first run
+    except chromadb.errors.NotFoundError:
         pass
     collection = client.get_or_create_collection(
         name=settings.collection,

@@ -1,0 +1,92 @@
+x-isolated: &isolated
+  container_name: !reset null
+  ports: !reset []
+  env_file: !reset []
+  restart: "no"
+
+secrets:
+  signing_private_key:
+    file: ${E2E_STATE_DIR:?Run Invoke-E2E.ps1}/signing_private_key.pem
+  signing_public_key:
+    file: ${E2E_STATE_DIR:?Run Invoke-E2E.ps1}/signing_public_key.pem
+  mcp_api_key:
+    file: ${E2E_STATE_DIR:?Run Invoke-E2E.ps1}/mcp-api-key
+
+services:
+  rag-server:
+    <<: *isolated
+  mcp-server:
+    <<: *isolated
+  shared-db:
+    <<: *isolated
+  shared-db-api:
+    <<: *isolated
+  shared-backend:
+    <<: *isolated
+  mini-games-service-db:
+    <<: *isolated
+  mini-games-service-backend:
+    <<: *isolated
+  quizzes-courses-service-db:
+    <<: *isolated
+  quizzes-courses-service-backend:
+    <<: *isolated
+  chat-discussion-service-db:
+    <<: *isolated
+  chat-discussion-service-backend:
+    <<: *isolated
+  quests-achievements-notifications-service-db:
+    <<: *isolated
+  quests-achievements-notifications-service-backend:
+    <<: *isolated
+    environment:
+      OpenRouter__ApiKey: ""
+      Smtp__Host: ""
+      Smtp__Username: ""
+      Smtp__Password: ""
+  leaderboard-analytics-service-backend:
+    <<: *isolated
+    environment:
+      OpenRouter__ApiKey: ""
+  garry-ai-service-backend:
+    <<: *isolated
+    environment:
+      OpenRouter__ApiKey: e2e-not-a-real-key # pragma: allowlist secret - local test provider only
+      OpenRouter__BaseUrl: http://generation-provider:8080
+    depends_on:
+      generation-provider:
+        condition: service_healthy
+
+  generation-provider:
+    build:
+      context: ./tests/e2e
+    command: ["python", "provider.py"]
+    networks: [languagewise]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+
+  e2e:
+    build:
+      context: ./tests/e2e
+    networks: [languagewise]
+    secrets:
+      - mcp_api_key
+    volumes:
+      - ${E2E_RESULTS_DIR:?Run Invoke-E2E.ps1}:/results
+      - rag-data:/rag-state:ro
+    depends_on:
+      shared-backend:
+        condition: service_healthy
+      mini-games-service-backend:
+        condition: service_healthy
+      quizzes-courses-service-backend:
+        condition: service_healthy
+      chat-discussion-service-backend:
+        condition: service_healthy
+      quests-achievements-notifications-service-backend:
+        condition: service_healthy
+      leaderboard-analytics-service-backend:
+        condition: service_healthy

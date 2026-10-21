@@ -53,7 +53,7 @@ builder.Services.AddSingleton<IEmailSender, GmailEmailSender>();
 
 var signingKeyPath = builder.Configuration["Auth:VerificationKeyPath"] ?? "/run/secrets/signing_public_key";
 var rsa = RSA.Create();
-rsa.ImportFromPem(File.ReadAllText(signingKeyPath));
+rsa.ImportFromPem(builder.Configuration["Auth:VerificationKeyPem"] ?? File.ReadAllText(signingKeyPath));
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
