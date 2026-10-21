@@ -5,11 +5,11 @@ networks:
     driver: bridge
 
 volumes:
-  shared-db-data:
-  quizzes-courses-service-db-data:
-  chat-discussion-service-db-data:
-  quests-achievements-notifications-service-db-data:
-  mini-games-service-db-data:
+  postgres-data:
+  shared-images-data:
+  chat-images-data:
+  rag-data:
+  rag-embedding-cache:
 
 # Generate using tools/gen-signing-key/gen-signing-key.ps1
 secrets:
@@ -22,6 +22,42 @@ secrets:
     file: ./mcp-server/.mcp-api-key
 
 services:
+  rag-server:
+    build:
+      context: ./rag-server
+    volumes:
+      - rag-data:/data
+      - rag-embedding-cache:/home/app/.cache/chroma
+    ports:
+      - "127.0.0.1:8100:8100"
+    networks: [languagewise]
+    restart: unless-stopped
+
+  mcp-server:
+    build:
+      context: ./mcp-server
+    environment:
+      Urls: http://0.0.0.0:8080
+      Mcp__ApiKeyPath: /run/secrets/mcp_api_key
+      Auth__VerificationKeyPath: /run/secrets/signing_public_key
+      Services__QuizzesCourses: http://quizzes-courses-service-backend:8080
+      Services__MiniGames: http://mini-games-service-backend:8080
+      Services__ChatDiscussion: http://chat-discussion-service-backend:8080
+      Services__QuestsAchievements: http://quests-achievements-notifications-service-backend:8080
+      Services__LeaderboardAnalytics: http://leaderboard-analytics-service-backend:8080
+      Services__Rag: http://rag-server:8100
+      Services__Database: http://shared-db-api:8080
+    secrets:
+      - signing_public_key
+      - mcp_api_key
+    ports:
+      - "127.0.0.1:8200:8080"
+    networks: [languagewise]
+    depends_on:
+      rag-server:
+        condition: service_healthy
+    restart: unless-stopped
+
   garry-ai-service-backend:
     container_name: garry-ai-service-backend
     build:
@@ -31,15 +67,14 @@ services:
       OpenRouter__BaseUrl: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       OpenRouter__Model: ${OPENROUTER_MODEL:-google/gemma-4-26b-a4b-it}
       OpenRouter__MaxOutputTokens: ${OPENROUTER_MAX_OUTPUT_TOKENS:-1024}
+      Services__Database: http://shared-db-api:8080
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
       Mcp__Enabled: "true"
-      Mcp__Endpoint: http://host.docker.internal:8200/mcp
+      Mcp__Endpoint: http://mcp-server:8080/mcp
       Mcp__ApiKeyPath: /run/secrets/mcp_api_key
     secrets:
       - signing_public_key
       - mcp_api_key
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     networks: [languagewise]
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/health"]
@@ -48,18 +83,41 @@ services:
       start_period: 15s
       retries: 6
     restart: unless-stopped
+    depends_on:
+      mcp-server:
+        condition: service_healthy
 
   shared-db:
     container_name: shared-db
     build:
+      context: ./shared/database/postgres
+      additional_contexts:
+        quests_sql: ./quests-achievements-notifications-service/database/sql
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: languagewise
+      POSTGRES_PASSWORD: languagewise
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks: [languagewise]
+    restart: unless-stopped
+
+  shared-db-api:
+    container_name: shared-db-api
+    build:
       context: ./shared/database
     environment:
-      Database__Path: /data/shared.db
+      Database__ConnectionString: Host=shared-db;Database=shared;Username=shared_app;Password=languagewise
     volumes:
-      - shared-db-data:/data
+      - shared-images-data:/data/images
     ports:
       - "127.0.0.1:6000:8080"
     networks: [languagewise]
+    depends_on:
+      shared-db:
+        condition: service_healthy
     restart: unless-stopped
 
   shared-backend:
@@ -67,20 +125,21 @@ services:
     build:
       context: ./shared/backend
     environment:
-      Services__Database: http://shared-db:8080
+      Services__Database: http://shared-db-api:8080
       Services__Achievements: http://quests-achievements-notifications-service-backend:8080
-      Services__Rag: http://host.docker.internal:8100
+      Services__Rag: http://rag-server:8100
+      Rag__Enabled: "true"
       Services__Garry: http://garry-ai-service-backend:8080
       Auth__SigningKeyPath: /run/secrets/signing_private_key
     secrets:
       - signing_private_key
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:5000:8080"
     networks: [languagewise]
     depends_on:
-      shared-db:
+      shared-db-api:
+        condition: service_healthy
+      rag-server:
         condition: service_healthy
     restart: unless-stopped
 
@@ -101,12 +160,13 @@ services:
     build:
       context: ./mini-games-service/database
     environment:
-      Database__Path: /data/mini-games-service.db
-    volumes:
-      - mini-games-service-db-data:/data
+      Database__ConnectionString: Host=shared-db;Database=mini_games;Username=mini_games_app;Password=languagewise
     ports:
       - "127.0.0.1:6005:8080"
     networks: [languagewise]
+    depends_on:
+      shared-db:
+        condition: service_healthy
     restart: unless-stopped
 
   mini-games-service-backend:
@@ -123,19 +183,17 @@ services:
       Services__Garry: http://garry-ai-service-backend:8080
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
       Mcp__Enabled: "true"
-      Mcp__Endpoint: http://host.docker.internal:8200/mcp
+      Mcp__Endpoint: http://mcp-server:8080/mcp
       Mcp__ApiKeyPath: /run/secrets/mcp_api_key
     secrets:
       - signing_public_key
       - mcp_api_key
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:5001:8080"
     networks: [languagewise]
     depends_on:
       mini-games-service-db:
-        condition: service_started
+        condition: service_healthy
       garry-ai-service-backend:
         condition: service_healthy
     restart: unless-stopped
@@ -156,12 +214,13 @@ services:
     build:
       context: ./quizzes-courses-service/database
     environment:
-      Database__Path: /data/quizzes-courses-service.db
-    volumes:
-      - quizzes-courses-service-db-data:/data
+      Database__ConnectionString: Host=shared-db;Database=quizzes_courses;Username=quizzes_courses_app;Password=languagewise
     ports:
       - "127.0.0.1:6003:8080"
     networks: [languagewise]
+    depends_on:
+      shared-db:
+        condition: service_healthy
     restart: unless-stopped
 
   quizzes-courses-service-backend:
@@ -174,13 +233,11 @@ services:
       Services__Garry: http://garry-ai-service-backend:8080
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
       Mcp__Enabled: "true"
-      Mcp__Endpoint: http://host.docker.internal:8200/mcp
+      Mcp__Endpoint: http://mcp-server:8080/mcp
       Mcp__ApiKeyPath: /run/secrets/mcp_api_key
     secrets:
       - signing_public_key
       - mcp_api_key
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:5003:8080"
     networks: [languagewise]
@@ -206,16 +263,20 @@ services:
     build:
       context: ./chat-discussion-service/database
     environment:
-      Database__Path: /data/chat-discussion-service.db
+      Database__ConnectionString: Host=shared-db;Database=chat_discussion;Username=chat_discussion_app;Password=languagewise
       Services__Courses: http://quizzes-courses-service-db:8080
-      Services__Users: http://shared-db:8080
+      Services__Users: http://shared-db-api:8080
     volumes:
-      - chat-discussion-service-db-data:/data
+      - chat-images-data:/data
     ports:
       - "127.0.0.1:6002:8080"
     networks: [languagewise]
     depends_on:
+      shared-db:
+        condition: service_healthy
       quizzes-courses-service-db:
+        condition: service_healthy
+      shared-db-api:
         condition: service_healthy
     restart: unless-stopped
 
@@ -229,13 +290,11 @@ services:
       Services__Garry: http://garry-ai-service-backend:8080
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
       Mcp__Enabled: "true"
-      Mcp__Endpoint: http://host.docker.internal:8200/mcp
+      Mcp__Endpoint: http://mcp-server:8080/mcp
       Mcp__ApiKeyPath: /run/secrets/mcp_api_key
     secrets:
       - signing_public_key
       - mcp_api_key
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:5002:8080"
     networks: [languagewise]
@@ -258,27 +317,14 @@ services:
 
   quests-achievements-notifications-service-db:
     container_name: quests-achievements-notifications-service-db
-    build:
-      context: ./quests-achievements-notifications-service/database
-    environment:
-      POSTGRES_DB: quests_achievements_notifications
-      POSTGRES_USER: languagewise
-      POSTGRES_PASSWORD: languagewise
-    volumes:
-      - quests-achievements-notifications-service-db-data:/var/lib/postgresql
-    networks: [languagewise]
-    restart: unless-stopped
-
-  quests-achievements-notifications-service-db-api:
-    container_name: quests-achievements-notifications-service-db-api
     image: postgrest/postgrest:v12.2.3
     environment:
-      PGRST_DB_URI: postgres://languagewise:languagewise@quests-achievements-notifications-service-db:5432/quests_achievements_notifications
+      PGRST_DB_URI: postgres://quests_app:languagewise@shared-db:5432/quests_achievements_notifications
       PGRST_DB_SCHEMA: api
       PGRST_DB_ANON_ROLE: web_anon
     networks: [languagewise]
     depends_on:
-      quests-achievements-notifications-service-db:
+      shared-db:
         condition: service_healthy
     restart: unless-stopped
 
@@ -290,25 +336,23 @@ services:
       - path: ./quests-achievements-notifications-service/backend/.env
         required: false
     environment:
-      Services__Database: http://quests-achievements-notifications-service-db-api:3000
+      Services__Database: http://quests-achievements-notifications-service-db:3000
       Services__Garry: http://garry-ai-service-backend:8080
       OpenRouter__ApiKey: ${OPENROUTER_API_KEY:-}
       OpenRouter__BaseUrl: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       OpenRouter__Model: ${OPENROUTER_MODEL:-google/gemma-4-26b-a4b-it}
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
       Mcp__Enabled: "true"
-      Mcp__Endpoint: http://host.docker.internal:8200/mcp
+      Mcp__Endpoint: http://mcp-server:8080/mcp
       Mcp__ApiKeyPath: /run/secrets/mcp_api_key
     secrets:
       - signing_public_key
       - mcp_api_key
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "5004:8080"
     networks: [languagewise]
     depends_on:
-      quests-achievements-notifications-service-db-api:
+      quests-achievements-notifications-service-db:
         condition: service_started
       garry-ai-service-backend:
         condition: service_healthy

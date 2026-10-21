@@ -1,7 +1,6 @@
 # Database service container for shared.
 #
-# The only process that opens this microservice's SQLite file. It applies the
-# schema on start-up, seeds the table when empty, and exposes CRUD over HTTP.
+# Applies the PostgreSQL schema and development seed on start-up and exposes CRUD over HTTP.
 #
 # Build context is this folder, so the image cannot reach other microservices.
 
@@ -21,16 +20,15 @@ WORKDIR /app
 RUN apt-get update \
     && apt-get install --no-install-recommends -y curl \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /data \
-    && chown -R app:app /data
+    && mkdir -p /data/images \
+    && chown -R app:app /data/images
 
 COPY --from=build /app/publish ./
 
 ENV ASPNETCORE_HTTP_PORTS=8080 \
-    Database__Path=/data/shared.db \
     Images__Path=/data/images
 
-VOLUME ["/data"]
+VOLUME ["/data/images"]
 
 USER app
 EXPOSE 8080

@@ -6,16 +6,123 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using LanguageWise.Shared.Api.Clients;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace LanguageWise.Shared.Api.Tests;
 
 public sealed class AuthenticationTests
 {
+    [TestCase("10.82.0.17", "10.82.0.0/16", true)]
+    [TestCase("192.0.2.17", "10.82.0.0/16", false)]
+    [TestCase("10.82.0.17", null, false)]
+    public async Task Login_ThroughProxy_OnlySecuresCookieForTrustedHttps(string remoteIp, string? trustedNetwork, bool secure)
+    {
+        using var fixture = new ApiFixture(trustedNetwork: trustedNetwork);
+
+        var context = await fixture.Server.SendAsync(context =>
+        {
+            context.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp);
+            context.Request.Scheme = "http";
+            context.Request.Method = "POST";
+            context.Request.Path = "/api/login";
+            context.Request.ContentType = "application/json";
+            context.Request.Headers["X-Forwarded-Proto"] = "https";
+            var body = JsonSerializer.SerializeToUtf8Bytes(new { username = "justin", password = "test-password" });
+            context.Request.Body = new MemoryStream(body);
+            context.Request.ContentLength = body.Length;
+        });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(context.Response.StatusCode, Is.EqualTo(StatusCodes.Status200OK));
+            Assert.That(context.Response.Headers.SetCookie.ToString().Contains("; secure", StringComparison.OrdinalIgnoreCase), Is.EqualTo(secure));
+        });
+    }
+
+    [TestCase("10.82.0.17", "https")]
+    [TestCase("192.0.2.17", "http")]
+    public async Task ForwardedScheme_OnlyAcceptsConfiguredNetwork(string remoteIp, string expectedScheme)
+    {
+        using var fixture = new ApiFixture(trustedNetwork: "10.82.0.0/16");
+        var options = fixture.Services.GetRequiredService<IOptions<ForwardedHeadersOptions>>();
+        var context = new DefaultHttpContext();
+        context.Request.Scheme = "http";
+        context.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp);
+        context.Request.Headers["X-Forwarded-Proto"] = "https";
+        context.Request.Headers["X-Forwarded-Host"] = "untrusted.example";
+        context.Request.Host = new HostString("languagewise.example");
+        var middleware = new ForwardedHeadersMiddleware(_ => Task.CompletedTask, NullLoggerFactory.Instance, options);
+
+        await middleware.Invoke(context);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(context.Request.Scheme, Is.EqualTo(expectedScheme));
+            Assert.That(context.Request.Host.Value, Is.EqualTo("languagewise.example"));
+            Assert.That(context.Connection.RemoteIpAddress, Is.EqualTo(IPAddress.Parse(remoteIp)));
+        });
+    }
+
+    [TestCase("0.0.0.0/0")]
+    [TestCase("::/0")]
+    [TestCase("not-a-network")]
+    public void ForwardedScheme_RejectsInvalidOrPublicTrust(string trustedNetwork)
+    {
+        using var fixture = new ApiFixture(trustedNetwork: trustedNetwork);
+
+        Assert.Catch(() => fixture.CreateClient());
+    }
+
+    [TestCase("http", false)]
+    [TestCase("https", true)]
+    public async Task Login_SetsSecureCookieOnlyForHttps(string scheme, bool secure)
+    {
+        using var fixture = new ApiFixture();
+        using var client = fixture.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri($"{scheme}://localhost"),
+            HandleCookies = false
+        });
+
+        var response = await client.PostAsJsonAsync("/api/login", new { username = "justin", password = "test-password" }); // pragma: allowlist secret
+        var cookie = response.Headers.GetValues("Set-Cookie").Single();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(cookie.Contains("; secure", StringComparison.OrdinalIgnoreCase), Is.EqualTo(secure));
+            Assert.That(cookie, Does.Contain("httponly"));
+        });
+    }
+
+    [Test]
+    public async Task CheckLogin_WithConfiguredPem_PrefersPemOverFile()
+    {
+        using var fixture = new ApiFixture(usePem: true);
+        using var client = fixture.CreateCookieClient(fixture.CreateToken());
+
+        var response = await client.PostAsync("/api/check-login", null);
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+    }
+
+    [Test]
+    public void Startup_WithInvalidConfiguredPem_DoesNotFallBackToFile()
+    {
+        using var fixture = new ApiFixture(invalidPem: true);
+
+        Assert.Throws<ArgumentException>(() => fixture.CreateClient());
+    }
+
     [Test]
     public async Task CheckLogin_WithValidCookie_ReturnsAuthenticatedUser()
     {
@@ -163,11 +270,19 @@ public sealed class AuthenticationTests
             $"shared-auth-test-key-{Guid.NewGuid():N}.pem");
         private readonly int? streakValue;
         private readonly bool ragEnabled;
+        private readonly bool ragSwitchedOn;
+        private readonly bool usePem;
+        private readonly bool invalidPem;
+        private readonly string? trustedNetwork;
 
-        internal ApiFixture(int? streakValue = null, bool ragEnabled = true)
+        internal ApiFixture(int? streakValue = null, bool ragEnabled = true, bool usePem = false, bool invalidPem = false, string? trustedNetwork = null, bool ragSwitchedOn = true)
         {
             this.streakValue = streakValue;
             this.ragEnabled = ragEnabled;
+            this.usePem = usePem;
+            this.invalidPem = invalidPem;
+            this.trustedNetwork = trustedNetwork;
+            this.ragSwitchedOn = ragSwitchedOn;
             File.WriteAllText(signingKeyPath, signingKey.ExportRSAPrivateKeyPem());
         }
 
@@ -221,6 +336,18 @@ public sealed class AuthenticationTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseSetting("Auth:SigningKeyPath", signingKeyPath);
+            if (trustedNetwork is not null)
+            {
+                builder.UseSetting("ReverseProxy:TrustedNetwork", trustedNetwork);
+            }
+            if (usePem || invalidPem)
+            {
+                builder.UseSetting("Auth:SigningKeyPem", invalidPem ? "invalid-pem" : signingKey.ExportRSAPrivateKeyPem());
+                if (usePem)
+                {
+                    File.WriteAllText(signingKeyPath, "invalid-file-pem");
+                }
+            }
             builder.UseSetting("Rag:Enabled", ragEnabled ? "true" : "false");
             builder.ConfigureAppConfiguration((_, configuration) =>
             {
@@ -232,7 +359,7 @@ public sealed class AuthenticationTests
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<UsersClient>();
-                services.AddSingleton(new UsersClient(new HttpClient(new LoginStateHandler(streakValue))
+                services.AddSingleton(new UsersClient(new HttpClient(new LoginStateHandler(streakValue, ragSwitchedOn))
                 {
                     BaseAddress = new Uri("http://shared-database/")
                 }));
@@ -245,7 +372,10 @@ public sealed class AuthenticationTests
                 services.AddSingleton(new RagClient(new HttpClient(RagHandler)
                 {
                     BaseAddress = new Uri("http://rag/")
-                }));
+                }, new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Rag:Enabled"] = ragEnabled.ToString()
+                }).Build()));
                 services.RemoveAll<GarryClient>();
                 services.AddSingleton(new GarryClient(new HttpClient(GarryHandler)
                 {
@@ -265,12 +395,32 @@ public sealed class AuthenticationTests
         }
     }
 
-    private sealed class LoginStateHandler(int? streakValue) : HttpMessageHandler
+    private sealed class LoginStateHandler(int? streakValue, bool ragSwitchedOn) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
+            if (request.RequestUri?.AbsolutePath == "/api/admin-settings")
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new[]
+                    {
+                        new { name = "AIMode", isEnabled = true },
+                        new { name = "MCP", isEnabled = true },
+                        new { name = "RAG", isEnabled = ragSwitchedOn }
+                    })
+                });
+            }
+
+            if (request.RequestUri?.AbsolutePath == "/api/users/verify")
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new { authenticated = true, userId = 7 })
+                });
+            }
             var response = streakValue is null
                 ? new HttpResponseMessage(HttpStatusCode.NoContent)
                 : new HttpResponseMessage(HttpStatusCode.OK)

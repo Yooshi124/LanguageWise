@@ -6,7 +6,8 @@ public sealed class GarryCompletionResult(
 	CompletionRequest request,
 	string? userToken,
 	GarryAgentPipeline pipeline,
-	ILoggerFactory loggerFactory) : IResult
+	ILoggerFactory loggerFactory,
+	AdminSwitchState switches) : IResult
 {
 	private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -16,7 +17,7 @@ public sealed class GarryCompletionResult(
 		var cancellationToken = context.RequestAborted;
 		try
 		{
-			var answer = await pipeline.RunAsync(request, userToken, async toolEvent =>
+			var answer = await pipeline.RunAsync(request, userToken, switches, async toolEvent =>
 			{
 				StartStream(context.Response);
 				await SendAsync(context.Response, "tool", new

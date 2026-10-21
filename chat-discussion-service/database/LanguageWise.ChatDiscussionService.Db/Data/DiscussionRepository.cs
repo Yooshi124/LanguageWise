@@ -1,5 +1,6 @@
 using LanguageWise.ChatDiscussionService.Db.Models;
-using Microsoft.Data.Sqlite;
+using Npgsql;
+using NpgsqlTypes;
 
 namespace LanguageWise.ChatDiscussionService.Db.Data;
 
@@ -13,11 +14,6 @@ public enum LikeOutcome
 
 public sealed class DiscussionRepository(string connectionString)
 {
-    // SQLite extended result codes, used to tell one constraint failure from another
-    // without a second round trip. See https://sqlite.org/rescode.html.
-    private const int ConstraintForeignKey = 787;
-    private const int ConstraintUnique = 2067;
-
     private const string PostSelect = """
         SELECT p.Id, p.UserId, p.AuthorName, p.Title, p.Content,
                p.ForumId, f.Code, f.Name, p.CreatedAt, p.UpdatedAt
@@ -29,9 +25,9 @@ public sealed class DiscussionRepository(string connectionString)
                p.ForumId, f.Code, f.Name, p.CreatedAt, p.UpdatedAt,
                (SELECT COUNT(*) FROM Comments c WHERE c.PostId = p.Id) AS CommentCount,
                (SELECT COUNT(*) FROM Likes l WHERE l.PostId = p.Id) AS LikeCount,
-               EXISTS (SELECT 1 FROM Likes v WHERE v.PostId = p.Id AND v.UserId = $viewerId) AS LikedByViewer,
+               EXISTS (SELECT 1 FROM Likes v WHERE v.PostId = p.Id AND v.UserId = @viewerId) AS LikedByViewer,
                (SELECT mc.Content FROM Comments mc
-                 WHERE mc.PostId = p.Id AND mc.Content LIKE $pattern ESCAPE '\'
+                 WHERE mc.PostId = p.Id AND translate(mc.Content, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz') LIKE @pattern ESCAPE '\'
                  ORDER BY mc.CreatedAt ASC, mc.Id ASC
                  LIMIT 1) AS MatchedCommentExcerpt
         FROM Posts p JOIN Forums f ON f.Id = p.ForumId
@@ -43,7 +39,7 @@ public sealed class DiscussionRepository(string connectionString)
     private const string CommentSummarySelect = """
         SELECT c.Id, c.PostId, c.UserId, c.AuthorName, c.Content, c.CreatedAt, c.UpdatedAt,
                (SELECT COUNT(*) FROM Likes l WHERE l.CommentId = c.Id) AS LikeCount,
-               EXISTS (SELECT 1 FROM Likes v WHERE v.CommentId = c.Id AND v.UserId = $viewerId) AS LikedByViewer
+               EXISTS (SELECT 1 FROM Likes v WHERE v.CommentId = c.Id AND v.UserId = @viewerId) AS LikedByViewer
         FROM Comments c
         """;
 
@@ -74,22 +70,22 @@ public sealed class DiscussionRepository(string connectionString)
         using var command = connection.CreateCommand();
         command.CommandText = $"""
             {PostSummarySelect}
-            WHERE ($userId IS NULL OR p.UserId = $userId)
-              AND ($forumCode IS NULL OR f.Code = $forumCode)
-              AND ($pattern IS NULL
-                   OR p.Title LIKE $pattern ESCAPE '\'
-                   OR p.Content LIKE $pattern ESCAPE '\'
+                        WHERE (@userId IS NULL OR p.UserId = @userId)
+                            AND (@forumCode IS NULL OR f.Code = @forumCode)
+                            AND (@pattern IS NULL
+                                     OR translate(p.Title, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz') LIKE @pattern ESCAPE '\'
+                                     OR translate(p.Content, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz') LIKE @pattern ESCAPE '\'
                    OR EXISTS (SELECT 1 FROM Comments sc
-                               WHERE sc.PostId = p.Id AND sc.Content LIKE $pattern ESCAPE '\'))
+                               WHERE sc.PostId = p.Id AND translate(sc.Content, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz') LIKE @pattern ESCAPE '\'))
             ORDER BY p.CreatedAt DESC, p.Id DESC
-            LIMIT $limit OFFSET $offset;
+            LIMIT @limit OFFSET @offset;
             """;
-        Add(command, "$userId", userId);
-        Add(command, "$forumCode", forumCode);
-        Add(command, "$pattern", ToLikePattern(search));
-        Add(command, "$limit", limit);
-        Add(command, "$offset", offset);
-        Add(command, "$viewerId", viewerId);
+        Add(command, "@userId", userId, NpgsqlDbType.Integer);
+        Add(command, "@forumCode", forumCode, NpgsqlDbType.Text);
+        Add(command, "@pattern", ToLikePattern(search), NpgsqlDbType.Text);
+        Add(command, "@limit", limit);
+        Add(command, "@offset", offset);
+        Add(command, "@viewerId", viewerId, NpgsqlDbType.Integer);
         return ReadAll(command, MapPostSummary);
     }
 
@@ -97,10 +93,10 @@ public sealed class DiscussionRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = $"{PostSummarySelect} WHERE p.Id = $id;";
-        Add(command, "$id", id);
-        Add(command, "$viewerId", viewerId);
-        Add(command, "$pattern", null);
+        command.CommandText = $"{PostSummarySelect} WHERE p.Id = @id;";
+        Add(command, "@id", id);
+        Add(command, "@viewerId", viewerId, NpgsqlDbType.Integer);
+        Add(command, "@pattern", null, NpgsqlDbType.Text);
         return ReadFirst(command, MapPostSummary);
     }
 
@@ -113,17 +109,17 @@ public sealed class DiscussionRepository(string connectionString)
         // bad code cannot land a post in the wrong forum.
         command.CommandText = """
             INSERT INTO Posts (UserId, AuthorName, Title, Content, ForumId, CreatedAt, UpdatedAt)
-            VALUES ($userId, $authorName, $title, $content,
-                    (SELECT Id FROM Forums WHERE Code = $forumCode), $createdAt, $updatedAt)
+                VALUES (@userId, @authorName, @title, @content,
+                    (SELECT Id FROM Forums WHERE Code = @forumCode), @createdAt, @updatedAt)
             RETURNING Id;
             """;
-        Add(command, "$userId", input.UserId);
-        Add(command, "$authorName", (input.AuthorName ?? string.Empty).Trim());
-        Add(command, "$title", input.Title!.Trim());
-        Add(command, "$content", input.Content!.Trim());
-        Add(command, "$forumCode", input.ForumCode!.Trim());
-        Add(command, "$createdAt", now);
-        Add(command, "$updatedAt", now);
+        Add(command, "@userId", input.UserId);
+        Add(command, "@authorName", (input.AuthorName ?? string.Empty).Trim());
+        Add(command, "@title", input.Title!.Trim());
+        Add(command, "@content", input.Content!.Trim());
+        Add(command, "@forumCode", input.ForumCode!.Trim());
+        Add(command, "@createdAt", now);
+        Add(command, "@updatedAt", now);
         return GetPostRow(connection, Convert.ToInt32(command.ExecuteScalar()))!;
     }
 
@@ -138,18 +134,18 @@ public sealed class DiscussionRepository(string connectionString)
         using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE Posts
-               SET Title = $title,
-                   Content = $content,
-                   ForumId = (SELECT Id FROM Forums WHERE Code = $forumCode),
-                   UpdatedAt = $updatedAt
-             WHERE Id = $id
+                             SET Title = @title,
+                                     Content = @content,
+                                     ForumId = (SELECT Id FROM Forums WHERE Code = @forumCode),
+                                     UpdatedAt = @updatedAt
+                         WHERE Id = @id
             RETURNING Id;
             """;
-        Add(command, "$id", id);
-        Add(command, "$title", update.Title!.Trim());
-        Add(command, "$content", update.Content!.Trim());
-        Add(command, "$forumCode", update.ForumCode!.Trim());
-        Add(command, "$updatedAt", Timestamp());
+        Add(command, "@id", id);
+        Add(command, "@title", update.Title!.Trim());
+        Add(command, "@content", update.Content!.Trim());
+        Add(command, "@forumCode", update.ForumCode!.Trim());
+        Add(command, "@updatedAt", Timestamp());
         var updatedId = command.ExecuteScalar();
         return updatedId is null ? null : GetPostRow(connection, Convert.ToInt32(updatedId));
     }
@@ -161,7 +157,7 @@ public sealed class DiscussionRepository(string connectionString)
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT UserId FROM Posts UNION SELECT UserId FROM Comments ORDER BY 1;";
-        return ReadAll(command, reader => (int)reader.GetInt64(0));
+        return ReadAll(command, reader => reader.GetInt32(0));
     }
 
     public int SyncAuthorNames(IReadOnlyList<DirectoryUser> users)
@@ -177,9 +173,9 @@ public sealed class DiscussionRepository(string connectionString)
                 using var command = connection.CreateCommand();
                 command.Transaction = transaction;
                 command.CommandText =
-                    $"UPDATE {table} SET AuthorName = $name WHERE UserId = $userId AND AuthorName <> $name;";
-                Add(command, "$userId", user.Id);
-                Add(command, "$name", user.Username);
+                    $"UPDATE {table} SET AuthorName = @name WHERE UserId = @userId AND AuthorName <> @name;";
+                Add(command, "@userId", user.Id);
+                Add(command, "@name", user.Username);
                 renamed += command.ExecuteNonQuery();
             }
         }
@@ -198,7 +194,7 @@ public sealed class DiscussionRepository(string connectionString)
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT Id, CourseId, Code, Name FROM Forums
-            ORDER BY (CourseId IS NOT NULL), Name COLLATE NOCASE, Id;
+            ORDER BY (CourseId IS NOT NULL), translate(Name, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz') COLLATE "C", Id;
             """;
         return ReadAll(command, MapForum);
     }
@@ -207,8 +203,8 @@ public sealed class DiscussionRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, CourseId, Code, Name FROM Forums WHERE Code = $code;";
-        Add(command, "$code", code);
+        command.CommandText = "SELECT Id, CourseId, Code, Name FROM Forums WHERE Code = @code;";
+        Add(command, "@code", code);
         return ReadFirst(command, MapForum);
     }
 
@@ -229,10 +225,10 @@ public sealed class DiscussionRepository(string connectionString)
             using var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = """
-                UPDATE Forums SET Name = $name WHERE CourseId = $courseId AND Name <> $name;
+                UPDATE Forums SET Name = @name WHERE CourseId = @courseId AND Name <> @name;
                 """;
-            Add(command, "$courseId", course.Id);
-            Add(command, "$name", course.Title);
+            Add(command, "@courseId", course.Id);
+            Add(command, "@name", course.Title);
 
             if (command.ExecuteNonQuery() > 0)
             {
@@ -244,12 +240,12 @@ public sealed class DiscussionRepository(string connectionString)
             insert.Transaction = transaction;
             insert.CommandText = """
                 INSERT INTO Forums (CourseId, Code, Name)
-                SELECT $courseId, $code, $name
-                 WHERE NOT EXISTS (SELECT 1 FROM Forums WHERE CourseId = $courseId OR Code = $code);
+                SELECT @courseId, @code, @name
+                 WHERE NOT EXISTS (SELECT 1 FROM Forums WHERE CourseId = @courseId OR Code = @code);
                 """;
-            Add(insert, "$courseId", course.Id);
-            Add(insert, "$code", course.Code);
-            Add(insert, "$name", course.Title);
+            Add(insert, "@courseId", course.Id);
+            Add(insert, "@code", course.Code);
+            Add(insert, "@name", course.Title);
             added += insert.ExecuteNonQuery();
         }
 
@@ -257,11 +253,11 @@ public sealed class DiscussionRepository(string connectionString)
         return new ForumSyncResult(added, renamed);
     }
 
-    private static Post? GetPostRow(SqliteConnection connection, int id)
+    private static Post? GetPostRow(NpgsqlConnection connection, int id)
     {
         using var command = connection.CreateCommand();
-        command.CommandText = $"{PostSelect} WHERE p.Id = $id;";
-        Add(command, "$id", id);
+        command.CommandText = $"{PostSelect} WHERE p.Id = @id;";
+        Add(command, "@id", id);
         return ReadFirst(command, MapPost);
     }
 
@@ -271,14 +267,14 @@ public sealed class DiscussionRepository(string connectionString)
         using var command = connection.CreateCommand();
         command.CommandText = $"""
             {CommentSummarySelect}
-            WHERE c.PostId = $postId
+            WHERE c.PostId = @postId
             ORDER BY c.CreatedAt ASC, c.Id ASC
-            LIMIT $limit OFFSET $offset;
+            LIMIT @limit OFFSET @offset;
             """;
-        Add(command, "$postId", postId);
-        Add(command, "$limit", limit);
-        Add(command, "$offset", offset);
-        Add(command, "$viewerId", viewerId);
+        Add(command, "@postId", postId);
+        Add(command, "@limit", limit);
+        Add(command, "@offset", offset);
+        Add(command, "@viewerId", viewerId, NpgsqlDbType.Integer);
         return ReadAll(command, MapCommentSummary);
     }
 
@@ -287,12 +283,12 @@ public sealed class DiscussionRepository(string connectionString)
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText =
-            "SELECT Id, PostId, UserId, AuthorName, Content, CreatedAt, UpdatedAt FROM Comments WHERE Id = $id;";
-        Add(command, "$id", id);
+            "SELECT Id, PostId, UserId, AuthorName, Content, CreatedAt, UpdatedAt FROM Comments WHERE Id = @id;";
+        Add(command, "@id", id);
         return ReadFirst(command, MapComment);
     }
 
-    /// <summary>Returns null when the post does not exist, which SQLite reports as a foreign key violation.</summary>
+    /// <summary>Returns null when the post does not exist.</summary>
     public Comment? CreateComment(int postId, CommentInput input)
     {
         var now = Timestamp();
@@ -300,21 +296,21 @@ public sealed class DiscussionRepository(string connectionString)
         using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO Comments (PostId, UserId, AuthorName, Content, CreatedAt, UpdatedAt)
-            VALUES ($postId, $userId, $authorName, $content, $createdAt, $updatedAt)
+            VALUES (@postId, @userId, @authorName, @content, @createdAt, @updatedAt)
             RETURNING Id, PostId, UserId, AuthorName, Content, CreatedAt, UpdatedAt;
             """;
-        Add(command, "$postId", postId);
-        Add(command, "$userId", input.UserId);
-        Add(command, "$authorName", (input.AuthorName ?? string.Empty).Trim());
-        Add(command, "$content", input.Content!.Trim());
-        Add(command, "$createdAt", now);
-        Add(command, "$updatedAt", now);
+        Add(command, "@postId", postId);
+        Add(command, "@userId", input.UserId);
+        Add(command, "@authorName", (input.AuthorName ?? string.Empty).Trim());
+        Add(command, "@content", input.Content!.Trim());
+        Add(command, "@createdAt", now);
+        Add(command, "@updatedAt", now);
 
         try
         {
             return ReadFirst(command, MapComment);
         }
-        catch (SqliteException exception) when (exception.SqliteExtendedErrorCode == ConstraintForeignKey)
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.ForeignKeyViolation)
         {
             return null;
         }
@@ -325,13 +321,13 @@ public sealed class DiscussionRepository(string connectionString)
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            UPDATE Comments SET Content = $content, UpdatedAt = $updatedAt
-            WHERE Id = $id
+            UPDATE Comments SET Content = @content, UpdatedAt = @updatedAt
+            WHERE Id = @id
             RETURNING Id, PostId, UserId, AuthorName, Content, CreatedAt, UpdatedAt;
             """;
-        Add(command, "$id", id);
-        Add(command, "$content", update.Content!.Trim());
-        Add(command, "$updatedAt", Timestamp());
+        Add(command, "@id", id);
+        Add(command, "@content", update.Content!.Trim());
+        Add(command, "@updatedAt", Timestamp());
         return ReadFirst(command, MapComment);
     }
 
@@ -360,10 +356,10 @@ public sealed class DiscussionRepository(string connectionString)
         using var command = connection.CreateCommand();
         command.CommandText = $"""
             {ImageSelect}
-            WHERE CommentId IN (SELECT Id FROM Comments WHERE PostId = $postId)
+            WHERE CommentId IN (SELECT Id FROM Comments WHERE PostId = @postId)
             ORDER BY UploadedAt ASC, Id ASC;
             """;
-        Add(command, "$postId", postId);
+        Add(command, "@postId", postId);
         return ReadAll(command, MapImage);
     }
 
@@ -371,12 +367,12 @@ public sealed class DiscussionRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = $"{ImageSelect} WHERE Id = $id;";
-        Add(command, "$id", id);
+        command.CommandText = $"{ImageSelect} WHERE Id = @id;";
+        Add(command, "@id", id);
         return ReadFirst(command, MapImage);
     }
 
-    /// <summary>Returns null when the post does not exist, which SQLite reports as a foreign key violation.</summary>
+    /// <summary>Returns null when the post does not exist.</summary>
     public Image? CreatePostImage(int postId, ImageInput input) => CreateImage("PostId", postId, input);
 
     /// <summary>Returns null when the comment does not exist.</summary>
@@ -394,10 +390,10 @@ public sealed class DiscussionRepository(string connectionString)
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT StorageKey FROM Images
-            WHERE PostId = $postId
-               OR CommentId IN (SELECT Id FROM Comments WHERE PostId = $postId);
+                WHERE PostId = @postId
+                    OR CommentId IN (SELECT Id FROM Comments WHERE PostId = @postId);
             """;
-        Add(command, "$postId", postId);
+        Add(command, "@postId", postId);
         return ReadAll(command, reader => reader.GetString(0));
     }
 
@@ -405,8 +401,8 @@ public sealed class DiscussionRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT StorageKey FROM Images WHERE CommentId = $commentId;";
-        Add(command, "$commentId", commentId);
+        command.CommandText = "SELECT StorageKey FROM Images WHERE CommentId = @commentId;";
+        Add(command, "@commentId", commentId);
         return ReadAll(command, reader => reader.GetString(0));
     }
 
@@ -417,7 +413,9 @@ public sealed class DiscussionRepository(string connectionString)
             return null;
         }
 
-        var escaped = search.Trim()
+        var folded = string.Concat(search.Trim().Select(character =>
+            character is >= 'A' and <= 'Z' ? (char)(character + ('a' - 'A')) : character));
+        var escaped = folded
             .Replace("\\", "\\\\")
             .Replace("%", "\\%")
             .Replace("_", "\\_");
@@ -430,8 +428,8 @@ public sealed class DiscussionRepository(string connectionString)
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText =
-            $"SELECT Id, PostId, CommentId, UserId, CreatedAt FROM Likes WHERE {column} = $targetId ORDER BY Id;";
-        Add(command, "$targetId", targetId);
+            $"SELECT Id, PostId, CommentId, UserId, CreatedAt FROM Likes WHERE {column} = @targetId ORDER BY Id;";
+        Add(command, "@targetId", targetId);
         return ReadAll(command, MapLike);
     }
 
@@ -440,21 +438,21 @@ public sealed class DiscussionRepository(string connectionString)
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText =
-            $"INSERT INTO Likes (UserId, {column}, CreatedAt) VALUES ($userId, $targetId, $createdAt);";
-        Add(command, "$userId", userId);
-        Add(command, "$targetId", targetId);
-        Add(command, "$createdAt", Timestamp());
+            $"INSERT INTO Likes (UserId, {column}, CreatedAt) VALUES (@userId, @targetId, @createdAt);";
+        Add(command, "@userId", userId);
+        Add(command, "@targetId", targetId);
+        Add(command, "@createdAt", Timestamp());
 
         try
         {
             command.ExecuteNonQuery();
             return LikeOutcome.Created;
         }
-        catch (SqliteException exception) when (exception.SqliteExtendedErrorCode == ConstraintUnique)
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.UniqueViolation)
         {
             return LikeOutcome.Duplicate;
         }
-        catch (SqliteException exception) when (exception.SqliteExtendedErrorCode == ConstraintForeignKey)
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.ForeignKeyViolation)
         {
             return LikeOutcome.TargetNotFound;
         }
@@ -464,9 +462,9 @@ public sealed class DiscussionRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = $"DELETE FROM Likes WHERE {column} = $targetId AND UserId = $userId;";
-        Add(command, "$targetId", targetId);
-        Add(command, "$userId", userId);
+        command.CommandText = $"DELETE FROM Likes WHERE {column} = @targetId AND UserId = @userId;";
+        Add(command, "@targetId", targetId);
+        Add(command, "@userId", userId);
         return command.ExecuteNonQuery() > 0;
     }
 
@@ -474,8 +472,8 @@ public sealed class DiscussionRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = $"{ImageSelect} WHERE {column} = $targetId ORDER BY UploadedAt ASC, Id ASC;";
-        Add(command, "$targetId", targetId);
+        command.CommandText = $"{ImageSelect} WHERE {column} = @targetId ORDER BY UploadedAt ASC, Id ASC;";
+        Add(command, "@targetId", targetId);
         return ReadAll(command, MapImage);
     }
 
@@ -486,21 +484,21 @@ public sealed class DiscussionRepository(string connectionString)
         using var command = connection.CreateCommand();
         command.CommandText = $"""
             INSERT INTO Images ({column}, StorageKey, FileName, ContentType, SizeBytes, UploadedAt)
-            VALUES ($targetId, $storageKey, $fileName, $contentType, $sizeBytes, $uploadedAt)
+            VALUES (@targetId, @storageKey, @fileName, @contentType, @sizeBytes, @uploadedAt)
             RETURNING Id, PostId, CommentId, StorageKey, FileName, ContentType, SizeBytes, UploadedAt;
             """;
-        Add(command, "$targetId", targetId);
-        Add(command, "$storageKey", input.StorageKey);
-        Add(command, "$fileName", (input.FileName ?? string.Empty).Trim());
-        Add(command, "$contentType", (input.ContentType ?? string.Empty).Trim());
-        Add(command, "$sizeBytes", input.SizeBytes);
-        Add(command, "$uploadedAt", Timestamp());
+        Add(command, "@targetId", targetId);
+        Add(command, "@storageKey", input.StorageKey);
+        Add(command, "@fileName", (input.FileName ?? string.Empty).Trim());
+        Add(command, "@contentType", (input.ContentType ?? string.Empty).Trim());
+        Add(command, "@sizeBytes", input.SizeBytes);
+        Add(command, "@uploadedAt", Timestamp());
 
         try
         {
             return ReadFirst(command, MapImage);
         }
-        catch (SqliteException exception) when (exception.SqliteExtendedErrorCode == ConstraintForeignKey)
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.ForeignKeyViolation)
         {
             return null;
         }
@@ -510,12 +508,12 @@ public sealed class DiscussionRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = $"DELETE FROM {table} WHERE Id = $id;";
-        Add(command, "$id", id);
+        command.CommandText = $"DELETE FROM {table} WHERE Id = @id;";
+        Add(command, "@id", id);
         return command.ExecuteNonQuery() > 0;
     }
 
-    private static List<T> ReadAll<T>(SqliteCommand command, Func<SqliteDataReader, T> map)
+    private static List<T> ReadAll<T>(NpgsqlCommand command, Func<NpgsqlDataReader, T> map)
     {
         using var reader = command.ExecuteReader();
         var results = new List<T>();
@@ -527,75 +525,79 @@ public sealed class DiscussionRepository(string connectionString)
         return results;
     }
 
-    private static T? ReadFirst<T>(SqliteCommand command, Func<SqliteDataReader, T> map) where T : class
+    private static T? ReadFirst<T>(NpgsqlCommand command, Func<NpgsqlDataReader, T> map) where T : class
     {
         using var reader = command.ExecuteReader();
         return reader.Read() ? map(reader) : null;
     }
 
-    private static Post MapPost(SqliteDataReader reader) => new(
+    private static Post MapPost(NpgsqlDataReader reader) => new(
         reader.GetInt32(0), reader.GetInt32(1), reader.GetString(2), reader.GetString(3),
         reader.GetString(4), reader.GetInt32(5), reader.GetString(6), reader.GetString(7),
-        ParseDate(reader.GetString(8)), ParseDate(reader.GetString(9)));
+        reader.GetDateTime(8), reader.GetDateTime(9));
 
-    private static PostSummary MapPostSummary(SqliteDataReader reader) => new(
+    private static PostSummary MapPostSummary(NpgsqlDataReader reader) => new(
         reader.GetInt32(0), reader.GetInt32(1), reader.GetString(2), reader.GetString(3),
         reader.GetString(4), reader.GetInt32(5), reader.GetString(6), reader.GetString(7),
-        ParseDate(reader.GetString(8)), ParseDate(reader.GetString(9)),
-        reader.GetInt32(10), reader.GetInt32(11), reader.GetInt32(12) != 0,
+        reader.GetDateTime(8), reader.GetDateTime(9),
+        checked((int)reader.GetInt64(10)), checked((int)reader.GetInt64(11)), reader.GetBoolean(12),
         reader.IsDBNull(13) ? null : reader.GetString(13));
 
-    private static Forum MapForum(SqliteDataReader reader) => new(
+    private static Forum MapForum(NpgsqlDataReader reader) => new(
         reader.GetInt32(0),
         reader.IsDBNull(1) ? null : reader.GetInt32(1),
         reader.GetString(2),
         reader.GetString(3));
 
-    private static Comment MapComment(SqliteDataReader reader) => new(
+    private static Comment MapComment(NpgsqlDataReader reader) => new(
         reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetString(3), reader.GetString(4),
-        ParseDate(reader.GetString(5)), ParseDate(reader.GetString(6)));
+        reader.GetDateTime(5), reader.GetDateTime(6));
 
-    private static CommentSummary MapCommentSummary(SqliteDataReader reader) => new(
+    private static CommentSummary MapCommentSummary(NpgsqlDataReader reader) => new(
         reader.GetInt32(0), reader.GetInt32(1), reader.GetInt32(2), reader.GetString(3), reader.GetString(4),
-        ParseDate(reader.GetString(5)), ParseDate(reader.GetString(6)),
-        reader.GetInt32(7), reader.GetInt32(8) != 0);
+        reader.GetDateTime(5), reader.GetDateTime(6),
+        checked((int)reader.GetInt64(7)), reader.GetBoolean(8));
 
-    private static Like MapLike(SqliteDataReader reader) => new(
+    private static Like MapLike(NpgsqlDataReader reader) => new(
         reader.GetInt32(0),
         reader.IsDBNull(1) ? null : reader.GetInt32(1),
         reader.IsDBNull(2) ? null : reader.GetInt32(2),
         reader.GetInt32(3),
-        ParseDate(reader.GetString(4)));
+        reader.GetDateTime(4));
 
-    private static Image MapImage(SqliteDataReader reader) => new(
+    private static Image MapImage(NpgsqlDataReader reader) => new(
         reader.GetInt32(0),
         reader.IsDBNull(1) ? null : reader.GetInt32(1),
         reader.IsDBNull(2) ? null : reader.GetInt32(2),
         reader.GetString(3), reader.GetString(4), reader.GetString(5), reader.GetInt64(6),
-        ParseDate(reader.GetString(7)));
+        reader.GetDateTime(7));
 
-    /// <summary>
-    /// Foreign key enforcement is per-connection in SQLite, so it has to be switched on
-    /// for every connection rather than once in schema.sql. Without this the ON DELETE
-    /// CASCADE rules never fire and a comment can be attached to a post that does not exist.
-    /// </summary>
-    private SqliteConnection Open()
+    private NpgsqlConnection Open()
     {
-        var connection = new SqliteConnection(connectionString);
-        connection.Open();
-
-        using var pragma = connection.CreateCommand();
-        pragma.CommandText = "PRAGMA foreign_keys = ON;";
-        pragma.ExecuteNonQuery();
-
-        return connection;
+        var connection = new NpgsqlConnection(connectionString);
+        try
+        {
+            connection.Open();
+            return connection;
+        }
+        catch
+        {
+            connection.Dispose();
+            throw;
+        }
     }
 
-    private static string Timestamp() => DateTime.UtcNow.ToString("O");
+    private static DateTime Timestamp() => DateTime.UtcNow;
 
-    private static void Add(SqliteCommand command, string name, object? value) =>
-        command.Parameters.AddWithValue(name, value ?? DBNull.Value);
-
-    private static DateTime ParseDate(string value) =>
-        DateTime.Parse(value, null, System.Globalization.DateTimeStyles.RoundtripKind);
+    private static void Add(NpgsqlCommand command, string name, object? value, NpgsqlDbType? type = null)
+    {
+        if (type is { } parameterType)
+        {
+            command.Parameters.AddWithValue(name, parameterType, value ?? DBNull.Value);
+        }
+        else
+        {
+            command.Parameters.AddWithValue(name, value ?? DBNull.Value);
+        }
+    }
 }

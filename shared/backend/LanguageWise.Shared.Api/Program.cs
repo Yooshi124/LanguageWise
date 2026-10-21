@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Threading.RateLimiting;
 using LanguageWise.Shared.Api;
 using LanguageWise.Shared.Api.Clients;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.IdentityModel.Tokens;
 
 const string ServiceName = "shared-backend";
@@ -11,6 +12,22 @@ const string DocsSearchRateLimiterPolicy = "docs-search";
 const int MaxDocsQueryLength = 500;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = 1;
+    var trustedNetwork = builder.Configuration["ReverseProxy:TrustedNetwork"];
+    if (trustedNetwork is not null)
+    {
+        var network = System.Net.IPNetwork.Parse(trustedNetwork);
+        if (network.PrefixLength == 0)
+        {
+            throw new InvalidOperationException("ReverseProxy:TrustedNetwork must not trust every address.");
+        }
+        options.KnownIPNetworks.Add(network);
+    }
+});
 
 // Inside Docker this resolves to the database service by container name.
 var databaseServiceUrl = builder.Configuration["Services:Database"] ?? "http://localhost:6000";
@@ -28,10 +45,14 @@ builder.Services.AddHttpClient<AchievementsClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(20);
 });
 
-// The RAG server runs on the host, not in Compose (reached via host.docker.internal).
+// Compose supplies the RAG service DNS URL; localhost supports host-only development.
 var ragServiceUrl = builder.Configuration["Services:Rag"] ?? "http://localhost:8100";
 builder.Services.AddHttpClient<RagClient>(client =>
 {
+    if (!builder.Configuration.GetValue("Rag:Enabled", true))
+    {
+        return;
+    }
     client.BaseAddress = new Uri(ragServiceUrl.TrimEnd('/') + "/");
     client.Timeout = TimeSpan.FromSeconds(15);
 });
@@ -47,7 +68,7 @@ builder.Services.AddHttpClient<GarryClient>(client =>
 // Load Signing Key
 var signingKeyPath = builder.Configuration["Auth:SigningKeyPath"] ?? "/run/secrets/signing_key";
 var rsa = RSA.Create();
-rsa.ImportFromPem(File.ReadAllText(signingKeyPath));
+rsa.ImportFromPem(builder.Configuration["Auth:SigningKeyPem"] ?? File.ReadAllText(signingKeyPath));
 var signingKey = new RsaSecurityKey(rsa);
 
 AuthenticatedUser? ValidateToken(string token)
@@ -71,9 +92,10 @@ AuthenticatedUser? ValidateToken(string token)
         var claims = tokenHandler.ValidateToken(token, validationParams, out _);
         var subject = claims.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
         var name = claims.FindFirst(JwtRegisteredClaimNames.Name)?.Value;
+        var isAdmin = claims.FindFirst("is_admin")?.Value == "true";
 
         return int.TryParse(subject, out var id) && id > 0 && !string.IsNullOrWhiteSpace(name)
-            ? new AuthenticatedUser(id, name)
+            ? new AuthenticatedUser(id, name, isAdmin)
             : null;
     }
     catch
@@ -88,14 +110,15 @@ AuthenticatedUser? ReadSessionUser(HttpContext ctx)
     return string.IsNullOrEmpty(token) ? null : ValidateToken(token);
 }
 
-void IssueSessionCookie(HttpContext ctx, int userId, string username)
+void IssueSessionCookie(HttpContext ctx, int userId, string username, bool isAdmin)
 {
     var tokenHandler = new JwtSecurityTokenHandler();
     var tokenDescriptor = new SecurityTokenDescriptor
     {
         Subject = new ClaimsIdentity([
             new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
-            new Claim(JwtRegisteredClaimNames.Name, username)
+            new Claim(JwtRegisteredClaimNames.Name, username),
+            new Claim("is_admin", isAdmin ? "true" : "false")
         ]),
         Expires = DateTime.UtcNow.AddHours(1),
         SigningCredentials = new SigningCredentials(signingKey, SecurityAlgorithms.RsaSha256)
@@ -106,6 +129,7 @@ void IssueSessionCookie(HttpContext ctx, int userId, string username)
     ctx.Response.Cookies.Append("token", token, new CookieOptions
     {
         HttpOnly = true,
+        Secure = ctx.Request.IsHttps,
         SameSite = SameSiteMode.Strict,
         MaxAge = TimeSpan.FromHours(1)
     });
@@ -128,6 +152,7 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
+app.UseForwardedHeaders();
 app.UseRateLimiter();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = ServiceName }));
@@ -147,7 +172,7 @@ app.MapPost("/api/login", async (HttpContext ctx, UsersClient usersClient) =>
         return Results.Unauthorized();
     }
 
-    IssueSessionCookie(ctx, response.UserId, body.Username);
+    IssueSessionCookie(ctx, response.UserId, body.Username, response.IsAdmin);
     return Results.Ok();
 });
 
@@ -191,8 +216,54 @@ app.MapPost("/api/check-login", async (
 
 app.MapPost("/api/logout", (HttpContext ctx) =>
 {
-    ctx.Response.Cookies.Delete("token");
+    ctx.Response.Cookies.Delete("token", new CookieOptions
+    {
+        HttpOnly = true,
+        Secure = ctx.Request.IsHttps,
+        SameSite = SameSiteMode.Strict
+    });
     return Results.Ok();
+});
+
+// Settings are global, so any signed-in user may read them but only admins may change them.
+app.MapGet("/api/admin-settings", async (
+    HttpContext ctx,
+    UsersClient usersClient,
+    CancellationToken cancellationToken) =>
+{
+    if (ReadSessionUser(ctx) is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    return Results.Ok(await usersClient.GetAdminSettingsAsync(cancellationToken));
+});
+
+app.MapPut("/api/admin-settings/{name}", async (
+    string name,
+    UpdateAdminSettingRequest? body,
+    HttpContext ctx,
+    UsersClient usersClient,
+    CancellationToken cancellationToken) =>
+{
+    var user = ReadSessionUser(ctx);
+    if (user is null)
+    {
+        return Results.Unauthorized();
+    }
+
+    if (!user.IsAdmin)
+    {
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+
+    if (body is null)
+    {
+        return Results.BadRequest();
+    }
+
+    var updated = await usersClient.SetAdminSettingAsync(name, body.IsEnabled, cancellationToken);
+    return updated is null ? Results.NotFound() : Results.Ok(updated);
 });
 
 // "Ask the docs" for Garry on every feature: a cited answer from the RAG server's general
@@ -201,6 +272,7 @@ app.MapPost("/api/rag/answer", async (
     HttpContext ctx,
     DocsAnswerApiRequest? request,
     IConfiguration configuration,
+    UsersClient usersClient,
     RagClient ragClient,
     GarryClient garryClient,
     CancellationToken cancellationToken) =>
@@ -210,8 +282,9 @@ app.MapPost("/api/rag/answer", async (
         return Results.Unauthorized();
     }
 
-    // Rag:Enabled=false (as in CI) keeps the RAG server and Garry out of the request path.
-    if (!configuration.GetValue("Rag:Enabled", true))
+    // Isolated CI tests disable RAG; integrated E2E exercises the real service.
+    if (!configuration.GetValue("Rag:Enabled", true)
+        || !await IsRagSwitchedOnAsync(usersClient, app.Logger, cancellationToken))
     {
         return Results.Problem(
             title: "Ask the docs is turned off on this server.",
@@ -369,8 +442,8 @@ app.MapPatch("/api/users/{userId:int}", async (
     }
 
     // The name claim is read by other services, so the session must carry the new username.
-    IssueSessionCookie(ctx, result.Account!.Id, result.Account.Username);
-    return Results.Ok(new AuthenticatedUser(result.Account.Id, result.Account.Username));
+    IssueSessionCookie(ctx, result.Account!.Id, result.Account.Username, user.IsAdmin);
+    return Results.Ok(new AuthenticatedUser(result.Account.Id, result.Account.Username, user.IsAdmin));
 });
 
 // Bytes are proxied rather than redirected to: the database service is not reachable from the browser.
@@ -472,6 +545,24 @@ app.MapDelete("/api/users/{userId:int}/profile-picture", async (
 
 app.Run();
 
+static async Task<bool> IsRagSwitchedOnAsync(UsersClient usersClient, ILogger logger, CancellationToken cancellationToken)
+{
+    try
+    {
+        var settings = await usersClient.GetAdminSettingsAsync(cancellationToken);
+        return settings.Any(setting => setting.Name == "AIMode" && setting.IsEnabled)
+            && settings.Any(setting => setting.Name == "RAG" && setting.IsEnabled);
+    }
+    catch (Exception exception) when (
+        exception is HttpRequestException or System.Text.Json.JsonException
+        || (exception is TaskCanceledException && !cancellationToken.IsCancellationRequested))
+    {
+        // Fail closed: RAG stays off until the switches can be read.
+        logger.LogWarning("Could not read admin settings: {ErrorType}.", exception.GetType().Name);
+        return false;
+    }
+}
+
 // The storage key is dropped: the browser addresses the picture by user ID.
 static ProfilePictureDetail ToProfilePictureDetail(ProfilePicture picture) => new(
     picture.FileName,
@@ -494,13 +585,15 @@ internal sealed record LoginRequest(string Username, string Password);
 
 internal sealed record DocsAnswerApiRequest(string? Query);
 
+internal sealed record UpdateAdminSettingRequest(bool IsEnabled);
+
 internal sealed record CreateAccountRequest(string? Username, string? Password);
 
 internal sealed record UpdateAccountRequest(string? Username, string? NewPassword, string? CurrentPassword);
 
-internal sealed record VerifyResponse(bool Authenticated, int UserId);
+internal sealed record VerifyResponse(bool Authenticated, int UserId, bool IsAdmin = false);
 
-internal sealed record AuthenticatedUser(int Id, string Name);
+internal sealed record AuthenticatedUser(int Id, string Name, bool IsAdmin = false);
 
 internal sealed record ProfilePictureDetail(string FileName, string ContentType, long SizeBytes, DateTime UploadedAt);
 

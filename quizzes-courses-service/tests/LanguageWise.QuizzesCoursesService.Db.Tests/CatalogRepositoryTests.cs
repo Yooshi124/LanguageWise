@@ -1,5 +1,6 @@
 using LanguageWise.QuizzesCoursesService.Db.Data;
-using Microsoft.Data.Sqlite;
+using Npgsql;
+using LanguageWise.Testing;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Text.RegularExpressions;
 
@@ -32,20 +33,14 @@ public sealed class CatalogRepositoryTests
         "funny-unusual-words"
     ];
 
-    private string databasePath = null!;
+    private PostgresTestDatabase database = null!;
     private string connectionString = null!;
 
     [SetUp]
     public void SetUp()
     {
-        databasePath = Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
-            $"languagewise-catalog-{Guid.NewGuid():N}.db");
-        connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = databasePath,
-            ForeignKeys = true
-        }.ToString();
+        database = new PostgresTestDatabase();
+        connectionString = database.ConnectionString;
 
         var sqlDirectory = Path.Combine(
             FindRepositoryRoot(),
@@ -63,11 +58,7 @@ public sealed class CatalogRepositoryTests
     [TearDown]
     public void TearDown()
     {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(databasePath))
-        {
-            File.Delete(databasePath);
-        }
+        database.Dispose();
     }
 
     [Test]
@@ -309,7 +300,7 @@ public sealed class CatalogRepositoryTests
         command.CommandText =
             "INSERT INTO Courses (Code, Title, Description) VALUES ('xx', 'Invalid', 'Invalid');";
 
-        Assert.Throws<SqliteException>(() => command.ExecuteNonQuery());
+        Assert.Throws<PostgresException>(() => command.ExecuteNonQuery());
     }
 
     [Test]
@@ -324,7 +315,7 @@ public sealed class CatalogRepositoryTests
             WHERE Id = (SELECT MIN(Id) FROM LessonVocabulary);
             """;
 
-        Assert.Throws<SqliteException>(() => command.ExecuteNonQuery());
+        Assert.Throws<PostgresException>(() => command.ExecuteNonQuery());
     }
 
     [Test]
@@ -338,12 +329,34 @@ public sealed class CatalogRepositoryTests
             VALUES (1, 1, 1, '2026-08-28T00:00:00Z');
             """;
 
-        Assert.Throws<SqliteException>(() => command.ExecuteNonQuery());
+        Assert.Throws<PostgresException>(() => command.ExecuteNonQuery());
     }
 
-    private SqliteConnection Open()
+    [Test]
+    public void Schema_EnforcesForeignKeysMilestoneUniquenessAndCascadingDeletes()
     {
-        var connection = new SqliteConnection(connectionString);
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "INSERT INTO Lessons (CourseId, Slug, Title, SortOrder, ContentMarkdown) VALUES (-1, 'orphan', 'Orphan', 1, '');";
+        Assert.That(Assert.Throws<PostgresException>(() => command.ExecuteNonQuery())!.SqlState,
+            Is.EqualTo(PostgresErrorCodes.ForeignKeyViolation));
+
+        command.CommandText = "INSERT INTO Milestones (UserId, LessonId, CompletedAt) SELECT 63, MIN(Id), '2026-10-18T00:00:00Z' FROM Lessons;";
+        command.ExecuteNonQuery();
+        Assert.That(Assert.Throws<PostgresException>(() => command.ExecuteNonQuery())!.SqlState,
+            Is.EqualTo(PostgresErrorCodes.UniqueViolation));
+
+        command.CommandText = "DELETE FROM Courses WHERE Code = 'de';";
+        command.ExecuteNonQuery();
+        command.CommandText = "SELECT COUNT(*) FROM Milestones WHERE UserId = 63;";
+        Assert.That(command.ExecuteScalar(), Is.EqualTo(0L));
+        command.CommandText = "SELECT COUNT(*) FROM QuizAnswers answer LEFT JOIN QuizAttempts attempt ON attempt.Id = answer.AttemptId WHERE attempt.Id IS NULL;";
+        Assert.That(command.ExecuteScalar(), Is.EqualTo(0L));
+    }
+
+    private NpgsqlConnection Open()
+    {
+        var connection = new NpgsqlConnection(connectionString);
         connection.Open();
         return connection;
     }

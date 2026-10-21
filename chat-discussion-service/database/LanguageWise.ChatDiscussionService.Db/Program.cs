@@ -5,15 +5,12 @@ using LanguageWise.ChatDiscussionService.Db.Models;
 
 const string serviceName = "chat-discussion-service-db";
 
-// This service owns the SQLite file and knows nothing about users or tokens.
+// This service owns the discussion database and knows nothing about users or tokens.
 // Callers pass userId and viewerId as plain parameters; authentication and
 // authorisation are the backend's job.
 var builder = WebApplication.CreateBuilder(args);
-var databasePath = builder.Configuration["Database:Path"] ?? "data/chat-discussion-service.db";
-var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
-{
-    DataSource = databasePath
-}.ToString();
+var connectionString = builder.Configuration["Database:ConnectionString"]
+    ?? throw new InvalidOperationException("Database:ConnectionString must be configured.");
 
 builder.Services.AddSingleton(serviceProvider => new DatabaseInitializer(
     connectionString,
@@ -21,7 +18,6 @@ builder.Services.AddSingleton(serviceProvider => new DatabaseInitializer(
     serviceProvider.GetRequiredService<ILogger<DatabaseInitializer>>()));
 builder.Services.AddSingleton(new DiscussionRepository(connectionString));
 
-// Uploaded bytes sit beside the SQLite file, so one volume holds the whole dataset.
 var imagePath = builder.Configuration["Images:Path"] ?? "data/images";
 builder.Services.AddSingleton(new ImageStore(imagePath));
 

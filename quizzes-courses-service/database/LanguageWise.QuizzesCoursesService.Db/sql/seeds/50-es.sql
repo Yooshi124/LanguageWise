@@ -437,11 +437,12 @@ Spanish technical words use Greek and Latin roots: **electro + encefalo + grafis
 
 **Sobremesa** is an unhurried post-meal conversation, valued in many Spanish-speaking places. **Madrugar** means getting up early.')
 )
-INSERT OR IGNORE INTO Lessons (CourseId, Slug, Title, SortOrder, ContentMarkdown)
+INSERT INTO Lessons (CourseId, Slug, Title, SortOrder, ContentMarkdown)
 SELECT c.Id, s.Slug, s.Title, s.SortOrder, s.ContentMarkdown
 FROM Courses c
 CROSS JOIN LessonSeeds s
-WHERE c.Code = 'es';
+WHERE c.Code = 'es'
+ON CONFLICT DO NOTHING;
 
 WITH VocabularySeeds (LessonSlug, VocabularyJson) AS (
     VALUES
@@ -466,11 +467,12 @@ WITH VocabularySeeds (LessonSlug, VocabularyJson) AS (
     ('long-words', '{"words":[{"word":"electroencefalografista","meaning":"electroencephalograph specialist"},{"word":"otorrinolaringólogo","meaning":"ear, nose, and throat doctor"},{"word":"esternocleidomastoideo","meaning":"sternocleidomastoid muscle"},{"word":"desafortunadamente","meaning":"unfortunately"},{"word":"paralelepípedo","meaning":"parallelepiped"}]}'),
     ('funny-unusual-words', '{"words":[{"word":"sobremesa","meaning":"conversation after a meal"},{"word":"madrugar","meaning":"to get up very early"},{"word":"empalagoso","meaning":"sickeningly sweet"},{"word":"tocayo","meaning":"person with the same first name"},{"word":"estrenar","meaning":"to use or wear for the first time"}]}')
 )
-INSERT OR IGNORE INTO LessonVocabulary (LessonId, VocabularyJson)
+INSERT INTO LessonVocabulary (LessonId, VocabularyJson)
 SELECT l.Id, s.VocabularyJson
 FROM VocabularySeeds s
 INNER JOIN Courses c ON c.Code = 'es'
-INNER JOIN Lessons l ON l.CourseId = c.Id AND l.Slug = s.LessonSlug;
+INNER JOIN Lessons l ON l.CourseId = c.Id AND l.Slug = s.LessonSlug
+ON CONFLICT DO NOTHING;
 
 WITH QuizSeeds (LessonSlug, Title) AS (
     VALUES
@@ -495,11 +497,12 @@ WITH QuizSeeds (LessonSlug, Title) AS (
     ('long-words', 'Long Words Quiz'),
     ('funny-unusual-words', 'Funny and Unusual Words Quiz')
 )
-INSERT OR IGNORE INTO Quizzes (LessonId, Title)
+INSERT INTO Quizzes (LessonId, Title)
 SELECT l.Id, s.Title
 FROM QuizSeeds s
 INNER JOIN Courses c ON c.Code = 'es'
-INNER JOIN Lessons l ON l.CourseId = c.Id AND l.Slug = s.LessonSlug;
+INNER JOIN Lessons l ON l.CourseId = c.Id AND l.Slug = s.LessonSlug
+ON CONFLICT DO NOTHING;
 
 WITH QuestionSeeds (LessonSlug, SortOrder, Content, Type, QuestionData, CorrectAnswer) AS (
     VALUES
@@ -704,7 +707,7 @@ WITH QuestionSeeds (LessonSlug, SortOrder, Content, Type, QuestionData, CorrectA
     ('funny-unusual-words', 9, 'Type the Spanish term for “person with the same first name”.', 'free_text', '{}', 'tocayo'),
     ('funny-unusual-words', 10, 'Type the Spanish term for “to use or wear for the first time”.', 'free_text', '{}', 'estrenar')
 )
-INSERT OR IGNORE INTO QuizQuestions (
+INSERT INTO QuizQuestions (
     QuizId,
     SortOrder,
     Content,
@@ -722,4 +725,5 @@ SELECT
 FROM QuestionSeeds s
 INNER JOIN Courses c ON c.Code = 'es'
 INNER JOIN Lessons l ON l.CourseId = c.Id AND l.Slug = s.LessonSlug
-INNER JOIN Quizzes q ON q.LessonId = l.Id;
+INNER JOIN Quizzes q ON q.LessonId = l.Id
+ON CONFLICT DO NOTHING;

@@ -73,9 +73,9 @@ preferences, and pause or resume notifications.
   `LanguageWise.QuestsAchievementsNotificationsService.Api`. Container
   `quests-achievements-notifications-service-backend`, port 8080, published on
   host port 5004 on all interfaces (other services bind to 127.0.0.1 only).
-- **Database**: PostgreSQL (`quests-achievements-notifications-service-db`) with
+- **Database**: PostgreSQL (shared-owned `shared-db`) with
   the service-owned `api` schema, exposed to the backend by PostgREST
-  (`quests-achievements-notifications-service-db-api`, port 3000, not published
+  (`quests-achievements-notifications-service-db`, port 3000, not published
   to the host). The backend talks to it through `AppDataClient` over PostgREST
   query strings (for example `user_preferences?user_id=eq.{id}`), and upserts use
   `Prefer: resolution=merge-duplicates`.
@@ -89,9 +89,9 @@ preferences, and pause or resume notifications.
   learner's canonical profile (preferences, achievement progress, full
   notification history) and streams the completion from `garry-ai-service`,
   passing `toolScope: "quests"` when MCP is enabled.
-- **MCP**: `McpToolClient` connects to the host MCP server
-  (`http://host.docker.internal:8200/mcp`) with the shared API key; the MCP server
-  calls back into this backend on `http://localhost:5004`.
+- **MCP**: `McpToolClient` connects to the Compose MCP server
+  (`http://mcp-server:8080/mcp`) with the shared API key; the MCP server
+  calls this backend on `http://quests-achievements-notifications-service-backend:8080`.
 
 ## TECHNICAL-api: Backend endpoints
 

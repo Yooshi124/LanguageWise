@@ -1,6 +1,6 @@
 using System.Text.Json;
 using LanguageWise.QuizzesCoursesService.Db.Models;
-using Microsoft.Data.Sqlite;
+using Npgsql;
 
 namespace LanguageWise.QuizzesCoursesService.Db.Data;
 
@@ -26,8 +26,8 @@ public sealed class CatalogRepository(string connectionString)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, Code, Title, Description FROM Courses WHERE Code = $code;";
-        command.Parameters.AddWithValue("$code", code);
+        command.CommandText = "SELECT Id, Code, Title, Description FROM Courses WHERE Code = @code;";
+        command.Parameters.AddWithValue("@code", code);
 
         using var reader = command.ExecuteReader();
         return reader.Read() ? MapCourse(reader) : null;
@@ -42,10 +42,10 @@ public sealed class CatalogRepository(string connectionString)
             SELECT l.Id, l.Slug, l.Title, l.SortOrder
             FROM Lessons l
             INNER JOIN Courses c ON c.Id = l.CourseId
-            WHERE c.Code = $code
+            WHERE c.Code = @code
             ORDER BY l.SortOrder;
             """;
-        command.Parameters.AddWithValue("$code", courseCode);
+        command.Parameters.AddWithValue("@code", courseCode);
 
         var lessons = new List<LessonSummary>();
         using var reader = command.ExecuteReader();
@@ -73,10 +73,10 @@ public sealed class CatalogRepository(string connectionString)
             FROM Lessons l
             INNER JOIN Courses c ON c.Id = l.CourseId
             LEFT JOIN LessonVocabulary v ON v.LessonId = l.Id
-            WHERE c.Code = $code AND l.Slug = $slug;
+            WHERE c.Code = @code AND l.Slug = @slug;
             """;
-        command.Parameters.AddWithValue("$code", courseCode);
-        command.Parameters.AddWithValue("$slug", lessonSlug);
+        command.Parameters.AddWithValue("@code", courseCode);
+        command.Parameters.AddWithValue("@slug", lessonSlug);
 
         using var reader = command.ExecuteReader();
         if (!reader.Read())
@@ -106,14 +106,14 @@ public sealed class CatalogRepository(string connectionString)
         return Convert.ToInt64(command.ExecuteScalar());
     }
 
-    private SqliteConnection Open()
+    private NpgsqlConnection Open()
     {
-        var connection = new SqliteConnection(connectionString);
+        var connection = new NpgsqlConnection(connectionString);
         connection.Open();
         return connection;
     }
 
-    private static Course MapCourse(SqliteDataReader reader) =>
+    private static Course MapCourse(NpgsqlDataReader reader) =>
         new(reader.GetInt32(0), reader.GetString(1), reader.GetString(2), reader.GetString(3));
 
     private sealed record VocabularyDocument(IReadOnlyList<VocabularyWord> Words);

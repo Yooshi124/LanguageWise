@@ -5,6 +5,7 @@ type AuthStatus = 'loading' | 'authenticated' | 'signed-out' | 'error'
 export interface AuthenticatedUser {
   id: number
   name: string
+  isAdmin?: boolean
 }
 
 export interface AccountChanges {
@@ -202,6 +203,7 @@ export function useAuth() {
     username: computed(() => user.value?.name ?? null),
     status: readonly(status),
     isAuthenticated: computed(() => status.value === 'authenticated'),
+    isAdmin: computed(() => status.value === 'authenticated' && user.value?.isAdmin === true),
     ensureAuthenticated,
     login,
     loginUrl,

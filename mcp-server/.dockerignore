@@ -1,0 +1,9 @@
+**
+!src/
+!src/LanguageWise.McpServer/
+!src/LanguageWise.McpServer/**
+**/bin
+**/obj
+**/.env*
+**/*.pem
+**/*.key

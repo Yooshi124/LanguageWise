@@ -4,19 +4,14 @@ using Microsoft.AspNetCore.Routing;
 using System.Text.Json.Serialization;
 
 const string ServiceName = "quizzes-courses-service-db";
-const string PublicCatalogError = "The SQLite catalog health check failed.";
+const string PublicCatalogError = "The PostgreSQL catalog health check failed.";
 const int DefaultMilestonePageSize = 100;
 const int MaxMilestonePageSize = 200;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// The database file lives on a named Docker volume so it survives container restarts.
-var databasePath = builder.Configuration["Database:Path"] ?? "data/quizzes-courses-service.db";
-var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
-{
-    DataSource = databasePath,
-    ForeignKeys = true
-}.ToString();
+var connectionString = builder.Configuration["Database:ConnectionString"]
+    ?? throw new InvalidOperationException("Database:ConnectionString is required.");
 
 builder.Services.AddSingleton(new CatalogRepository(connectionString));
 builder.Services.AddSingleton(new LearningRepository(connectionString));
@@ -43,13 +38,13 @@ app.MapGet("/health", (CatalogRepository repository, EndpointDataSource endpoint
             null,
             new Dictionary<string, DatabaseDependencyHealth>
             {
-                ["catalog"] = new("healthy", "sqlite", courses)
+                ["catalog"] = new("healthy", "postgresql", courses)
             },
             endpoints));
     }
     catch (Exception exception)
     {
-        app.Logger.LogError(exception, "The SQLite catalog health check failed.");
+        app.Logger.LogError(exception, "The PostgreSQL catalog health check failed.");
         return Results.Json(
             new DatabaseServiceHealth(
                 "unhealthy",
@@ -58,7 +53,7 @@ app.MapGet("/health", (CatalogRepository repository, EndpointDataSource endpoint
                 PublicCatalogError,
                 new Dictionary<string, DatabaseDependencyHealth>
                 {
-                    ["catalog"] = new("unhealthy", "sqlite", Error: PublicCatalogError)
+                    ["catalog"] = new("unhealthy", "postgresql", Error: PublicCatalogError)
                 },
                 endpoints),
             statusCode: StatusCodes.Status503ServiceUnavailable);

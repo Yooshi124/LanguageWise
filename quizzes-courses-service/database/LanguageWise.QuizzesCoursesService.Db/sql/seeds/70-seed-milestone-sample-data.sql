@@ -19,18 +19,18 @@ WITH LessonMilestoneSeeds (CourseCode, MaximumSortOrder, StartDate) AS (
         ('fr', 2,  '2026-08-10'),
         ('es', 1,  '2026-08-20')
 )
-INSERT OR IGNORE INTO Milestones (UserId, LessonId, CompletedAt)
+INSERT INTO Milestones (UserId, LessonId, CompletedAt)
 SELECT
     1,
     lesson.Id,
-    printf(
-        '%sT09:00:00.0000000+00:00',
-        date(seed.StartDate, printf('+%d days', lesson.SortOrder - 1)))
+    to_char(seed.StartDate::date + lesson.SortOrder - 1, 'YYYY-MM-DD')
+        || 'T09:00:00.0000000+00:00'
 FROM LessonMilestoneSeeds seed
 JOIN Courses course ON course.Code = seed.CourseCode
 JOIN Lessons lesson
     ON lesson.CourseId = course.Id
-   AND lesson.SortOrder <= seed.MaximumSortOrder;
+   AND lesson.SortOrder <= seed.MaximumSortOrder
+ON CONFLICT DO NOTHING;
 
 WITH UserLessonMilestoneSeeds (UserId, CourseCode, MaximumSortOrder, StartDaysAgo) AS (
     VALUES
@@ -42,18 +42,18 @@ WITH UserLessonMilestoneSeeds (UserId, CourseCode, MaximumSortOrder, StartDaysAg
         (5, 'pl', 4, 6),
         (5, 'nl', 2, 1)
 )
-INSERT OR IGNORE INTO Milestones (UserId, LessonId, CompletedAt)
+INSERT INTO Milestones (UserId, LessonId, CompletedAt)
 SELECT
     seed.UserId,
     lesson.Id,
-    printf(
-        '%sT09:00:00.0000000+00:00',
-        date('now', printf('-%d days', seed.StartDaysAgo - lesson.SortOrder + 1)))
+    to_char(CURRENT_DATE - (seed.StartDaysAgo - lesson.SortOrder + 1), 'YYYY-MM-DD')
+        || 'T09:00:00.0000000+00:00'
 FROM UserLessonMilestoneSeeds seed
 JOIN Courses course ON course.Code = seed.CourseCode
 JOIN Lessons lesson
     ON lesson.CourseId = course.Id
-   AND lesson.SortOrder <= seed.MaximumSortOrder;
+   AND lesson.SortOrder <= seed.MaximumSortOrder
+ON CONFLICT DO NOTHING;
 
 -- A completed Polish course contributes one passing attempt for every quiz.
 INSERT INTO QuizAttempts
@@ -63,8 +63,8 @@ SELECT
     quiz.Id,
     COUNT(question.Id),
     COUNT(question.Id),
-    printf('2026-07-%02dT10:00:00.0000000+00:00', lesson.SortOrder),
-    printf('2026-07-%02dT10:15:00.0000000+00:00', lesson.SortOrder)
+    '2026-07-' || lpad(lesson.SortOrder::text, 2, '0') || 'T10:00:00.0000000+00:00',
+    '2026-07-' || lpad(lesson.SortOrder::text, 2, '0') || 'T10:15:00.0000000+00:00'
 FROM Courses course
 JOIN Lessons lesson ON lesson.CourseId = course.Id
 JOIN Quizzes quiz ON quiz.LessonId = lesson.Id
@@ -76,7 +76,7 @@ WHERE course.Code = 'pl'
       WHERE existing.UserId = 1
         AND existing.QuizId = quiz.Id
         AND existing.StartedAt =
-            printf('2026-07-%02dT10:00:00.0000000+00:00', lesson.SortOrder)
+            '2026-07-' || lpad(lesson.SortOrder::text, 2, '0') || 'T10:00:00.0000000+00:00'
   )
 GROUP BY quiz.Id, lesson.SortOrder;
 
@@ -147,7 +147,7 @@ WITH SampleAttempts AS (
           )
       )
 )
-INSERT OR IGNORE INTO QuizAnswers
+INSERT INTO QuizAnswers
     (AttemptId, QuestionId, StudentResponse, IsCorrect, AnsweredAt)
 SELECT
     attempt.Id,
@@ -160,7 +160,8 @@ SELECT
     question.SortOrder <= attempt.Score,
     attempt.CompletedAt
 FROM SampleAttempts attempt
-JOIN QuizQuestions question ON question.QuizId = attempt.QuizId;
+JOIN QuizQuestions question ON question.QuizId = attempt.QuizId
+ON CONFLICT DO NOTHING;
 
 WITH SampleAttempts AS (
     SELECT attempt.UserId, attempt.QuizId, attempt.Score, attempt.CompletedAt
@@ -181,13 +182,14 @@ WITH SampleAttempts AS (
           )
       )
 )
-INSERT OR IGNORE INTO Milestones (UserId, QuizId, CompletedAt)
+INSERT INTO Milestones (UserId, QuizId, CompletedAt)
 SELECT UserId, QuizId, MIN(CompletedAt)
 FROM SampleAttempts
-GROUP BY UserId, QuizId;
+GROUP BY UserId, QuizId
+ON CONFLICT DO NOTHING;
 
 -- Course milestones are only created when every lesson and quiz prerequisite exists.
-INSERT OR IGNORE INTO Milestones (UserId, CourseId, CompletedAt)
+INSERT INTO Milestones (UserId, CourseId, CompletedAt)
 SELECT 1, course.Id, '2026-07-21T09:00:00.0000000+00:00'
 FROM Courses course
 WHERE course.Code = 'pl'
@@ -213,4 +215,5 @@ WHERE course.Code = 'pl'
             WHERE milestone.UserId = 1
               AND milestone.QuizId = quiz.Id
         )
-  );
+  )
+ON CONFLICT DO NOTHING;

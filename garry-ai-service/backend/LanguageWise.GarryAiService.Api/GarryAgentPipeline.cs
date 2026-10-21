@@ -10,6 +10,7 @@ public sealed class GarryAgentPipeline(
     public async Task<string> RunAsync(
         CompletionRequest request,
         string? userToken,
+        AdminSwitchState switches,
         Func<ToolEvent, Task> onTool,
         CancellationToken cancellationToken)
     {
@@ -21,7 +22,7 @@ public sealed class GarryAgentPipeline(
         worker.Receive("Planner task plan", plan);
 
         WorkerCompletion? researched = null;
-        if (request.ToolScope is not null && toolLoop.IsAvailable)
+        if (switches.Mcp && request.ToolScope is not null && toolLoop.IsAvailable)
         {
             try
             {

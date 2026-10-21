@@ -1,7 +1,6 @@
 # Database service container for quizzes-courses-service.
 #
-# The only process that opens this microservice's SQLite file. It applies the
-# schema on start-up, seeds the table when empty, and exposes CRUD over HTTP.
+# Applies the PostgreSQL schema and seed manifest and exposes CRUD over HTTP.
 #
 # Build context is this folder, so the image cannot reach other microservices.
 
@@ -20,16 +19,11 @@ WORKDIR /app
 
 RUN apt-get update \
     && apt-get install --no-install-recommends -y curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /data \
-    && chown -R app:app /data
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/publish ./
 
-ENV ASPNETCORE_HTTP_PORTS=8080 \
-    Database__Path=/data/quizzes-courses-service.db
-
-VOLUME ["/data"]
+ENV ASPNETCORE_HTTP_PORTS=8080
 
 USER app
 EXPOSE 8080

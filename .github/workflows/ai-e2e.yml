@@ -1,0 +1,39 @@
+name: ai-e2e
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ai-e2e:
+    name: ai-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      COMPOSE_PARALLEL_LIMIT: "2"
+      OPENROUTER_API_KEY: ""
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Run real-container MCP and RAG E2E tests
+        shell: pwsh
+        run: ./tests/e2e/Invoke-E2E.ps1 -ResultsDirectory "${{ runner.temp }}/ai-e2e-results"
+
+      - name: Upload E2E reports and container diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-e2e-results
+          path: ${{ runner.temp }}/ai-e2e-results/
+          if-no-files-found: warn

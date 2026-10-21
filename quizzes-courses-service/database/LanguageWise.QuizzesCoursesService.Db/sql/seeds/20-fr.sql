@@ -458,13 +458,14 @@ Break **anticonstitutionnellement** into *anti- + constitution + -nel + -lement*
 
 **Pamplemousse** reached French through Dutch *pompelmoes*. Its sound is playful, but it is the ordinary word for grapefruit.')
 )
-INSERT OR IGNORE INTO Lessons (CourseId, Slug, Title, SortOrder, ContentMarkdown)
+INSERT INTO Lessons (CourseId, Slug, Title, SortOrder, ContentMarkdown)
 SELECT c.Id, s.Slug, s.Title, s.SortOrder, content.ContentMarkdown
 FROM Courses c
 CROSS JOIN LessonSeeds s
 INNER JOIN LessonContentSeeds content
     ON content.CourseCode = c.Code AND content.LessonSlug = s.Slug
-WHERE c.Code = 'fr';
+WHERE c.Code = 'fr'
+ON CONFLICT DO NOTHING;
 
 WITH WordSeeds (CourseCode, LessonSlug, Position, Word, Meaning) AS (
     VALUES
@@ -569,24 +570,26 @@ WITH WordSeeds (CourseCode, LessonSlug, Position, Word, Meaning) AS (
     ('fr', 'funny-unusual-words', 4, 'flâner', 'to stroll aimlessly'),
     ('fr', 'funny-unusual-words', 5, 'chouchou', 'teacher’s pet / darling')
 )
-INSERT OR IGNORE INTO LessonVocabulary (LessonId, VocabularyJson)
-SELECT l.Id, json_object('words', json((
-    SELECT json_group_array(json_object('word', ordered.Word, 'meaning', ordered.Meaning))
+INSERT INTO LessonVocabulary (LessonId, VocabularyJson)
+SELECT l.Id, json_build_object('words', (
+    SELECT json_agg(json_build_object('word', ordered.Word, 'meaning', ordered.Meaning) ORDER BY ordered.Position)
     FROM (
-        SELECT Word, Meaning
+        SELECT Word, Meaning, Position
         FROM WordSeeds
         WHERE CourseCode = c.Code AND LessonSlug = l.Slug
         ORDER BY Position
     ) ordered
-)))
+))
 FROM Lessons l
-INNER JOIN Courses c ON c.Id = l.CourseId AND c.Code = 'fr';
+INNER JOIN Courses c ON c.Id = l.CourseId AND c.Code = 'fr'
+ON CONFLICT DO NOTHING;
 
-INSERT OR IGNORE INTO Quizzes (LessonId, Title)
+INSERT INTO Quizzes (LessonId, Title)
 SELECT l.Id, l.Title || ' Quiz'
 FROM Lessons l
 INNER JOIN Courses c ON c.Id = l.CourseId
-WHERE c.Code = 'fr';
+WHERE c.Code = 'fr'
+ON CONFLICT DO NOTHING;
 
 WITH QuestionSeeds (CourseCode, LessonSlug, SortOrder, Content, Type, QuestionData, CorrectAnswer) AS (
     VALUES
@@ -791,10 +794,11 @@ WITH QuestionSeeds (CourseCode, LessonSlug, SortOrder, Content, Type, QuestionDa
     ('fr', 'funny-unusual-words', 9, 'Translate into French: “The grapefruit is on the table.”', 'free_text', '{}', 'Le pamplemousse est sur la table.'),
     ('fr', 'funny-unusual-words', 10, 'Translate into French: “After class, I stroll and make scribbles.”', 'free_text', '{}', 'Après le cours, je flâne et je fais des gribouillis.')
 )
-INSERT OR IGNORE INTO QuizQuestions
+INSERT INTO QuizQuestions
     (QuizId, SortOrder, Content, Type, QuestionData, CorrectAnswer)
 SELECT q.Id, s.SortOrder, s.Content, s.Type, s.QuestionData, s.CorrectAnswer
 FROM QuestionSeeds s
 INNER JOIN Courses c ON c.Code = s.CourseCode AND c.Code = 'fr'
 INNER JOIN Lessons l ON l.CourseId = c.Id AND l.Slug = s.LessonSlug
-INNER JOIN Quizzes q ON q.LessonId = l.Id;
+INNER JOIN Quizzes q ON q.LessonId = l.Id
+ON CONFLICT DO NOTHING;

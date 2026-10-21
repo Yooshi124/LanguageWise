@@ -11,6 +11,7 @@ using LanguageWise.McpServer.Tools.QuizzesCourses;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using ModelContextProtocol.Client;
@@ -27,6 +28,8 @@ public sealed class McpServerFactory : WebApplicationFactory<Program>
 	public StubHttpMessageHandler Downstream { get; } = new();
 
 	public bool RagEnabled { get; init; } = true;
+
+	public StubAdminSwitches Switches { get; } = new();
 
 	public McpServerFactory()
 	{
@@ -58,6 +61,8 @@ public sealed class McpServerFactory : WebApplicationFactory<Program>
 				.ConfigurePrimaryHttpMessageHandler(() => Downstream);
 			services.AddHttpClient(DocsTools.ServiceName)
 				.ConfigurePrimaryHttpMessageHandler(() => Downstream);
+			services.RemoveAll<IAdminSwitches>();
+			services.AddSingleton<IAdminSwitches>(Switches);
 		});
 	}
 

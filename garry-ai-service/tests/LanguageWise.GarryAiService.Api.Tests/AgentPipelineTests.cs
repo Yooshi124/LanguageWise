@@ -17,7 +17,7 @@ public sealed class AgentPipelineTests
         var request = new CompletionRequest("Help with this lesson",
             [new ChatMessage("assistant", "Earlier reply")], "Do not reveal quiz answers.", "{\"lesson\":42}");
 
-        var answer = await pipeline.RunAsync(request, null, _ => Task.CompletedTask, CancellationToken.None);
+        var answer = await pipeline.RunAsync(request, null, AllSwitchesOn, _ => Task.CompletedTask, CancellationToken.None);
 
         Assert.That(answer, Is.EqualTo("Reviewed answer"));
         Assert.That(clients.Requests, Has.Count.EqualTo(3));
@@ -57,9 +57,9 @@ public sealed class AgentPipelineTests
             "Second plan", "Second draft", "Second answer"]);
         var pipeline = CreatePipeline(clients);
 
-        await pipeline.RunAsync(Request("First private message", "First private context"), "first-token",
+        await pipeline.RunAsync(Request("First private message", "First private context"), "first-token", AllSwitchesOn,
             _ => Task.CompletedTask, CancellationToken.None);
-        var second = await pipeline.RunAsync(Request("Second message", "Second context"), "second-token",
+        var second = await pipeline.RunAsync(Request("Second message", "Second context"), "second-token", AllSwitchesOn,
             _ => Task.CompletedTask, CancellationToken.None);
 
         Assert.That(second, Is.EqualTo("Second answer"));
@@ -75,7 +75,7 @@ public sealed class AgentPipelineTests
         var clients = new ScriptedClients(["Private plan", "Private draft", "Final reviewed answer"]);
         var context = CreateContext();
 
-        await new GarryCompletionResult(Request(), null, CreatePipeline(clients), NullLoggerFactory.Instance)
+        await new GarryCompletionResult(Request(), null, CreatePipeline(clients), NullLoggerFactory.Instance, AllSwitchesOn)
             .ExecuteAsync(context);
 
         var events = Encoding.UTF8.GetString(((MemoryStream)context.Response.Body).ToArray());
@@ -99,7 +99,7 @@ public sealed class AgentPipelineTests
         };
         var context = CreateContext();
 
-        await new GarryCompletionResult(Request(), null, CreatePipeline(clients), NullLoggerFactory.Instance)
+        await new GarryCompletionResult(Request(), null, CreatePipeline(clients), NullLoggerFactory.Instance, AllSwitchesOn)
             .ExecuteAsync(context);
 
         Assert.Multiple(() =>
@@ -122,7 +122,7 @@ public sealed class AgentPipelineTests
         };
         var context = CreateContext();
 
-        await new GarryCompletionResult(Request(), null, CreatePipeline(clients), NullLoggerFactory.Instance)
+        await new GarryCompletionResult(Request(), null, CreatePipeline(clients), NullLoggerFactory.Instance, AllSwitchesOn)
             .ExecuteAsync(context);
 
         var events = Encoding.UTF8.GetString(((MemoryStream)context.Response.Body).ToArray());
@@ -155,12 +155,13 @@ public sealed class AgentPipelineTests
         var pipeline = CreatePipeline(clients);
 
         Assert.ThrowsAsync<TaskCanceledException>(async () =>
-            await pipeline.RunAsync(Request(), null, _ => Task.CompletedTask, cancellation.Token));
+            await pipeline.RunAsync(Request(), null, AllSwitchesOn, _ => Task.CompletedTask, cancellation.Token));
         Assert.That(clients.Requests, Has.Count.EqualTo(cancellingStage + 1));
     }
 
     private static CompletionRequest Request(string message = "Help", string context = "{}") =>
         new(message, [], "Stay grounded.", context);
+    private static AdminSwitchState AllSwitchesOn => new(AiMode: true, Mcp: true, Rag: true);
 
     private static DefaultHttpContext CreateContext()
     {

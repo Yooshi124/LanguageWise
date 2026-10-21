@@ -1,14 +1,70 @@
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using LanguageWise.McpServer.Security;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 
 namespace LanguageWise.McpServer.Tests;
 
 public sealed class McpEndpointTests
 {
+	[TestCase(false)]
+	[TestCase(true)]
+	public async Task UserTokenValidator_LoadsConfiguredPemOrFallbackFile(bool usePem)
+	{
+		using var key = RSA.Create(2048);
+		var path = Path.GetTempFileName();
+		try
+		{
+			File.WriteAllText(path, usePem ? "invalid-file-pem" : key.ExportSubjectPublicKeyInfoPem());
+			var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+			{
+				["Auth:VerificationKeyPath"] = path,
+				["Auth:VerificationKeyPem"] = usePem ? key.ExportSubjectPublicKeyInfoPem() : null
+			}).Build();
+			var validator = UserTokenValidator.FromConfiguration(configuration, AppContext.BaseDirectory);
+			var token = new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
+			{
+				Claims = new Dictionary<string, object> { ["sub"] = "7" },
+				Expires = DateTime.UtcNow.AddMinutes(5),
+				SigningCredentials = new SigningCredentials(new RsaSecurityKey(key), SecurityAlgorithms.RsaSha256)
+			});
+
+			Assert.That(await validator.IsValidAsync(token), Is.True);
+		}
+		finally
+		{
+			File.Delete(path);
+		}
+	}
+
+	[Test]
+	public void UserTokenValidator_InvalidPemDoesNotFallBackToFile()
+	{
+		using var key = RSA.Create(2048);
+		var path = Path.GetTempFileName();
+		try
+		{
+			File.WriteAllText(path, key.ExportSubjectPublicKeyInfoPem());
+			var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+			{
+				["Auth:VerificationKeyPath"] = path,
+				["Auth:VerificationKeyPem"] = "invalid-pem"
+			}).Build();
+
+			Assert.Throws<ArgumentException>(() => UserTokenValidator.FromConfiguration(configuration, AppContext.BaseDirectory));
+		}
+		finally
+		{
+			File.Delete(path);
+		}
+	}
+
 	private McpServerFactory factory = null!;
 
 	[OneTimeSetUp]
@@ -209,6 +265,39 @@ public sealed class McpEndpointTests
 		Assert.ThrowsAsync<McpProtocolException>(async () =>
 			await client.CallToolAsync("docs_search", new Dictionary<string, object?> { ["query"] = "mini games" }));
 		Assert.That(ragOff.Downstream.Requests, Is.Empty);
+	}
+
+	[Test]
+	public async Task WhenRagSwitchedOff_DocsSearchIsHiddenAndRejected()
+	{
+		using var ragOff = new McpServerFactory();
+		ragOff.Switches.State = new AdminSwitchState(AiMode: true, Mcp: true, Rag: false);
+		await using var client = await ragOff.CreateMcpClientAsync("games", ragOff.CreateUserToken());
+
+		var tools = await client.ListToolsAsync();
+
+		Assert.That(tools.Select(t => t.Name), Is.EquivalentTo(new[] { "games_get_completion_stats", "games_list_game_languages" }));
+		Assert.ThrowsAsync<McpProtocolException>(async () =>
+			await client.CallToolAsync("docs_search", new Dictionary<string, object?> { ["query"] = "mini games" }));
+		Assert.That(ragOff.Downstream.Requests, Is.Empty);
+	}
+
+	[Test]
+	public async Task WhenMcpSwitchedOff_McpEndpointReturns503()
+	{
+		using var mcpOff = new McpServerFactory();
+		mcpOff.Switches.State = new AdminSwitchState(AiMode: true, Mcp: false, Rag: true);
+		using var client = mcpOff.CreateClient();
+		using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
+		{
+			Content = new StringContent("""{"jsonrpc":"2.0","id":1,"method":"tools/list"}""", Encoding.UTF8, "application/json")
+		};
+		request.Headers.Add(McpHeaders.ApiKey, McpServerFactory.ApiKey);
+
+		var response = await client.SendAsync(request);
+
+		Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.ServiceUnavailable));
+		Assert.That(await response.Content.ReadAsStringAsync(), Does.Contain("mcp_disabled"));
 	}
 
 	[Test]
