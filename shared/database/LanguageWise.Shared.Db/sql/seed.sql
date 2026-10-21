@@ -15,7 +15,7 @@ SELECT setval(pg_get_serial_sequence('users', 'id'),
 UPDATE Users SET IsAdmin = TRUE WHERE Username = 'lachlan';
 
 INSERT INTO AdminSettings (Name, IsEnabled) VALUES
-    ('AIMode', FALSE),
-    ('RAG',    FALSE),
-    ('MCP',    FALSE)
+    ('AIMode', TRUE),
+    ('RAG',    TRUE),
+    ('MCP',    TRUE)
 ON CONFLICT DO NOTHING;

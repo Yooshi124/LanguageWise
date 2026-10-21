@@ -78,27 +78,27 @@ public sealed class DatabaseHttpTests
     }
 
     [Test]
-    public async Task AdminSettings_AreSeededDisabledAndToggleGlobally()
+    public async Task AdminSettings_AreSeededEnabledAndToggleGlobally()
     {
         using var fixture = new DatabaseFixture();
         using var client = fixture.CreateClient();
 
         var seeded = await client.GetFromJsonAsync<AdminSetting[]>("/api/admin-settings");
+        var aiOff = await client.PutAsJsonAsync("/api/admin-settings/AIMode", new { isEnabled = false });
+        var cascaded = await client.GetFromJsonAsync<AdminSetting[]>("/api/admin-settings");
         var aiOn = await client.PutAsJsonAsync("/api/admin-settings/AIMode", new { isEnabled = true });
         var ragOn = await client.PutAsJsonAsync("/api/admin-settings/RAG", new { isEnabled = true });
         var enabled = await client.GetFromJsonAsync<AdminSetting[]>("/api/admin-settings");
-        var aiOff = await client.PutAsJsonAsync("/api/admin-settings/AIMode", new { isEnabled = false });
-        var cascaded = await client.GetFromJsonAsync<AdminSetting[]>("/api/admin-settings");
         var unknown = await client.PutAsJsonAsync("/api/admin-settings/Nope", new { isEnabled = true });
 
         Assert.Multiple(() =>
         {
-            Assert.That(seeded, Is.EqualTo(new[] { new AdminSetting("AIMode", false), new AdminSetting("MCP", false), new AdminSetting("RAG", false) }));
+            Assert.That(seeded, Is.EqualTo(new[] { new AdminSetting("AIMode", true), new AdminSetting("MCP", true), new AdminSetting("RAG", true) }));
+            Assert.That(aiOff.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            Assert.That(cascaded!.All(setting => !setting.IsEnabled), Is.True);
             Assert.That(aiOn.StatusCode, Is.EqualTo(HttpStatusCode.OK));
             Assert.That(ragOn.StatusCode, Is.EqualTo(HttpStatusCode.OK));
             Assert.That(enabled!.Where(setting => setting.IsEnabled).Select(setting => setting.Name), Is.EquivalentTo(new[] { "AIMode", "RAG" }));
-            Assert.That(aiOff.StatusCode, Is.EqualTo(HttpStatusCode.OK));
-            Assert.That(cascaded!.All(setting => !setting.IsEnabled), Is.True);
             Assert.That(unknown.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
         });
     }
