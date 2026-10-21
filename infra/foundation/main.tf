@@ -13,7 +13,7 @@ locals {
     "quests-achievements-notifications-service-db", "quests-achievements-notifications-service-backend",
     "quests-achievements-notifications-service-frontend",
     "leaderboard-analytics-service-backend", "leaderboard-analytics-service-frontend",
-    "database-initializer"
+    "database-initializer", "mcp-server", "rag-server"
   ])
   secret_consumers = {
     shared-db-api                                     = ["db-shared"]
@@ -22,15 +22,16 @@ locals {
     chat-discussion-service-db                        = ["db-chat-discussion"]
     quests-achievements-notifications-service-db      = ["db-quests"]
     shared-backend                                    = ["signing-private-key"]
-    garry-ai-service-backend                          = ["signing-public-key", "openrouter-api-key"]
-    mini-games-service-backend                        = ["signing-public-key"]
-    quizzes-courses-service-backend                   = ["signing-public-key"]
-    chat-discussion-service-backend                   = ["signing-public-key"]
-    quests-achievements-notifications-service-backend = ["signing-public-key", "openrouter-api-key"]
-    leaderboard-analytics-service-backend             = ["signing-public-key", "openrouter-api-key"]
+    garry-ai-service-backend                          = ["signing-public-key", "openrouter-api-key", "mcp-api-key"]
+    mini-games-service-backend                        = ["signing-public-key", "mcp-api-key"]
+    quizzes-courses-service-backend                   = ["signing-public-key", "mcp-api-key"]
+    chat-discussion-service-backend                   = ["signing-public-key", "mcp-api-key"]
+    quests-achievements-notifications-service-backend = ["signing-public-key", "openrouter-api-key", "mcp-api-key"]
+    leaderboard-analytics-service-backend             = ["signing-public-key", "openrouter-api-key", "mcp-api-key"]
+    mcp-server                                        = ["signing-public-key", "mcp-api-key"]
   }
   database_secrets = toset(["db-shared", "db-mini-games", "db-quizzes-courses", "db-chat-discussion", "db-quests"])
-  secret_names     = setunion(local.database_secrets, toset(["openrouter-api-key", "signing-private-key", "signing-public-key"]))
+  secret_names     = setunion(local.database_secrets, toset(["openrouter-api-key", "signing-private-key", "signing-public-key", "mcp-api-key"]))
 }
 
 import {

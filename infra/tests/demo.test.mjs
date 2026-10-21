@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { DemoController, loadFoundation, nativeDependencies } from '../scripts/demo.mjs';
-import { SERVICES, IMAGE_KEYS, HOUR, LOCK_WINDOW, beginUp, cleanupDue, canAcquireLock,
+import { SERVICES, IMAGE_KEYS, LEGACY_IMAGE_KEYS, HOUR, LOCK_WINDOW, beginUp, cleanupDue, canAcquireLock,
   assertPhase, releaseOrder, terraformVariables, validateFoundation, validateRelease } from '../scripts/control.mjs';
 
 const now = Date.parse('2026-10-20T10:00:00Z');
@@ -27,10 +27,10 @@ const foundation = {
   service_execution_role_arns: Object.fromEntries(IMAGE_KEYS.map(name => [name, role(`${name}-execution`)])),
   service_task_role_arns: Object.fromEntries(IMAGE_KEYS.map(name => [name, role(`${name}-task`)])),
   secret_arns: Object.fromEntries(['db-shared', 'db-mini-games', 'db-quizzes-courses', 'db-chat-discussion', 'db-quests',
-    'signing-private-key', 'signing-public-key', 'openrouter-api-key'].map(name =>
+    'signing-private-key', 'signing-public-key', 'openrouter-api-key', 'mcp-api-key'].map(name =>
     [name, `arn:aws:secretsmanager:${region}:${account}:secret:languagewise/demo/${name}-123456`])),
 };
-const release = (sequence = 1, character = 'a') => ({ sha: character.repeat(40), sequence,
+const release = (sequence = 1, character = 'a') => ({ schemaVersion: 2, sha: character.repeat(40), sequence,
   images: Object.fromEntries(IMAGE_KEYS.map(name => [name, `${foundation.repository_url}@sha256:${character.repeat(64)}`])) });
 const ready = () => ({ ...beginUp(undefined, undefined, release(), now).state, status: 'ready' });
 const conflict = () => Object.assign(new Error('Conditional write failed'), { code: 'ConditionalCheckFailedException' });
@@ -260,17 +260,19 @@ test('missing release never discards an existing disposable state', async () => 
   assert.ok(!fixture.calls.some(call => call.binary === 'terraform'));
 });
 
-for (const field of ['summary', 'detail']) {
-  test(`native Terraform failures classify ${field} without retaining raw output or secrets`, () => {
+for (const [resource, code] of [
+  ['aws_db_instance', 'InvalidParameterCombination'], ['aws_service_discovery_service', 'ResourceInUse'],
+]) for (const field of ['summary', 'detail']) {
+  test(`native Terraform failures classify ${resource} ${field} without retaining raw output or secrets`, () => {
     const sentinel = 'private-diagnostic-test-sentinel';
-    const event = { type: 'diagnostic', diagnostic: { severity: 'error', address: `aws_db_instance.${sentinel}`,
-      summary: `creating database ${sentinel}`, detail: '',
-      [field]: `creating RDS DB Instance (demo): operation error RDS: CreateDBInstance, InvalidParameterCombination: ${sentinel}` } };
+    const event = { type: 'diagnostic', diagnostic: { severity: 'error', address: `${resource}.${sentinel}`,
+      summary: `provider operation ${sentinel}`, detail: '',
+      [field]: `operation error: ${code}: ${sentinel}` } };
     const dependencies = nativeDependencies({}, undefined, () => {
       throw Object.assign(new Error(sentinel), { stdout: `${JSON.stringify(event)}\n`, stderr: sentinel });
     });
     assert.throws(() => dependencies.run('terraform', ['apply', '-json']), error => {
-      assert.equal(error.diagnostic, 'resource_type=aws_db_instance; code=InvalidParameterCombination; category=provider-or-unknown');
+      assert.equal(error.diagnostic, `resource_type=${resource}; code=${code}; category=provider-or-unknown`);
       assert.ok(!JSON.stringify(error).includes(sentinel));
       assert.ok(!error.message.includes(sentinel));
       assert.equal(error.stdout, undefined);
@@ -326,8 +328,8 @@ test('foundation handles a UTF-8 BOM in inline or file JSON without bypassing va
   assert.throws(() => loadFoundation('\uFEFF \r\n'), /FOUNDATION_CONFIG is required/);
 });
 
-test('manifest contains exact 18 Compose services plus initializer and immutable repository digests', () => {
-  assert.equal(SERVICES.length, 18);
+test('version 2 manifest contains exact 20 private services plus initializer and immutable repository digests', () => {
+  assert.equal(SERVICES.length, 20);
   assert.deepEqual(validateRelease(release(), foundation), release());
   for (const invalid of [
     { ...release(), sha: 'abc' }, { ...release(), sequence: '1' },
@@ -336,6 +338,32 @@ test('manifest contains exact 18 Compose services plus initializer and immutable
     { ...release(), images: { ...release().images, 'database-initializer': `other@sha256:${'a'.repeat(64)}` } },
     { ...release(), images: { ...release().images, 'database-initializer': `${foundation.repository_url}@sha256:${'a'.repeat(65)}` } },
   ]) assert.throws(() => validateRelease(invalid, foundation));
+});
+
+test('legacy manifests remain readable and destroyable but cannot start or replace a runtime', async () => {
+  const legacy = { sha: 'a'.repeat(40), sequence: 1,
+    images: Object.fromEntries(LEGACY_IMAGE_KEYS.map(name => [name, release().images[name]])) };
+  assert.deepEqual(validateRelease(legacy, foundation, { allowLegacy: true }), legacy);
+  assert.throws(() => validateRelease(legacy, foundation), /schema version 2/);
+  assert.throws(() => validateRelease({ ...legacy, schemaVersion: 2 }, foundation), /inventory/);
+  assert.throws(() => validateRelease({ ...release(), schemaVersion: 3 }, foundation, { allowLegacy: true }), /schema/);
+  assert.throws(() => terraformVariables(foundation, legacy, true), /only be destroyed/);
+  assert.throws(() => releaseOrder(release(), legacy), /conflict/);
+  const up = harness({ latest: legacy });
+  await assert.rejects(up.controller.execute('up'), /schema version 2/);
+  assert.ok(!up.calls.some(call => call.binary === 'terraform'));
+  assert.ok(!up.rows.has('quota#2026-10'));
+  const down = harness({ state: { ...ready(), desiredMode: 'down', release: legacy } });
+  await down.controller.execute('down');
+  assert.equal(down.state().status, 'down');
+  assert.ok(down.calls.some(call => call.variables?.release.schema_version === 1));
+  const repeated = harness({ state: down.state(), latest: legacy });
+  await repeated.controller.execute('down');
+  assert.equal(repeated.state().status, 'down');
+  assert.ok(repeated.calls.some(call => call.variables?.release.schema_version === 1));
+  const live = harness({ state: { ...ready(), release: legacy }, latest: legacy });
+  await assert.rejects(live.controller.execute('release', release(2, 'b')), /Down before migrating/);
+  assert.ok(!live.calls.some(call => call.binary === 'terraform'));
 });
 
 test('quota atomically reserves four nonrefundable hours and repeated Up preserves deadlines', () => {
@@ -369,8 +397,16 @@ test('release sequence is monotonic and SHA archives cannot change digests', () 
 
 test('Terraform variables expose only foundation, immutable release and boolean services switch', () => {
   assert.deepEqual(terraformVariables(foundation, release(), false), { foundation,
-    release: { sha: release().sha, images: release().images }, services_enabled: false });
+    release: { sha: release().sha, images: release().images, schema_version: 2 }, services_enabled: false });
   assert.throws(() => terraformVariables(foundation, release(), 'false'), /boolean/);
+});
+
+test('Terraform plans and applies bound simultaneous rolling service updates', async () => {
+  const fixture = harness();
+  await fixture.controller.execute('up');
+  const commands = fixture.calls.filter(call => call.binary === 'terraform' && ['plan', 'apply'].some(command => call.args.includes(command)));
+  assert.equal(commands.length, 4);
+  assert.ok(commands.every(call => call.args.includes('-parallelism=2')));
 });
 
 test('expired locks are never stolen and competing owner cannot be removed', async () => {
@@ -632,8 +668,8 @@ test('first Up accepts empty database metadata then requires current versions be
   const enable = fixture.calls.findIndex(call => call.variables?.services_enabled);
   const metadata = fixture.calls.map((call, index) => ({ ...call, index }))
     .filter(call => call.service === 'secretsmanager');
-  assert.equal(metadata.filter(call => call.index < seed).length, 8);
-  assert.equal(metadata.filter(call => call.index > seed && call.index < enable).length, 8);
+  assert.equal(metadata.filter(call => call.index < seed).length, 9);
+  assert.equal(metadata.filter(call => call.index > seed && call.index < enable).length, 9);
   assert.equal(fixture.state().status, 'ready');
 });
 
@@ -945,7 +981,7 @@ test('inactive ECS tag records require exact complete service proof in batches a
   await fixture.controller.execute('down');
   assert.equal(fixture.state().status, 'down');
   const checks = fixture.calls.filter(call => call.operation === 'describe-services');
-  assert.deepEqual(checks.map(call => call.input.services.length), [10, 8]);
+  assert.deepEqual(checks.map(call => call.input.services.length), [10, 10]);
   assert.deepEqual(checks.flatMap(call => call.input.services), serviceArns);
   assert.ok(checks.every(call => call.input.cluster === foundation.cluster_arn));
 });

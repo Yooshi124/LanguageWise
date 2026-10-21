@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 
 import chromadb
+from chromadb.utils.embedding_functions import DefaultEmbeddingFunction, ONNXMiniLM_L6_V2
 
 from rag.config import Settings
 
@@ -62,12 +64,51 @@ class Chunk:
     technical: bool
 
 
+class _SingleThreadedOnnxEmbedding(ONNXMiniLM_L6_V2):
+    @cached_property
+    def model(self):
+        options = self.ort.SessionOptions()
+        options.intra_op_num_threads = 1
+        options.inter_op_num_threads = 1
+        options.log_severity_level = 3
+        options.graph_optimization_level = self.ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        return self.ort.InferenceSession(
+            str(Path(self.DOWNLOAD_PATH) / self.EXTRACTED_FOLDER_NAME / "model.onnx"),
+            providers=["CPUExecutionProvider"],
+            sess_options=options,
+        )
+
+
+class _SingleThreadedDefaultEmbedding(chromadb.EmbeddingFunction):
+    def __init__(self):
+        self._engine = _SingleThreadedOnnxEmbedding()
+
+    @staticmethod
+    def name() -> str:
+        return DefaultEmbeddingFunction.name()
+
+    def get_config(self):
+        return DefaultEmbeddingFunction().get_config()
+
+    @staticmethod
+    def build_from_config(config):
+        DefaultEmbeddingFunction.validate_config(config)
+        return _SingleThreadedDefaultEmbedding()
+
+    def max_tokens(self) -> int:
+        return DefaultEmbeddingFunction().max_tokens()
+
+    def __call__(self, input):
+        return self._engine(input)
+
+
 def get_collection(settings: Settings) -> chromadb.Collection:
     settings.chroma_dir.mkdir(parents=True, exist_ok=True)
     client = chromadb.PersistentClient(path=str(settings.chroma_dir))
     return client.get_or_create_collection(
         name=settings.collection,
         metadata={"hnsw:space": "cosine"},
+        embedding_function=_SingleThreadedDefaultEmbedding(),
     )
 
 
@@ -147,6 +188,7 @@ def rebuild(settings: Settings) -> int:
     collection = client.get_or_create_collection(
         name=settings.collection,
         metadata={"hnsw:space": "cosine"},
+        embedding_function=_SingleThreadedDefaultEmbedding(),
     )
 
     ids: list[str] = []
