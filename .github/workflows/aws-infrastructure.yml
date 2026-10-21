@@ -57,6 +57,13 @@ jobs:
       - run: terraform -chdir=infra/${{ matrix.root }} validate
       - if: matrix.root == 'demo'
         run: terraform -chdir=infra/demo test
+      - if: matrix.root == 'demo'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Reproduce discovery refresh with the pinned native provider offline
+        if: matrix.root == 'demo'
+        run: node infra/scripts/check-discovery-refresh.mjs
 
   garry:
     runs-on: ubuntu-24.04

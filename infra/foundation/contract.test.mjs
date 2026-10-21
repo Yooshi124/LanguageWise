@@ -19,6 +19,14 @@ const demoDatabase = read('../demo/database.tf');
 const statement = sid => permissions.split(`Sid`).slice(1)
   .find(block => new RegExp(`^\\s*= "${sid}"`).test(block)).split(/\r?\n    \},?/)[0];
 
+test('discovery preserves the existing absent custom-health configuration on reapply', () => {
+  const discovery = demoServices.split('resource "aws_service_discovery_service" "app" {')[1]
+    .split('resource "aws_ecs_task_definition"')[0];
+  assert.doesNotMatch(discovery, /health_check_custom_config|force_destroy|ignore_changes/);
+  assert.match(discovery, /routing_policy = "MULTIVALUE"/);
+  assert.match(discovery, /type = "A"/);
+});
+
 test('EC2 creation authorizes new tagged resources separately from tagged parents', () => {
   const creation = statement('CreateTaggedNetwork');
   assert.match(creation, /Condition = local\.demo_creation/);
@@ -175,17 +183,17 @@ test('flat output names exactly match the script interface', () => {
   assert.match(cleanup, /name\s*= "TF_VAR_foundation"/);
 });
 
-test('role keys are precisely Compose minus shared-db and MCP/RAG plus the initializer', () => {
+test('role keys are precisely Compose minus shared-db plus the initializer', () => {
   const compose = read('../../docker-compose.yml').split(/^services:\s*$/m)[1];
   assert.ok(compose);
   const expected = [...compose.matchAll(/^  ([a-z][a-z0-9-]*):\s*$/gm)]
     .map((match) => match[1])
-    .filter((name) => !['shared-db', 'mcp-server', 'rag-server'].includes(name));
-  assert.equal(expected.length, 18);
+    .filter((name) => name !== 'shared-db');
+  assert.equal(expected.length, 20);
   const serviceBlock = main.match(/services\s*= toset\(\[([\s\S]*?)\]\)/)[1];
   const actual = [...serviceBlock.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
   assert.deepEqual(actual.toSorted(), [...expected, 'database-initializer'].toSorted());
-  assert.equal(new Set(actual).size, 19);
+  assert.equal(new Set(actual).size, 21);
   assert.match(identity, /for_each\s*= local\.services/g);
   for (const service of actual) {
     assert.ok(`lw-demo-exec-${service}`.length <= 64, service);
@@ -204,7 +212,14 @@ test('secret consumers do not leak signing or OpenRouter to other services', () 
     'garry-ai-service-backend', 'leaderboard-analytics-service-backend',
     'quests-achievements-notifications-service-backend',
   ]);
-  assert.equal(using('signing-public-key').length, 6);
+  assert.equal(using('signing-public-key').length, 7);
+  assert.deepEqual(using('mcp-api-key'), [
+    'chat-discussion-service-backend', 'garry-ai-service-backend', 'leaderboard-analytics-service-backend',
+    'mcp-server', 'mini-games-service-backend', 'quests-achievements-notifications-service-backend',
+    'quizzes-courses-service-backend',
+  ]);
+  assert.deepEqual(consumers['mcp-server'], ['signing-public-key', 'mcp-api-key']);
+  assert.equal(consumers['rag-server'], undefined);
   for (const [service, secrets] of Object.entries(consumers)) {
     assert.ok(!service.endsWith('-frontend'));
     assert.ok(secrets.length > 0);

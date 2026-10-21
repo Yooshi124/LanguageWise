@@ -18,21 +18,24 @@ retained and supplied as nonsecret values, not remote-state secret lookups.
   The deployment/control roles and retained control identifiers belong to the
   controller; this root does not assume or modify those roles.
 - Both service role maps contain every Compose name except `shared-db`,
-  `mcp-server` and `rag-server`, plus `database-initializer`. Supply a minimal task role even for containers that do
+  plus `database-initializer`. Supply a minimal task role even for containers that do
   not use AWS APIs directly.
 - `secret_arns` contains `db-shared`, `db-mini-games`, `db-quizzes-courses`,
   `db-chat-discussion`, `db-quests`, `openrouter-api-key`, `signing-private-key`
-  and `signing-public-key`. These are metadata ARNs only.
-- `release` contains the tested 40-character `sha` and exactly nineteen
-  `images`, keyed by those same eighteen Compose names plus
+  `signing-public-key` and `mcp-api-key`. These are metadata ARNs only.
+- `release` contains `schema_version=2`, the tested 40-character `sha` and exactly twenty-one
+  `images`, keyed by those same twenty Compose names plus
   `database-initializer`. All images must be immutable digests in the single
-  `foundation.repository_url`. Do not include `shared-db`, MCP or RAG.
+  `foundation.repository_url`. Do not include `shared-db`.
+- Legacy manifests omit the version and contain nineteen images. The controller
+  translates them to `schema_version=1` only for cleanup. Their original eighteen
+  task/image inventory still resolves; enabling services requires version 2.
 
 ## Two Phases
 
 1. Under the retained controller/state locks, apply with
    `services_enabled=false` (the default). This creates all infrastructure,
-   eighteen application task definitions and the initializer definition, but
+  twenty application task definitions and the initializer definition, but
    **no ECS application services**.
 2. Start one Fargate task using `initializer_task_definition_arn`, the foundation
    cluster, `subnet_ids`, `initializer_security_group_ids`, public IP assignment
@@ -40,7 +43,7 @@ retained and supplied as nonsecret values, not remote-state secret lookups.
    exit code zero from container `database-initializer`. A successful RunTask
    API response is not evidence of successful initialization.
 3. Only then apply the same release with `services_enabled=true`. Terraform
-   creates eighteen one-replica services and waits for steady state. The ALB
+  creates twenty one-replica services and waits for steady state. The ALB
    detaches its initial CloudFront managed-prefix-list SG and retains only the
    SG admitting CloudFront's service-managed VPC-origin SG.
 4. Repeated Up or a live release must not perform phase one or rerun the
@@ -91,8 +94,18 @@ The current app-side changes are outside this root's ownership:
   `$scheme`; passing these environment values alone does not fix it.
 - Authentication must consume `Auth__SigningKeyPem` and
   `Auth__VerificationKeyPem` while preserving local file fallback.
-- Honor `Mcp__Enabled=false` and `Rag__Enabled=false`; especially shared's RAG
-  path must return unavailable without attempting the host-local default.
+- Preserve disabled MCP/RAG behavior for unit CI. AWS enables MCP only on Garry
+  and the five feature backends, using private `/mcp` and the injected MCP key.
+  Shared and MCP use RAG privately on port 8100. Only MCP and its six callers
+  receive the MCP key; MCP also receives the public verification key, never
+  OpenRouter or the private signing key. RAG receives no injected secrets.
+
+MCP listens on 8080 and RAG on 8100. RAG's ECS health probe uses Python urllib,
+with a 300-second startup grace, not unavailable curl. The image contains the
+model cache; corpus/index and technical key are ephemeral per task. No EFS or
+public tool route is added. Terraform uses parallelism two for bounded rolling
+overlap. Cloud Map must omit the empty custom-health block to avoid provider
+6.69.1 replacement drift; never force-delete in-use discovery services.
 
 All HTTP service endpoints use Compose-label names under
 `languagewise.internal`; no host-address endpoint is configured. Ingress is

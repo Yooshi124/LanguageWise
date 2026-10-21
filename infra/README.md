@@ -1,6 +1,29 @@
 # AWS Demo Infrastructure
 
-**The latest Demo Up failed before readiness; application readiness is unverified.**
+## Current Follow-up: 2026-10-21
+
+See the [MCP/RAG and reliable redeployment plan](../docs/aws-mcp-rag-and-redeployment-plan.md)
+for implementation evidence, continued local development and the live-update
+repair. Up `39424991893` succeeded and the owner verified app access,
+AI and database reads. The subsequent release `39426732157` failed on in-use Cloud
+Map service deletion; fallback teardown and queued Down `39430924116` succeeded.
+Fresh checks verify Down at revision 46, no lock and no runtime residuals. Native
+provider 6.69.1 reproduces the empty custom-health block replacement offline;
+omitting it produces no-op. The original incident plan remains unavailable.
+The private 20-service/21-image integration passes local contracts, Terraform
+tests and 26 real-container E2E checks. RAG fits 0.5 CPU/1 GiB offline after
+bounding ONNX threads and baking its model cache; no size or limit was raised.
+Authorized AWS preparation created four roles, two execution policies and an
+empty MCP secret entry, and updated six exact secret-consumer policies. Cleanup
+source/configuration and control state are unchanged. The owner must populate
+`languagewise/demo/mcp-api-key` as raw plaintext before coordinated cleanup and
+GitHub metadata cutover. No push, merge or Up has been performed or authorized.
+Keep the temporary Down-before-merge procedure until a real active-demo image
+update succeeds. Notes below retain earlier rollout history.
+
+## Earlier Rollout History
+
+**Earlier Demo Up failed before readiness; application readiness was unverified.**
 Run `39412985687` on merged/tested/released `b3e0b6d` passed RDS creation and
 database initialization, then failed in the services apply. CloudTrail records
 18 `ecs:ListServiceDeployments` denials for the control role at 11:29:12-14 UTC.
@@ -315,11 +338,12 @@ and access key remain outside Terraform; no replacement key is required.
 8. **Current step:** merge the reviewed implementation and outstanding fixes into
    protected `master` only after their latest CI passes. If already merged, check
    the resulting release rather than merging again. The `AWS Release` workflow waits for successful
-   CI of that exact SHA, publishes all nineteen immutable image digests and records
+   CI of that exact SHA, publishes all twenty-one immutable image digests and records
    the release. It must **not** create runtime resources while mode is Down.
    A manual release dispatch reuses an already-published SHA instead of changing
    its release identity. Required workflows must be enabled and succeed; missing
-   runs fail closed. MCP CI remains a source-quality gate, not an MCP deployment.
+   runs fail closed. MCP, RAG and real-container AI E2E are mandatory gates;
+   AWS infrastructure CI also runs Garry's .NET tests.
 
 ## Demo Buttons
 
@@ -332,7 +356,7 @@ lock and Terraform S3 lock.
 **Up** selects the latest tested manifest, verifies cleanup readiness and required
 non-database secrets, then reserves four billed hours atomically. It creates
 infrastructure with application services disabled, runs the one-off initializer,
-checks its exit code and published database-secret metadata, then starts eighteen
+checks its exit code and published database-secret metadata, then starts twenty
 services. It waits for steady state and checks HTTPS, canonical routes and five
 federation entries. The run reports the current CloudFront URL and expiry.
 
@@ -420,7 +444,7 @@ state. Only administrative foundation setup can change this provenance.
   initializer can publish only the five database credential secrets. Four .NET
   database images and PostgREST carry the RDS CA bundle and verify TLS.
 - Image pruning expires only untagged images automatically. Review tagged
-  releases manually, retaining all nineteen digests for current/previous
+   releases manually, retaining all twenty-one digests for current/previous
   compatible manifests. Keep ECR within 10 GB and source/state/artifacts within
   5 GB; versioning/lifecycle are not byte quotas. No paid scanning, NAT, resolver
   endpoint, premium insight or customer-managed encryption key is added.
@@ -436,7 +460,8 @@ These do not prove current GitHub CI status, live AWS permissions or operation.
 
 Before using this for a presentation, perform two complete Up/Down cycles. Verify
 seed accounts/login, Secure cookies, all remote pages, durable writes during task
-replacement, authenticated Garry streaming, and clean disabled MCP/RAG responses.
+replacement, authenticated Garry streaming, private feature tools/docs retrieval,
+and authorized-user boundaries. Preserve disabled-service behavior for local CI.
 Exercise failed Up, an unhealthy release/rollback, expired lease, a merge while
 Down, a merge while Up, and independent cleanup with the GitHub key disabled.
 Confirm all paid residuals are gone, measure transition time/idle charges, and

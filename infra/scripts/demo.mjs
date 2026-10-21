@@ -44,7 +44,7 @@ export function nativeDependencies(env = process.env, request = fetch, execute =
             'InvalidParameterValue', 'InvalidParameterValueException', 'InvalidArgument', 'InvalidInput',
             'InsufficientDBInstanceCapacity', 'DBInstanceAlreadyExists', 'DBSubnetGroupDoesNotCoverEnoughAZs',
             'InvalidVPCNetworkStateFault', 'InvalidSubnet', 'KMSKeyNotAccessibleFault', 'ThrottlingException',
-            'LimitExceededException', 'ServiceQuotaExceededException'];
+            'LimitExceededException', 'ServiceQuotaExceededException', 'ResourceInUse'];
           const summaries = ['Invalid combination of arguments', 'Missing required argument', 'Unsupported argument',
             'Unsupported attribute', 'Provider produced inconsistent final plan', 'Invalid function argument', 'Invalid index'];
           const diagnostics = [];
@@ -312,7 +312,7 @@ export class DemoController {
     const path = join(this.directory, 'latest.json');
     try {
       this.aws('s3api', 'get-object', { Bucket: this.config.artifact_bucket_name, Key: 'releases/latest.json' }, 60_000, [path]);
-      return validateRelease(JSON.parse(readFileSync(path, 'utf8')), this.config);
+      return validateRelease(JSON.parse(readFileSync(path, 'utf8')), this.config, { allowLegacy: true });
     } catch (error) { if (error.code === 'NoSuchKey') return undefined; throw error; }
   }
 
@@ -325,7 +325,7 @@ export class DemoController {
     } catch (error) {
       const archive = join(this.directory, 'archive.json');
       this.aws('s3api', 'get-object', { Bucket: input.Bucket, Key: `releases/${release.sha}.json` }, 60_000, [archive]);
-      requireThat(releaseOrder(release, validateRelease(JSON.parse(readFileSync(archive, 'utf8')), this.config)) === 'same', 'Immutable archive conflict');
+      requireThat(releaseOrder(release, validateRelease(JSON.parse(readFileSync(archive, 'utf8')), this.config, { allowLegacy: true })) === 'same', 'Immutable archive conflict');
     }
     const previous = this.readRelease();
     releaseOrder(release, previous);
@@ -453,8 +453,8 @@ export class DemoController {
     invoke(['init', '-input=false', '-reconfigure', `-backend-config=bucket=${this.config.state_bucket_name}`,
       `-backend-config=key=${this.config.demo_state_key}`, `-backend-config=region=${this.config.region}`,
       '-backend-config=workspace_key_prefix=demo/workspaces', '-backend-config=use_lockfile=true']);
-    invoke(['plan', '-json', '-input=false', '-lock-timeout=60s', ...(destroy ? ['-destroy'] : []), `-var-file=${variables}`, `-out=${plan}`]);
-    invoke(['apply', '-json', '-input=false', '-lock-timeout=60s', plan]);
+    invoke(['plan', '-json', '-input=false', '-parallelism=2', '-lock-timeout=60s', ...(destroy ? ['-destroy'] : []), `-var-file=${variables}`, `-out=${plan}`]);
+    invoke(['apply', '-json', '-input=false', '-parallelism=2', '-lock-timeout=60s', plan]);
     this.assertLock();
     return JSON.parse(invoke(['output', '-json']));
   }
@@ -489,7 +489,7 @@ export class DemoController {
   async smoke(outputs) {
     const state = this.phase();
     const names = outputs.service_names?.value;
-    requireThat(Array.isArray(names) && names.length === SERVICES.length && SERVICES.every(name => names.includes(`languagewise-demo-${name}`)), 'Expected 18 ECS service names');
+    requireThat(Array.isArray(names) && names.length === SERVICES.length && SERVICES.every(name => names.includes(`languagewise-demo-${name}`)), 'Expected complete version 2 ECS service inventory');
     while (true) {
       this.phase();
       const services = [];
@@ -498,7 +498,7 @@ export class DemoController {
         requireThat(!result.failures?.length, 'ECS services missing');
         services.push(...(result.services ?? []));
       }
-      if (services.length === 18 && services.every(service => service.status === 'ACTIVE' && service.desiredCount === 1
+      if (services.length === SERVICES.length && services.every(service => service.status === 'ACTIVE' && service.desiredCount === 1
         && service.runningCount === 1 && service.pendingCount === 0 && service.deployments?.length === 1
         && service.deployments[0].rolloutState === 'COMPLETED')) break;
       this.dependencies.sleep(10_000);
@@ -603,7 +603,7 @@ export class DemoController {
     this.assertLock();
     const state = this.state();
     requireThat(state?.desiredMode === 'down', 'Down intent changed');
-    const release = state.release ? validateRelease(state.release, this.config) : this.readRelease();
+    const release = state.release ? validateRelease(state.release, this.config, { allowLegacy: true }) : this.readRelease();
     if (!release) {
       try {
         this.aws('s3api', 'get-object', { Bucket: this.config.state_bucket_name, Key: this.config.demo_state_key },
@@ -658,6 +658,7 @@ export class DemoController {
           this.dependencies.report('Demo already requested Up; lease, quota and initializer unchanged.');
           return;
         }
+        validateRelease(release, this.config);
         this.verifySecrets(true);
         const next = this.reserve(previous, release);
         try {
@@ -683,7 +684,8 @@ export class DemoController {
         requireThat(state.status === 'ready', 'Cannot release into an incomplete Up');
         this.phase();
         this.verifySecrets();
-        const previous = validateRelease(state.release, this.config);
+        const previous = validateRelease(state.release, this.config, { allowLegacy: true });
+        requireThat(previous.schemaVersion === 2, 'Run Down before migrating a legacy live runtime');
         try {
           const outputs = this.terraform(release, true);
           await this.smoke(outputs);

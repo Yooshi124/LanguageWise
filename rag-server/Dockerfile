@@ -16,6 +16,7 @@ COPY rag/ rag/
 COPY corpus/ corpus/
 COPY server.py ingest.py startup.py ./
 USER app
+RUN python -c "from chromadb.utils.embedding_functions import DefaultEmbeddingFunction; DefaultEmbeddingFunction()(['LanguageWise model cache warmup'])"
 EXPOSE 8100
 HEALTHCHECK --interval=10s --timeout=5s --start-period=300s --retries=6 CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=3)" || exit 1
 ENTRYPOINT ["python", "startup.py"]
