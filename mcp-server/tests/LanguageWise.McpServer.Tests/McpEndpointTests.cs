@@ -268,6 +268,39 @@ public sealed class McpEndpointTests
 	}
 
 	[Test]
+	public async Task WhenRagSwitchedOff_DocsSearchIsHiddenAndRejected()
+	{
+		using var ragOff = new McpServerFactory();
+		ragOff.Switches.State = new AdminSwitchState(AiMode: true, Mcp: true, Rag: false);
+		await using var client = await ragOff.CreateMcpClientAsync("games", ragOff.CreateUserToken());
+
+		var tools = await client.ListToolsAsync();
+
+		Assert.That(tools.Select(t => t.Name), Is.EquivalentTo(new[] { "games_get_completion_stats", "games_list_game_languages" }));
+		Assert.ThrowsAsync<McpProtocolException>(async () =>
+			await client.CallToolAsync("docs_search", new Dictionary<string, object?> { ["query"] = "mini games" }));
+		Assert.That(ragOff.Downstream.Requests, Is.Empty);
+	}
+
+	[Test]
+	public async Task WhenMcpSwitchedOff_McpEndpointReturns503()
+	{
+		using var mcpOff = new McpServerFactory();
+		mcpOff.Switches.State = new AdminSwitchState(AiMode: true, Mcp: false, Rag: true);
+		using var client = mcpOff.CreateClient();
+		using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
+		{
+			Content = new StringContent("""{"jsonrpc":"2.0","id":1,"method":"tools/list"}""", Encoding.UTF8, "application/json")
+		};
+		request.Headers.Add(McpHeaders.ApiKey, McpServerFactory.ApiKey);
+
+		var response = await client.SendAsync(request);
+
+		Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.ServiceUnavailable));
+		Assert.That(await response.Content.ReadAsStringAsync(), Does.Contain("mcp_disabled"));
+	}
+
+	[Test]
 	public async Task DocsSearch_QueriesGeneralRagEndpointAndReturnsPassages()
 	{
 		factory.Downstream.Body = """

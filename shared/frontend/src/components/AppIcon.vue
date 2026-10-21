@@ -4,6 +4,7 @@ import {
   mdiBookOpenPageVariantOutline,
   mdiChartBoxOutline,
   mdiClose,
+  mdiCogOutline,
   mdiControllerClassicOutline,
   mdiForumOutline,
   mdiHomeOutline,
@@ -29,6 +30,7 @@ const icons: Record<AppIconName, string> = {
   menu: mdiMenu,
   profile: mdiAccountCircleOutline,
   quests: mdiTrophyOutline,
+  settings: mdiCogOutline,
 }
 </script>
 

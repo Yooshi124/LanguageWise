@@ -31,7 +31,7 @@ locals {
       shared-frontend                       = concat(["shared-backend"], [for feature in local.features : "${feature}-service-frontend"], [for feature in local.features : "${feature}-service-backend"])
       shared-backend                        = ["shared-db-api", "quests-achievements-notifications-service-backend", "garry-ai-service-backend", "rag-server"]
       leaderboard-analytics-service-backend = ["quizzes-courses-service-backend", "garry-ai-service-backend", "mcp-server"]
-      garry-ai-service-backend              = ["mcp-server"]
+      garry-ai-service-backend              = ["mcp-server", "shared-db-api"]
       mcp-server                            = concat([for feature in local.features : "${feature}-service-backend"], ["rag-server"])
       chat-discussion-service-db            = ["quizzes-courses-service-db", "shared-db-api"]
     }
@@ -60,6 +60,9 @@ locals {
       leaderboard-analytics-service-backend = {
         Services__QuizzesCourses = local.endpoint["quizzes-courses-service-backend"]
         Services__Garry          = local.endpoint["garry-ai-service-backend"]
+      }
+      garry-ai-service-backend = {
+        Services__Database = local.endpoint["shared-db-api"]
       }
       chat-discussion-service-db = {
         Services__Courses = local.endpoint["quizzes-courses-service-db"]

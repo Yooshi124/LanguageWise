@@ -7,6 +7,7 @@ var connectionString = builder.Configuration["Database:ConnectionString"]
     ?? throw new InvalidOperationException("Database:ConnectionString must be configured.");
 
 builder.Services.AddSingleton(new UserRepository(connectionString));
+builder.Services.AddSingleton(new AdminSettingsRepository(connectionString));
 builder.Services.AddSingleton(new ImageStore(builder.Configuration["Images:Path"] ?? "data/images"));
 builder.Services.AddSingleton(serviceProvider => new DatabaseInitializer(
     connectionString,
@@ -38,9 +39,15 @@ app.MapPost("/api/users/verify", (LoginInput input, UserRepository users) =>
 
     var userId = users.Verify(input.Username, input.Password);
     return userId is not null
-        ? Results.Ok(new { authenticated = true, userId })
+        ? Results.Ok(new { authenticated = true, userId, isAdmin = users.IsAdmin(userId.Value) })
         : Results.Unauthorized();
 });
+
+app.MapGet("/api/admin-settings", (AdminSettingsRepository settings) =>
+    Results.Ok(settings.GetAll()));
+
+app.MapPut("/api/admin-settings/{name}", (string name, AdminSettingInput input, AdminSettingsRepository settings) =>
+    settings.Set(name, input.IsEnabled) is { } updated ? Results.Ok(updated) : Results.NotFound());
 
 app.MapGet("/api/users", (int[] ids, UserRepository users) =>
     Results.Ok(users.GetUsernames(ids)));
@@ -136,5 +143,7 @@ app.Run();
 internal sealed record LoginInput(string Username, string Password);
 
 internal sealed record CreateUserInput(string Username, string Password);
+
+internal sealed record AdminSettingInput(bool IsEnabled);
 
 internal sealed record UpdateUserInput(string? Username, string? Password);

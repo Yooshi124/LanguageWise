@@ -46,6 +46,7 @@ services:
       Services__QuestsAchievements: http://quests-achievements-notifications-service-backend:8080
       Services__LeaderboardAnalytics: http://leaderboard-analytics-service-backend:8080
       Services__Rag: http://rag-server:8100
+      Services__Database: http://shared-db-api:8080
     secrets:
       - signing_public_key
       - mcp_api_key
@@ -66,6 +67,7 @@ services:
       OpenRouter__BaseUrl: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       OpenRouter__Model: ${OPENROUTER_MODEL:-google/gemma-4-26b-a4b-it}
       OpenRouter__MaxOutputTokens: ${OPENROUTER_MAX_OUTPUT_TOKENS:-1024}
+      Services__Database: http://shared-db-api:8080
       Auth__VerificationKeyPath: /run/secrets/signing_public_key
       Mcp__Enabled: "true"
       Mcp__Endpoint: http://mcp-server:8080/mcp

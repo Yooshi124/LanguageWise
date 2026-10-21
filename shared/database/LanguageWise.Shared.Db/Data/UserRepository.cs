@@ -29,6 +29,18 @@ public sealed class UserRepository(string connectionString)
         return result is int id ? id : null;
     }
 
+    public bool IsAdmin(int userId)
+    {
+        using var connection = new NpgsqlConnection(connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT IsAdmin FROM Users WHERE Id = @userId;";
+        command.Parameters.AddWithValue("userId", userId);
+
+        return command.ExecuteScalar() is true;
+    }
+
     public UserAccountResult Create(string username, string password)
     {
         using var connection = new NpgsqlConnection(connectionString);

@@ -28,6 +28,21 @@ public sealed class CompletionEndpointTests
     }
 
     [Test]
+    public async Task Completion_WhenAiModeSwitchedOff_ReturnsServiceUnavailable()
+    {
+        using var fixture = new GarryFixture();
+        fixture.Switches.State = AdminSwitchState.AllOff;
+        using var client = fixture.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", fixture.CreateToken());
+
+        using var response = await client.PostAsJsonAsync("/api/completions", ValidRequest("game rules"));
+        var content = await response.Content.ReadAsStringAsync();
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.ServiceUnavailable));
+        Assert.That(content, Does.Contain("ai_disabled"));
+    }
+
+    [Test]
     public async Task Completion_StreamsAndLimitsAcrossDifferentDomains()
     {
         using var fixture = new GarryFixture();
@@ -92,6 +107,8 @@ public sealed class CompletionEndpointTests
         private readonly RSA rsa = RSA.Create(2048);
         private readonly string keyPath = Path.Combine(Path.GetTempPath(), $"garry-test-{Guid.NewGuid():N}.pem");
 
+        internal StubAdminSwitches Switches { get; } = new();
+
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             File.WriteAllText(keyPath, rsa.ExportSubjectPublicKeyInfoPem());
@@ -106,6 +123,8 @@ public sealed class CompletionEndpointTests
             {
                 services.RemoveAll<IHttpClientFactory>();
                 services.AddSingleton<IHttpClientFactory>(new OpenRouterFactory(openRouterResponseBody));
+                services.RemoveAll<IAdminSwitches>();
+                services.AddSingleton<IAdminSwitches>(Switches);
             });
         }
 
