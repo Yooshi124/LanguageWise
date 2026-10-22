@@ -3,7 +3,8 @@ defineProps({
     title: { type: String, required: true },
     message: { type: String, default: '' },
     tone: { type: String, default: 'neutral' },
-    retryLabel: { type: String, default: '' }
+    retryLabel: { type: String, default: '' },
+    image: { type: String, default: '' }
 });
 
 defineEmits(['retry']);
@@ -11,6 +12,7 @@ defineEmits(['retry']);
 
 <template>
     <div class="lw-card lw-state" :class="{ 'lw-state--error': tone === 'error' }">
+        <img v-if="image" class="garry-mood" :src="image" alt="" aria-hidden="true">
         <h2 class="lw-card__title">{{ title }}</h2>
         <p v-if="message" class="lw-card__hint">{{ message }}</p>
         <slot></slot>

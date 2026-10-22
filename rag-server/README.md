@@ -17,10 +17,18 @@ rebuilds and verifies its searchable index before starting HTTP on every start o
 restart. Missing/empty corpus or failed ingestion prevents startup instead of
 serving an empty index. `/health` becomes available only after this verification.
 
-The first start downloads the CPU-local `all-MiniLM-L6-v2` embedding model and
-therefore needs internet access, but no GPU or embedding API key. Named volumes
+The image build downloads the CPU-local `all-MiniLM-L6-v2` embedding model;
+a fresh container can index and serve queries offline, without a GPU or embedding API key. Named volumes
 persist `/data` (Chroma and the generated technical key) and the embedding cache.
 The image runs as a non-root user.
+
+ONNX inference uses one native thread per direction, so container CPU quotas do
+not compete with a thread pool sized for all host CPUs. Existing host index
+configuration and Compose volumes remain compatible. An embedding adapter retains
+Chroma's serialized `default` identity without subclassing `DefaultEmbeddingFunction`,
+whose subclasses Chroma bypasses when dispatching collection queries. The AWS task uses ephemeral
+index/key storage; `node infra/scripts/measure-rag.mjs IMAGE` measures fresh-task
+startup, memory, disk and retrieval under the approved 0.5-CPU/1-GiB limits.
 
 The corpus is bundled Markdown, not generated documentation. After editing it:
 

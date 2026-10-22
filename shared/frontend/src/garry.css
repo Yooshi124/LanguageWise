@@ -127,6 +127,8 @@
 .docs-search-results__text table { width: 100%; margin: .5em 0; border-collapse: collapse; font-size: .85rem; }
 .docs-search-results__text th, .docs-search-results__text td { padding: 4px 8px; border: 1px solid #e5e7ef; text-align: left; }
 
+.garry-mood { display: block; width: 120px; height: auto; margin: 0 auto 1rem; object-fit: contain; }
+
 @keyframes garry-bounce { 0%, 60%, 100% { transform: translateY(0); opacity: .45; } 30% { transform: translateY(-4px); opacity: 1; } }
 
 @media (max-width: 600px) {

@@ -69,6 +69,11 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
 app.MapGet("/health", () => Results.Ok()).AllowAnonymous();
+app.MapGet("/api/availability", async (IAdminSwitches adminSwitches, IConfiguration configuration, CancellationToken cancellationToken) =>
+{
+    var switches = await adminSwitches.RefreshAsync(cancellationToken);
+    return Results.Ok(new { aiAvailable = switches.AiMode && !string.IsNullOrWhiteSpace(configuration["OpenRouter:ApiKey"]) });
+});
 app.MapPost("/api/completions", async (
     CompletionRequest? request,
     HttpContext context,

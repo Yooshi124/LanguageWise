@@ -1,0 +1,104 @@
+{
+  "students": [
+    {
+      "id": "student-1",
+      "name": "Mini Games",
+      "owner": "Kyan",
+      "service": "mini-games-service",
+      "endpoints": [
+        {
+          "method": "POST",
+          "route": "/api/guess-the-word/guess",
+          "source": "mini-games-service/backend/LanguageWise.MiniGamesService.Api/Program.cs",
+          "test": "GuessTheWord_InitThenCorrectGuess_CompletesTheRound"
+        },
+        {
+          "method": "POST",
+          "route": "/api/word-search/guess",
+          "source": "mini-games-service/backend/LanguageWise.MiniGamesService.Api/Program.cs",
+          "test": "WordSearch_InitThenGuessTheFeaturedWord_ReturnsAMatch"
+        }
+      ]
+    },
+    {
+      "id": "student-2",
+      "name": "Discussion / Chat Forum",
+      "owner": "Lachlan",
+      "service": "chat-discussion-service",
+      "endpoints": [
+        {
+          "method": "POST",
+          "route": "/api/posts",
+          "source": "chat-discussion-service/backend/LanguageWise.ChatDiscussionService.Api/Endpoints/PostEndpoints.cs",
+          "test": "CreatePost_WithBearerToken_ReturnsCreated"
+        },
+        {
+          "method": "DELETE",
+          "route": "/api/comments/{id:int}",
+          "source": "chat-discussion-service/backend/LanguageWise.ChatDiscussionService.Api/Endpoints/CommentEndpoints.cs",
+          "test": "DeleteComment_WhenCallerIsNotTheAuthor_ReturnsForbidden"
+        }
+      ]
+    },
+    {
+      "id": "student-3",
+      "name": "Quizzes and Courses",
+      "owner": "Justin",
+      "service": "quizzes-courses-service",
+      "endpoints": [
+        {
+          "method": "POST",
+          "route": "/api/quizzes/{quizId:int}/attempts",
+          "source": "quizzes-courses-service/backend/LanguageWise.QuizzesCoursesService.Api/Program.cs",
+          "test": "StartQuizAttemptAsync_SendsTheAuthenticatedUserToTheInternalService"
+        },
+        {
+          "method": "POST",
+          "route": "/api/quiz-attempts/{attemptId:int}/submit",
+          "source": "quizzes-courses-service/backend/LanguageWise.QuizzesCoursesService.Api/Program.cs",
+          "test": "RecordQuizResultAsync_SendsQuizScoreDescription"
+        }
+      ]
+    },
+    {
+      "id": "student-4",
+      "name": "Achievements / Notifications",
+      "owner": "Amber",
+      "service": "quests-achievements-notifications-service",
+      "endpoints": [
+        {
+          "method": "GET",
+          "route": "/api/profile",
+          "source": "quests-achievements-notifications-service/backend/LanguageWise.QuestsAchievementsNotificationsService.Api/Program.cs",
+          "test": "Profile_WithBearerToken_ReturnsProfile"
+        },
+        {
+          "method": "PUT",
+          "route": "/api/preferences",
+          "source": "quests-achievements-notifications-service/backend/LanguageWise.QuestsAchievementsNotificationsService.Api/Program.cs",
+          "test": "Preferences_WhenAllNotificationsAreEnabled_StoresAndSendsWelcome"
+        }
+      ]
+    },
+    {
+      "id": "student-5",
+      "name": "Leaderboard / Analytics",
+      "owner": "Roan",
+      "service": "leaderboard-analytics-service",
+      "endpoints": [
+        {
+          "method": "GET",
+          "route": "/api/my-language-rankings",
+          "source": "leaderboard-analytics-service/backend/LanguageWise.LeaderboardAnalyticsService.Api/Program.cs",
+          "test": "MyLanguageRankings_ComputesScoreLanguageAndGlobalRank"
+        },
+        {
+          "method": "POST",
+          "route": "/api/lessons-completed-summary",
+          "source": "leaderboard-analytics-service/backend/LanguageWise.LeaderboardAnalyticsService.Api/Program.cs",
+          "test": "Summary_WithBearerToken_ReturnsSummaryPayload"
+        }
+      ]
+    }
+  ]
+}

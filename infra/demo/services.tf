@@ -12,28 +12,34 @@ locals {
     chat-discussion-service-db                   = "db-chat-discussion"
     quests-achievements-notifications-service-db = "db-quests"
   }
-  names = setunion(local.frontends, local.backends, toset(keys(local.database_secrets)))
-  ports = { for name in local.names : name => (
-    contains(local.frontends, name) ? 80 : name == "quests-achievements-notifications-service-db" ? 3000 : 8080
+  legacy_names  = setunion(local.frontends, local.backends, toset(keys(local.database_secrets)))
+  all_names     = setunion(local.legacy_names, toset(["mcp-server", "rag-server"]))
+  names         = var.release.schema_version == 2 ? local.all_names : local.legacy_names
+  startup_names = toset([for name in local.names : name if endswith(name, "-db") || contains(["shared-db-api", "rag-server"], name)])
+  mcp_callers   = setsubtract(local.backends, toset(["shared-backend"]))
+  ports = { for name in local.all_names : name => (
+    contains(local.frontends, name) ? 80 : name == "rag-server" ? 8100 : name == "quests-achievements-notifications-service-db" ? 3000 : 8080
   ) }
   endpoint = { for name, port in local.ports : name => "http://${name}.languagewise.internal:${port}" }
   dependencies = merge(
     { for feature in local.features : "${feature}-service-frontend" => ["${feature}-service-backend"] },
     { for feature in setsubtract(local.features, toset(["leaderboard-analytics"])) : "${feature}-service-backend" => concat(
-      ["${feature}-service-db", "garry-ai-service-backend"],
+      ["${feature}-service-db", "garry-ai-service-backend", "mcp-server"],
       feature == "quests-achievements-notifications" ? [] : ["quests-achievements-notifications-service-backend"],
       feature == "mini-games" ? ["quizzes-courses-service-backend"] : []
     ) },
     {
       shared-frontend                       = concat(["shared-backend"], [for feature in local.features : "${feature}-service-frontend"], [for feature in local.features : "${feature}-service-backend"])
-      shared-backend                        = ["shared-db-api", "quests-achievements-notifications-service-backend", "garry-ai-service-backend"]
-      leaderboard-analytics-service-backend = ["quizzes-courses-service-backend", "garry-ai-service-backend"]
-      garry-ai-service-backend              = ["shared-db-api"]
+      shared-backend                        = ["shared-db-api", "quests-achievements-notifications-service-backend", "garry-ai-service-backend", "rag-server"]
+      leaderboard-analytics-service-backend = ["quizzes-courses-service-backend", "garry-ai-service-backend", "mcp-server"]
+      garry-ai-service-backend              = ["mcp-server", "shared-db-api"]
+      mcp-server                            = concat([for feature in local.features : "${feature}-service-backend"], ["rag-server", "shared-db-api"])
       chat-discussion-service-db            = ["quizzes-courses-service-db", "shared-db-api"]
     }
   )
   caller_edges = merge([for caller, targets in local.dependencies : {
     for target in targets : "${caller}:${target}" => { caller = caller, target = target }
+    if contains(local.names, caller) && contains(local.names, target)
   }]...)
   service_environment = merge(
     { for feature in setsubtract(local.features, toset(["leaderboard-analytics"])) : "${feature}-service-backend" => merge({
@@ -49,6 +55,7 @@ locals {
         Services__Database           = local.endpoint["shared-db-api"]
         Services__Achievements       = local.endpoint["quests-achievements-notifications-service-backend"]
         Services__Garry              = local.endpoint["garry-ai-service-backend"]
+        Services__Rag                = local.endpoint["rag-server"]
         ReverseProxy__TrustedNetwork = "10.82.0.0/16"
       }
       leaderboard-analytics-service-backend = {
@@ -66,6 +73,24 @@ locals {
         PGRST_DB_SCHEMA    = "api"
         PGRST_DB_ANON_ROLE = "web_anon"
       }
+      mcp-server = {
+        ASPNETCORE_HTTP_PORTS          = "8080"
+        AllowedHosts                   = "localhost;127.0.0.1;mcp-server;mcp-server.languagewise.internal"
+        Services__Database             = local.endpoint["shared-db-api"]
+        Services__QuizzesCourses       = local.endpoint["quizzes-courses-service-backend"]
+        Services__MiniGames            = local.endpoint["mini-games-service-backend"]
+        Services__ChatDiscussion       = local.endpoint["chat-discussion-service-backend"]
+        Services__QuestsAchievements   = local.endpoint["quests-achievements-notifications-service-backend"]
+        Services__LeaderboardAnalytics = local.endpoint["leaderboard-analytics-service-backend"]
+        Services__Rag                  = local.endpoint["rag-server"]
+      }
+      rag-server = {
+        RAG_HOST               = "0.0.0.0"
+        RAG_PORT               = "8100"
+        RAG_CHROMA_DIR         = "/data/chroma"
+        RAG_TECHNICAL_KEY_PATH = "/data/.rag-technical-key"
+        ANONYMIZED_TELEMETRY   = "false"
+      }
     }
   )
   openrouter_consumers = toset([
@@ -78,7 +103,12 @@ locals {
       DNS_SUFFIX   = ".languagewise.internal"
     } : {},
     name == "shared-frontend" ? { FORWARDED_SCHEME = "https" } : {},
-    contains(local.backends, name) ? { Mcp__Enabled = "false", Rag__Enabled = "false", ASPNETCORE_HTTP_PORTS = "8080" } : {},
+    contains(local.backends, name) ? {
+      Mcp__Enabled          = contains(local.mcp_callers, name) ? "true" : "false"
+      Rag__Enabled          = name == "shared-backend" ? "true" : "false"
+      ASPNETCORE_HTTP_PORTS = "8080"
+    } : {},
+    contains(local.mcp_callers, name) ? { Mcp__Endpoint = "${local.endpoint["mcp-server"]}/mcp" } : {},
     contains(local.openrouter_consumers, name) ? {
       OpenRouter__BaseUrl         = "https://openrouter.ai/api/v1"
       OpenRouter__Model           = "google/gemma-4-26b-a4b-it"
@@ -91,7 +121,10 @@ locals {
     } : {},
     contains(local.openrouter_consumers, name) ? { OpenRouter__ApiKey = var.foundation.secret_arns["openrouter-api-key"] } : {},
     name == "shared-backend" ? { Auth__SigningKeyPem = var.foundation.secret_arns["signing-private-key"] } : {},
-    contains(setsubtract(local.backends, toset(["shared-backend"])), name) ? { Auth__VerificationKeyPem = var.foundation.secret_arns["signing-public-key"] } : {}
+    contains(setunion(local.mcp_callers, toset(["mcp-server"])), name) ? {
+      Auth__VerificationKeyPem = var.foundation.secret_arns["signing-public-key"]
+      Mcp__ApiKey              = var.foundation.secret_arns["mcp-api-key"]
+    } : {}
   ) }
 }
 
@@ -116,8 +149,6 @@ resource "aws_service_discovery_service" "app" {
       ttl  = 10
       type = "A"
     }
-  }
-  health_check_custom_config {
   }
 }
 
@@ -152,24 +183,24 @@ resource "aws_ecs_task_definition" "app" {
     }
     }, each.key == "quests-achievements-notifications-service-db" ? {} : {
     healthCheck = {
-      command     = ["CMD-SHELL", contains(local.frontends, each.key) ? "wget --quiet --tries=1 --spider http://127.0.0.1/${each.key == "shared-frontend" ? "health" : "remoteEntry.js"} || exit 1" : "curl --fail --silent http://127.0.0.1:8080/health || exit 1"]
+      command     = each.key == "rag-server" ? ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=3)"] : ["CMD-SHELL", contains(local.frontends, each.key) ? "wget --quiet --tries=1 --spider http://127.0.0.1/${each.key == "shared-frontend" ? "health" : "remoteEntry.js"} || exit 1" : "curl --fail --silent http://127.0.0.1:8080/health || exit 1"]
       interval    = 30
       timeout     = 5
       retries     = 3
-      startPeriod = 60
+      startPeriod = each.key == "rag-server" ? 300 : 60
     }
   })])
 }
 
 resource "aws_ecs_service" "app" {
-  for_each                           = var.services_enabled ? local.names : toset([])
+  for_each                           = var.services_enabled ? (var.startup_phase == "dependencies" ? local.startup_names : local.names) : toset([])
   name                               = "languagewise-demo-${each.key}"
   cluster                            = var.foundation.cluster_arn
   task_definition                    = aws_ecs_task_definition.app[each.key].arn
   desired_count                      = 1
   launch_type                        = "FARGATE"
   platform_version                   = "1.4.0"
-  wait_for_steady_state              = true
+  wait_for_steady_state              = !var.cold_start
   deployment_minimum_healthy_percent = 100
   deployment_maximum_percent         = 200
   health_check_grace_period_seconds  = each.key == "shared-frontend" ? 60 : null

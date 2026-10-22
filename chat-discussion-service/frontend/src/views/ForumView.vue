@@ -107,6 +107,7 @@ onMounted(async () => {
         <StateBlock
             v-else-if="posts.length === 0"
             title="No posts here yet"
+            image="/garry/garry.png"
             :message="`Be the first to post in ${forumName(code)}.`"
         >
             <p><RouterLink :to="{ name: 'post-create' }">Write a post</RouterLink></p>

@@ -5,9 +5,10 @@ export const SERVICES = Object.freeze([
   'chat-discussion-service-frontend', 'chat-discussion-service-backend', 'chat-discussion-service-db',
   'leaderboard-analytics-service-frontend', 'leaderboard-analytics-service-backend',
   'quests-achievements-notifications-service-frontend', 'quests-achievements-notifications-service-backend',
-  'quests-achievements-notifications-service-db', 'garry-ai-service-backend',
+  'quests-achievements-notifications-service-db', 'garry-ai-service-backend', 'mcp-server', 'rag-server',
 ]);
 export const IMAGE_KEYS = Object.freeze([...SERVICES, 'database-initializer']);
+export const LEGACY_IMAGE_KEYS = Object.freeze(IMAGE_KEYS.filter(name => !['mcp-server', 'rag-server'].includes(name)));
 export const HOUR = 3_600_000;
 export const LOCK_WINDOW = 150 * 60_000;
 export const WORKER_WINDOW = 90 * 60_000;
@@ -58,20 +59,33 @@ export function validateFoundation(config) {
   }
   requireThat(Object.keys(config.secret_arns).length > 0, 'Secret metadata is required');
   requireThat(Object.values(config.secret_arns).every(arn => arn.startsWith(`arn:aws:secretsmanager:${config.region}:${config.account_id}:secret:`)), 'Invalid secret ARN');
-  requireThat(!Object.keys(config.secret_arns).some(name => /mcp|rag/i.test(name)), 'MCP/RAG secrets are excluded');
+  requireThat(Object.hasOwn(config.secret_arns, 'mcp-api-key'), 'Private MCP secret metadata is required');
+  requireThat(!Object.keys(config.secret_arns).some(name => /rag/i.test(name)), 'RAG technical credentials are not a cloud dependency');
   return config;
 }
 
-export function validateRelease(release, foundation) {
+export function validateRelease(release, foundation, { allowLegacy = false } = {}) {
   requireThat(release && /^[a-f0-9]{40}$/.test(release.sha), 'Release SHA must be 40 lowercase hex characters');
   requireThat(Number.isSafeInteger(release.sequence) && release.sequence > 0, 'Release sequence must be a positive safe integer');
   requireThat(release.images && Object.getPrototypeOf(release.images) === Object.prototype, 'Missing images');
-  requireThat(Object.keys(release.images).length === IMAGE_KEYS.length && IMAGE_KEYS.every(key => Object.hasOwn(release.images, key)), 'Release requires exactly 18 services and initializer; MCP/RAG are excluded');
+  const legacy = release.schemaVersion === undefined;
+  requireThat(release.schemaVersion === 2 || (allowLegacy && legacy), 'Release schema version 2 is required; legacy releases are read/cleanup only');
+  const keys = legacy ? LEGACY_IMAGE_KEYS : IMAGE_KEYS;
+  requireThat(Object.keys(release.images).length === keys.length && keys.every(key => Object.hasOwn(release.images, key)), 'Release image inventory must exactly match its schema version');
   for (const image of Object.values(release.images)) {
     requireThat(typeof image === 'string' && image.startsWith(`${foundation.repository_url}@sha256:`)
       && /^[a-f0-9]{64}$/.test(image.slice(`${foundation.repository_url}@sha256:`.length)), 'Images must be exact repository@sha256 digests');
   }
-  return { sha: release.sha, images: { ...release.images }, sequence: release.sequence };
+  for (const field of ['imageSourceSha', 'reusedFromSha']) {
+    requireThat(release[field] === undefined || !legacy && typeof release[field] === 'string' && /^[a-f0-9]{40}$/.test(release[field]), 'Invalid image source provenance');
+  }
+  requireThat(release.reusedFromSha === undefined || release.imageSourceSha !== undefined && release.reusedFromSha !== release.sha,
+    'Reused images require source provenance and a different approved release');
+  requireThat(release.imageSourceSha === undefined || release.reusedFromSha !== undefined || release.imageSourceSha === release.sha,
+    'Built images must originate from the current release');
+  return { ...(legacy ? {} : { schemaVersion: 2 }), sha: release.sha, images: { ...release.images }, sequence: release.sequence,
+    ...(release.imageSourceSha === undefined ? {} : { imageSourceSha: release.imageSourceSha }),
+    ...(release.reusedFromSha === undefined ? {} : { reusedFromSha: release.reusedFromSha }) };
 }
 
 export function releaseOrder(candidate, previous) {
@@ -79,7 +93,9 @@ export function releaseOrder(candidate, previous) {
   requireThat(candidate.sequence >= previous.sequence, 'Stale release sequence');
   if (candidate.sequence === previous.sequence || candidate.sha === previous.sha) {
     requireThat(candidate.sha === previous.sha && candidate.sequence === previous.sequence
-      && IMAGE_KEYS.every(key => candidate.images[key] === previous.images[key]), 'Release identity conflict');
+      && candidate.schemaVersion === previous.schemaVersion
+      && Object.keys(candidate.images).length === Object.keys(previous.images).length
+      && Object.entries(candidate.images).every(([key, image]) => image === previous.images[key]), 'Release identity conflict');
     return 'same';
   }
   return 'new';
@@ -111,7 +127,8 @@ export function assertPhase(state, now) {
 
 export function terraformVariables(foundation, release, enabled) {
   requireThat(typeof enabled === 'boolean', 'services_enabled must be boolean');
-  return { foundation, release: { sha: release.sha, images: release.images }, services_enabled: enabled };
+  requireThat(!enabled || release.schemaVersion === 2, 'Legacy releases may only be destroyed');
+  return { foundation, release: { sha: release.sha, images: release.images, schema_version: release.schemaVersion ?? 1 }, services_enabled: enabled };
 }
 
 export function canAcquireLock(existing) {

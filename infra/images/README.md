@@ -4,12 +4,42 @@ Build Linux/x86_64 images. Publish every final image into the foundation ECR
 repository and supply immutable `repository_url@sha256:...` values in the release
 manifest. Intermediate image tags must never appear in that manifest.
 
+## Runtime-Only Release Reuse
+
+Every new release still requires successful current-SHA checks, a complete
+21-digest schema-version-2 manifest, a new sequence and the current-master guard.
+Before Docker login/build, the publisher may reuse the previous approved images
+only when the latest manifest exactly matches its immutable SHA archive, GitHub
+proves an ancestor comparison containing fewer than 300 changed files, and every
+changed path is explicitly allowlisted as non-image input. Rename source paths
+are checked too. Eligible paths are demo Terraform, the demo controller, focused
+infrastructure tests and selected documentation; unknown paths are not eligible.
+
+All distinct image digests must still exist in the configured ECR repository.
+Missing or malformed metadata, unavailable comparisons, divergent history,
+comparison truncation, missing digests, or changes to application/build inputs,
+the publisher, shared control code or workflows fall back to the complete build.
+The full-build path retains per-image cleanup to bound runner disk usage.
+
+Optional `imageSourceSha` records the original image-build source;
+`reusedFromSha` records the immediately preceding approved release whose images
+were reused. Both are validated and retained through staging/publication, but are
+not Terraform inputs. Reusing an already published same-SHA archive remains
+idempotent and retains its original sequence. This publisher implementation
+change itself requires a full build; later eligible runtime-only releases can
+skip all Docker builds/pushes. Runtime deployment and readiness are not skipped.
+
 ## Application Images
 
-The eighteen Compose names other than `shared-db` are the application image
+The twenty Compose names other than `shared-db` are the application image
 keys. Keep the existing per-directory Dockerfile/build contexts for the six
 frontends, seven backends and four .NET database APIs, with these additions:
 
+- Build `mcp-server` from its own directory and `rag-server` from its own
+  directory; these are not inferred frontend/backend/database contexts. RAG
+  bakes Chroma's pinned default model cache, not indexes or generated keys.
+  `node infra/scripts/measure-rag.mjs IMAGE` verifies offline cold start and
+  retrieval at 0.5 CPU/1 GiB, without development volumes. The RAG CI gate runs it.
 - Wrap each .NET database API image with
   `infra/images/database-api/Dockerfile`. Use repository-root build context and
   `APPLICATION_IMAGE` set to that API's just-built image (or immutable digest).
@@ -27,7 +57,9 @@ frontends, seven backends and four .NET database APIs, with these additions:
 
 ## Initializer
 
-The nineteenth image key is `database-initializer`.
+The twenty-first image key is `database-initializer`. Version 2 release manifests
+contain all twenty-one digests; legacy nineteen-image archives remain immutable
+and are accepted for read/cleanup, never new Up or live migration.
 
 - Build context: **repository root**.
 - Dockerfile: `infra/images/database-initializer/Dockerfile`.

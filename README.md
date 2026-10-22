@@ -208,22 +208,24 @@ Please don't commit API keys and `.env` files...thx 🙂
 
 ## Pre-commit security checks
 
-Every commit runs these scans; the `pre-commit-security` workflow re-runs them in CI.
+Every commit runs these scans against the staged files only. A hook runs only when a file it cares about is staged, so a commit that touches no dependency manifests skips the audits. Each commit's output is also saved to `reports/pre-commit/<timestamp>.log`; the `reports/` folder is gitignored. Every log starts with a run-context block (branch, HEAD commit, time, and the files checked). The `Security Check` workflow (`security-check.yml`) runs every hook on the whole repo (`--all-files`) on each push to `master` and on pull requests. It writes the same report (run details, files checked, hook table, full log) to the job summary and prints it in the job log under "Security check report".
 
-| Hook | Checks |
-| --- | --- |
-| `ruff-check` | Python security rules (`S`, Bandit port) in `rag-server/` and `tools/agentic-loop/` |
-| `detect-secrets` | Every tracked file against the reviewed `.secrets.baseline` |
-| `pip-audit` | Known CVEs in the Python `requirements.txt` files |
-| `npm-audit` | High/critical CVEs in each frontend's production dependencies |
-| `dotnet-vulnerable` | High/critical CVEs in each `.slnx`, including transitive packages |
+| Hook | Checks | Runs when staged |
+| --- | --- | --- |
+| `ruff-check` | Python security rules (`S`, Bandit port) in `rag-server/` and `tools/agentic-loop/` | Any `.py` file |
+| `detect-secrets` | Staged files against the reviewed `.secrets.baseline` | Any file |
+| `pip-audit` | Known CVEs in the Python `requirements.txt` files | `rag-server/requirements.txt`, `tools/agentic-loop/requirements.txt` |
+| `npm-audit` | High/critical CVEs in the production dependencies of each frontend whose `package.json` or `package-lock.json` changed | `package.json`, `package-lock.json` |
+| `dotnet-vulnerable` | High/critical CVEs (including transitive packages) in each `.slnx` containing a changed project, props, or `nuget.config` | `.slnx`, `.csproj`, `.props`, `.targets`, `nuget.config` |
+
+Endpoint tests are not part of pre-commit. Each service's `student-x` workflow runs them after push.
 
 Requires Python 3.10+, Node, and the .NET 10 SDK on `PATH`. Set up once per clone:
 
 ```bash
 pipx install pre-commit   # or: pip install pre-commit
 pre-commit install
-pre-commit run --all-files
+pre-commit run --all-files   # full repo check, same as CI
 ```
 
 - A flagged false positive in `detect-secrets`: run `detect-secrets scan --baseline .secrets.baseline`, then `detect-secrets audit .secrets.baseline` and mark it, and commit the baseline.
