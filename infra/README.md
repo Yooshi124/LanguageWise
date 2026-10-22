@@ -1,6 +1,19 @@
 # AWS Demo Infrastructure
 
-## Current Follow-up: 2026-10-22
+## Current Monthly Startup Policy
+
+Owner-approved on 2026-10-22: the ongoing admission guard is **20 starts and
+80 reserved hours per calendar month**, not a one-month exception. Existing usage
+is preserved; the limit change does not reset or refund reservations. Every new
+start reserves four hours, even if startup fails or the demo is stopped early.
+Reservations are not actual AWS charges or credit usage.
+
+The two-hour lease, one-hour startup deadline and independent cleanup remain
+unchanged. The $160 planning budget is unchanged; AWS budget alerts are not
+modified by this code change. Historical cost estimates below are not a fresh
+quote for an 80-hour month. Publishing this change does not itself launch Up.
+
+## Earlier Cold-Start Follow-up: 2026-10-22
 
 Timed Up [39695904779](https://github.com/Yooshi124/LanguageWise/actions/runs/39695904779)
 used the exact successful 21-image release `bd673cf22b96523de7674ddecb4c5a8ca830760f`.

@@ -62,11 +62,17 @@ Future MCP/RAG integration is a separate change and must revisit runtime sizing,
 
 Cost this deployment in **Sydney (`ap-southeast-2`)**, not US East. Eighteen tasks reserve 9 vCPUs and 18 GiB RAM while running. Continuous operation is incompatible with the $100/month limit; demonstrations must be time-limited and followed by full runtime teardown.
 
-### Verified Rates and Proposed Monthly Scenario
+**Current admission policy, approved 2026-10-22:** 20 starts and 80 reserved hours
+per calendar month, ongoing. Each start reserves four hours without refunds;
+this is controller accounting, not measured billing. The two-hour lease and
+$160 planning budget remain unchanged. The original 40-hour estimate below is
+historical and is not a revalidated quote for an 80-hour month.
+
+### Verified Rates and Original Monthly Scenario
 
 **Read-only review dated 2026-10-19:** prices below were retrieved through AWS Price List `GetProducts` in `us-east-1`, selecting **Sydney products**, not US East rates. CloudFront uses the Australia pricing geography; Route 53 hosted-zone billing was checked against its official pricing page. No credits, promotional free tier, CloudFront free transfer allowance, or CodeBuild free minutes are deducted. This is an API-backed planning estimate, **not an invoice, approved spend, or a saved AWS Pricing Calculator estimate**.
 
-Proposed starting limits, requiring owner approval:
+Historical starting scenario from the 2026-10-19 review:
 
 - **10 Up/Down cycles and at most 40 billed stack-hours/month**, not 40 hours of presentation time. Count startup, teardown, partial-hour billing, and time while any paid runtime resource survives. A two-hour lease does not mean only two billable hours; allow up to four billed hours per cycle and reduce the cycle count if measured transitions exceed that.
 - 18 Linux/x86 Fargate tasks at 0.5 vCPU/1 GiB, plus **36 aggregate extra task-hours** for rolling replacements/migrations at that size. Their public IPv4 addresses are included. Use only the included 20 GiB ephemeral storage per task; extra storage changes the estimate.
