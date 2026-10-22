@@ -208,7 +208,7 @@ Please don't commit API keys and `.env` files...thx 🙂
 
 ## Pre-commit security checks
 
-Every commit runs these scans against the staged files only. A hook runs only when a file it cares about is staged, so a commit that touches no dependency manifests skips the audits. Each commit's output is also saved to `reports/pre-commit/<timestamp>.log`; the `reports/` folder is gitignored. The `Security Check` workflow (`security-check.yml`) runs every hook on the whole repo (`--all-files`) on each push to `master` and on pull requests, and writes a hook table to the job summary.
+Every commit runs these scans against the staged files only. A hook runs only when a file it cares about is staged, so a commit that touches no dependency manifests skips the audits. Each commit's output is also saved to `reports/pre-commit/<timestamp>.log`; the `reports/` folder is gitignored. Every log starts with a run-context block (branch, HEAD commit, time, and the files checked). The `Security Check` workflow (`security-check.yml`) runs every hook on the whole repo (`--all-files`) on each push to `master` and on pull requests. It writes the same report (run details, files checked, hook table, full log) to the job summary and prints it in the job log under "Security check report".
 
 | Hook | Checks | Runs when staged |
 | --- | --- | --- |
