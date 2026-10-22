@@ -268,12 +268,12 @@ function harness(options = {}) {
 test('quota exhaustion reports an actionable failure without reserving or starting runtime resources', async () => {
   const previous = { desiredMode: 'down', status: 'down', revision: 56 };
   const fixture = harness({ state: previous });
-  const quota = { id: { S: 'quota#2026-10' }, payload: { S: JSON.stringify({ cycles: 20, hours: 80 }) } };
+  const quota = { id: { S: 'quota#2026-10' }, payload: { S: JSON.stringify({ cycles: 20, hours: 240 }) } };
   fixture.rows.set('quota#2026-10', quota);
 
   await assert.rejects(fixture.controller.execute('up'), error => {
     assert.equal(error.message, 'Monthly demo reservation exhausted');
-    assert.match(demoFailureMessage(error), /monthly limit reached \(20 starts \/ 80 reserved hours\)/);
+    assert.match(demoFailureMessage(error), /monthly limit reached \(20 starts \/ 240 reserved hours\)/);
     assert.match(demoFailureMessage(error), /owner-approved budget review/);
     return true;
   });
@@ -448,13 +448,15 @@ test('legacy manifests remain readable and destroyable but cannot start or repla
   assert.ok(!live.calls.some(call => call.binary === 'terraform'));
 });
 
-test('quota atomically reserves four nonrefundable hours and repeated Up preserves deadlines', () => {
-  const initial = beginUp(undefined, { cycles: 19, hours: 76 }, release(), now);
-  assert.deepEqual(initial.quota, { cycles: 20, hours: 80 });
-  assert.equal(initial.state.expiresAt, now + 2 * HOUR);
+test('quota atomically reserves twelve nonrefundable hours and repeated Up preserves deadlines', () => {
+  const initial = beginUp(undefined, { cycles: 19, hours: 228 }, release(), now);
+  assert.deepEqual(initial.quota, { cycles: 20, hours: 240 });
+  assert.equal(initial.state.expiresAt, now + 10 * HOUR);
+  assert.equal(initial.state.reservedUntil, now + 12 * HOUR);
   assert.equal(initial.state.startupDeadline, now + HOUR);
   const repeated = beginUp(initial.state, initial.quota, release(2, 'b'), now + 1);
   assert.equal(repeated.state, initial.state);
+  assert.equal(repeated.quota, initial.quota);
   assert.equal(repeated.repeated, true);
   assert.throws(() => beginUp(undefined, initial.quota, release(), now), /exhausted/);
   assert.throws(() => beginUp({ ...initial.state, desiredMode: 'down' }, undefined, release(), now), /fully removed/);
@@ -464,21 +466,37 @@ test('the 20-start monthly quota applies continuously rather than as an October 
   for (const month of ['2026-10-22', '2026-11-01', '2027-01-01']) {
     const requestedAt = Date.parse(`${month}T10:00:00Z`);
     const next = beginUp(undefined, { cycles: 10, hours: 40 }, release(), requestedAt);
-    assert.deepEqual(next.quota, { cycles: 11, hours: 44 });
-    const last = beginUp(undefined, { cycles: 19, hours: 76 }, release(), requestedAt);
-    assert.deepEqual(last.quota, { cycles: 20, hours: 80 });
+    assert.deepEqual(next.quota, { cycles: 11, hours: 52 });
+    const last = beginUp(undefined, { cycles: 19, hours: 228 }, release(), requestedAt);
+    assert.deepEqual(last.quota, { cycles: 20, hours: 240 });
     assert.throws(() => beginUp(undefined, last.quota, release(), requestedAt), /reservation exhausted/);
   }
 });
 
 test('the monthly start and reserved-hour limits each reject further admission independently', () => {
   assert.throws(() => beginUp(undefined, { cycles: 20, hours: 0 }, release(), now), /reservation exhausted/);
-  assert.throws(() => beginUp(undefined, { cycles: 0, hours: 80 }, release(), now), /reservation exhausted/);
+  assert.throws(() => beginUp(undefined, { cycles: 0, hours: 229 }, release(), now), /reservation exhausted/);
+  assert.throws(() => beginUp(undefined, { cycles: 0, hours: 240 }, release(), now), /reservation exhausted/);
+  assert.deepEqual(beginUp(undefined, { cycles: 0, hours: 228 }, release(), now).quota, { cycles: 1, hours: 240 });
+});
+
+test('previously stored lease deadlines and reservations are not extended or recharged', () => {
+  const state = { ...ready(), expiresAt: now + 2 * HOUR, reservedUntil: now + 4 * HOUR };
+  const quota = { cycles: 1, hours: 4 };
+  const repeated = beginUp(state, quota, release(2, 'b'), now + HOUR);
+  assert.equal(repeated.state, state);
+  assert.equal(repeated.quota, quota);
+  assert.equal(repeated.repeated, true);
+  assert.equal(cleanupDue(state, now + 2 * HOUR - 1), false);
+  assert.equal(cleanupDue(state, now + 2 * HOUR), true);
+  assert.throws(() => beginUp(state, quota, release(), now + 2 * HOUR), /expired/);
 });
 
 test('cleanup catches partial startup, expiry and explicit Down, not ready unexpired demos', () => {
   assert.equal(cleanupDue(ready(), now), false);
-  assert.equal(cleanupDue(ready(), now + 2 * HOUR), true);
+  assert.equal(cleanupDue(ready(), now + 2 * HOUR), false);
+  assert.equal(cleanupDue(ready(), now + 10 * HOUR - 1), false);
+  assert.equal(cleanupDue(ready(), now + 10 * HOUR), true);
   assert.equal(cleanupDue({ ...ready(), status: 'starting' }, now + HOUR), true);
   assert.equal(cleanupDue({ ...ready(), desiredMode: 'down' }, now), true);
   assert.equal(cleanupDue({ desiredMode: 'down', status: 'down' }, now), false);
@@ -615,12 +633,12 @@ test('new Up applies disabled services then initializes once and applies enabled
   const fixture = harness();
   await fixture.controller.execute('up');
   assert.equal(fixture.state().status, 'ready');
-  assert.equal(fixture.state().expiresAt, now + 2 * HOUR);
+  assert.equal(fixture.state().expiresAt, now + 10 * HOUR);
   const plans = fixture.calls.filter(call => call.binary === 'terraform' && call.args.includes('plan'));
   assert.deepEqual(plans.map(call => call.variables.services_enabled), [false, true, true]);
   assert.equal(fixture.calls.filter(call => call.operation === 'run-task').length, 1);
   assert.equal(fixture.rows.has('lock'), false);
-  assert.equal(JSON.parse(fixture.rows.get('quota#2026-10').payload.S).hours, 4);
+  assert.equal(JSON.parse(fixture.rows.get('quota#2026-10').payload.S).hours, 12);
   assert.equal(fixture.calls.filter(call => call.probe).length, 12);
   for (const call of fixture.calls.filter(call => call.binary === 'terraform' && call.args.includes('init'))) {
     assert.ok(call.args.includes('-backend-config=key=demo/terraform.tfstate'));
@@ -709,7 +727,7 @@ test('release while Up deploys directly with services enabled and never seeds', 
   assert.deepEqual(fixture.calls.filter(call => call.variables).map(call => call.variables.services_enabled), [true]);
   assert.ok(!fixture.calls.some(call => call.operation === 'run-task'));
   assert.equal(fixture.state().releaseSha, 'b'.repeat(40));
-  assert.equal(fixture.state().expiresAt, now + 2 * HOUR);
+  assert.equal(fixture.state().expiresAt, now + 10 * HOUR);
 });
 
 test('failed functional rollout redeploys previous compatible images without changing latest', async () => {
@@ -726,8 +744,8 @@ test('periodic cleanup is a no-op before expiry and destroys after expiry with A
   assert.ok(!unexpired.calls.some(call => call.operation === 'put-item' || call.binary === 'terraform'));
   const expired = harness({ state: ready() });
   expired.dependencies.env = { CODEBUILD_BUILD_ID: buildId };
-  expired.advance(2 * HOUR);
-  expired.controller.workerDeadline = now + 3 * HOUR;
+  expired.advance(10 * HOUR);
+  expired.controller.workerDeadline = now + 11 * HOUR;
   await expired.controller.execute('cleanup');
   assert.equal(expired.state().status, 'down');
 });
@@ -847,12 +865,12 @@ test('independent cleanup configured for another state is rejected before provis
   assert.ok(!fixture.calls.some(call => call.binary === 'terraform'));
 });
 
-test('preflight elapsed time counts against the two-hour presentation lease', async () => {
+test('preflight elapsed time counts against the ten-hour presentation lease', async () => {
   const fixture = harness();
   fixture.advance(10 * 60_000);
   await fixture.controller.execute('up');
   assert.equal(fixture.state().requestedAt, now);
-  assert.equal(fixture.state().expiresAt, now + 2 * HOUR);
+  assert.equal(fixture.state().expiresAt, now + 10 * HOUR);
 });
 
 test('first Up accepts empty database metadata then requires current versions before enabling services', async () => {

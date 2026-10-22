@@ -62,11 +62,12 @@ Future MCP/RAG integration is a separate change and must revisit runtime sizing,
 
 Cost this deployment in **Sydney (`ap-southeast-2`)**, not US East. Eighteen tasks reserve 9 vCPUs and 18 GiB RAM while running. Continuous operation is incompatible with the $100/month limit; demonstrations must be time-limited and followed by full runtime teardown.
 
-**Current admission policy, approved 2026-10-22:** 20 starts and 80 reserved hours
-per calendar month, ongoing. Each start reserves four hours without refunds;
-this is controller accounting, not measured billing. The two-hour lease and
-$160 planning budget remain unchanged. The original 40-hour estimate below is
-historical and is not a revalidated quote for an 80-hour month.
+**Current admission policy, approved 2026-10-23:** 20 starts and 240 reserved hours
+per calendar month, ongoing. Each new start reserves twelve hours without refunds
+and has a ten-hour lease from the Up request; existing usage and lease deadlines
+are preserved. This is controller accounting, not measured billing. The one-hour
+startup deadline and $160 planning budget remain unchanged. The original 40-hour
+estimate below is historical and is not a revalidated quote for a 240-hour month.
 
 ### Verified Rates and Original Monthly Scenario
 

@@ -62,9 +62,11 @@ while the demo is Up. Keep the existing public CloudFront gateway, RDS databases
 single-replica Garry, private ALB, restricted task ingress and independent cleanup.
 Do not add public MCP/RAG endpoints, NAT, EFS, a hosted vector database or a GPU.
 
-Preserve the two-hour lease from the Up request, one-hour startup deadline,
-four-hour admission reservation, ongoing 20-cycle/80-reserved-hour monthly bounds, $160 overall
-budget and separate OpenRouter allowance. Any size, quota, timeout or budget
+Apply the owner-approved 2026-10-23 ten-hour lease from the Up request and
+twelve-hour admission reservation, with ongoing 20-cycle/240-reserved-hour monthly
+bounds. Preserve the one-hour startup deadline, $160 overall budget and separate
+OpenRouter allowance. Historical cost estimates are not a revalidated quote for
+240 reserved hours. Any further size, quota, timeout or budget
 exception needs separate approval. A working plan does not guarantee those limits
 will accommodate the additional workloads; measure before enabling them.
 
