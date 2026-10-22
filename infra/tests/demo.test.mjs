@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { DemoController, loadFoundation, nativeDependencies } from '../scripts/demo.mjs';
+import { DemoController, demoFailureMessage, loadFoundation, nativeDependencies } from '../scripts/demo.mjs';
 import { SERVICES, IMAGE_KEYS, LEGACY_IMAGE_KEYS, HOUR, LOCK_WINDOW, beginUp, cleanupDue, canAcquireLock,
   assertPhase, releaseOrder, terraformVariables, validateFoundation, validateRelease } from '../scripts/control.mjs';
 
@@ -265,6 +265,35 @@ function harness(options = {}) {
     advance: duration => { clock += duration; }, dispose: () => rmSync(controller.directory, { recursive: true, force: true }) };
 }
 
+test('quota exhaustion reports an actionable failure without reserving or starting runtime resources', async () => {
+  const previous = { desiredMode: 'down', status: 'down', revision: 56 };
+  const fixture = harness({ state: previous });
+  const quota = { id: { S: 'quota#2026-10' }, payload: { S: JSON.stringify({ cycles: 20, hours: 80 }) } };
+  fixture.rows.set('quota#2026-10', quota);
+
+  await assert.rejects(fixture.controller.execute('up'), error => {
+    assert.equal(error.message, 'Monthly demo reservation exhausted');
+    assert.match(demoFailureMessage(error), /monthly limit reached \(20 starts \/ 80 reserved hours\)/);
+    assert.match(demoFailureMessage(error), /owner-approved budget review/);
+    return true;
+  });
+
+  assert.deepEqual(fixture.state(), previous);
+  assert.deepEqual(fixture.rows.get('quota#2026-10'), quota);
+  assert.ok(!fixture.rows.has('lock'));
+  assert.ok(!fixture.calls.some(call => call.binary === 'terraform'
+    || call.operation === 'transact-write-items' || call.operation === 'run-task'));
+});
+
+test('failure reporting never exposes unknown error messages or near-matching quota errors', () => {
+  for (const error of [undefined, new Error('private-error-sentinel'),
+    new Error('Monthly demo reservation exhausted: private-error-sentinel')]) {
+    const message = demoFailureMessage(error);
+    assert.match(message, /Output suppressed to protect credentials\/state/);
+    assert.ok(!message.includes('private-error-sentinel'));
+  }
+});
+
 test('Down before the first release is idempotent only when disposable state and resources are absent', async () => {
   const fixture = harness();
   fixture.objects.delete('releases/latest.json');
@@ -420,8 +449,8 @@ test('legacy manifests remain readable and destroyable but cannot start or repla
 });
 
 test('quota atomically reserves four nonrefundable hours and repeated Up preserves deadlines', () => {
-  const initial = beginUp(undefined, { cycles: 9, hours: 36 }, release(), now);
-  assert.deepEqual(initial.quota, { cycles: 10, hours: 40 });
+  const initial = beginUp(undefined, { cycles: 19, hours: 76 }, release(), now);
+  assert.deepEqual(initial.quota, { cycles: 20, hours: 80 });
   assert.equal(initial.state.expiresAt, now + 2 * HOUR);
   assert.equal(initial.state.startupDeadline, now + HOUR);
   const repeated = beginUp(initial.state, initial.quota, release(2, 'b'), now + 1);
@@ -429,6 +458,22 @@ test('quota atomically reserves four nonrefundable hours and repeated Up preserv
   assert.equal(repeated.repeated, true);
   assert.throws(() => beginUp(undefined, initial.quota, release(), now), /exhausted/);
   assert.throws(() => beginUp({ ...initial.state, desiredMode: 'down' }, undefined, release(), now), /fully removed/);
+});
+
+test('the 20-start monthly quota applies continuously rather than as an October exception', () => {
+  for (const month of ['2026-10-22', '2026-11-01', '2027-01-01']) {
+    const requestedAt = Date.parse(`${month}T10:00:00Z`);
+    const next = beginUp(undefined, { cycles: 10, hours: 40 }, release(), requestedAt);
+    assert.deepEqual(next.quota, { cycles: 11, hours: 44 });
+    const last = beginUp(undefined, { cycles: 19, hours: 76 }, release(), requestedAt);
+    assert.deepEqual(last.quota, { cycles: 20, hours: 80 });
+    assert.throws(() => beginUp(undefined, last.quota, release(), requestedAt), /reservation exhausted/);
+  }
+});
+
+test('the monthly start and reserved-hour limits each reject further admission independently', () => {
+  assert.throws(() => beginUp(undefined, { cycles: 20, hours: 0 }, release(), now), /reservation exhausted/);
+  assert.throws(() => beginUp(undefined, { cycles: 0, hours: 80 }, release(), now), /reservation exhausted/);
 });
 
 test('cleanup catches partial startup, expiry and explicit Down, not ready unexpired demos', () => {

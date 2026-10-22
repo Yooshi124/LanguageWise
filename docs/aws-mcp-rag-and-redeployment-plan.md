@@ -63,7 +63,7 @@ single-replica Garry, private ALB, restricted task ingress and independent clean
 Do not add public MCP/RAG endpoints, NAT, EFS, a hosted vector database or a GPU.
 
 Preserve the two-hour lease from the Up request, one-hour startup deadline,
-four-hour admission reservation, 10-cycle/40-hour monthly bounds, $100 overall
+four-hour admission reservation, ongoing 20-cycle/80-reserved-hour monthly bounds, $160 overall
 budget and separate OpenRouter allowance. Any size, quota, timeout or budget
 exception needs separate approval. A working plan does not guarantee those limits
 will accommodate the additional workloads; measure before enabling them.
