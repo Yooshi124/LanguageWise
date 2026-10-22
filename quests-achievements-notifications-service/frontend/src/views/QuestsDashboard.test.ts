@@ -27,7 +27,7 @@ describe('QuestsDashboard', () => {
     expect(wrapper.text()).toContain('1 of 1 achievements complete')
     expect(wrapper.get('fieldset').attributes('disabled')).toBeDefined()
     expect((wrapper.findAll('input[type="checkbox"]')[1].element as HTMLInputElement).checked).toBe(true)
-    expect(wrapper.get('img').attributes('src')).toBe('/remotes/quests-achievements/achievement.svg')
+    expect(wrapper.get('img[src$="achievement.svg"]').attributes('src')).toBe('/remotes/quests-achievements/achievement.svg')
   })
 
   it('renders an unbounded login streak as a personal best', async () => {

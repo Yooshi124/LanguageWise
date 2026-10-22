@@ -11,9 +11,11 @@
 			<p>Drag through every letter in a hidden theme.</p>
 		</header>
 		<section v-if="noVocabulary" class="board-shell empty-state" role="status">
+			<img class="garry-mood" :src="'/garry/ConfusedGarry.png'" alt="" aria-hidden="true" />
 			<p class="empty-state__message">{{ NO_VOCABULARY_MESSAGE }}</p>
 		</section>
 		<section v-else-if="aiUnavailable" class="board-shell empty-state" role="status">
+			<img class="garry-mood" :src="'/garry/SleepyGarry.png'" alt="" aria-hidden="true" />
 			<p class="empty-state__message">{{ AI_UNAVAILABLE_MESSAGE }}</p>
 		</section>
 		<section v-else-if="starting" class="board-shell" aria-label="Generating game">

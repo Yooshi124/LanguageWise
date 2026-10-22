@@ -38,6 +38,7 @@ onMounted(load);
     <StateBlock
         v-else-if="failed"
         title="The forum list is unavailable"
+        image="/garry/SleepyGarry.png"
         message="The discussion service could not be reached. It may still be starting up."
         tone="error"
         retry-label="Try again"

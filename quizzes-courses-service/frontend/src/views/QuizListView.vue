@@ -66,7 +66,11 @@ watch(courseCode, resource.load, { immediate: true })
       v-else-if="!quizCards.length"
       title="No quizzes available"
       text="Quizzes will appear here as lessons are published."
-    />
+    >
+      <template #media>
+        <img class="garry-mood" :src="'/garry/ConfusedGarry.png'" alt="" aria-hidden="true" />
+      </template>
+    </v-empty-state>
     <v-row v-else class="mt-7" align="stretch">
       <v-col v-for="{ quiz, progress } in quizCards" :key="quiz.id" cols="12" md="6">
         <v-card

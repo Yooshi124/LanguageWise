@@ -27,6 +27,7 @@ const completed = computed(() => profile.value?.achievements.filter(
 const boundedAchievementCount = computed(() => profile.value?.achievements.filter(
   (achievement) => achievement.progressNeeded > 0,
 ).length ?? 0)
+const allAchievementsComplete = computed(() => boundedAchievementCount.value > 0 && completed.value === boundedAchievementCount.value)
 const notifications = computed(() => [...(profile.value?.notifications ?? [])].sort(
   (left, right) => new Date(right.time).getTime() - new Date(left.time).getTime(),
 ))
@@ -96,6 +97,7 @@ onMounted(load)
     <section class="lw-profile-band" aria-labelledby="profile-name">
       <div><p class="lw-eyebrow">Learner profile</p><h2 id="profile-name">{{ profile.username }}</h2></div>
       <p class="lw-profile-band__summary">{{ completed }} of {{ boundedAchievementCount }} achievements complete</p>
+      <img v-if="allAchievementsComplete" class="garry-mood" :src="'/garry/CelebrateGarry.png'" alt="" aria-hidden="true">
     </section>
 
     <div class="lw-dashboard-grid">
@@ -143,6 +145,7 @@ onMounted(load)
 
     <section class="lw-notifications" aria-labelledby="notifications-title">
       <div class="lw-section-heading"><div><p class="lw-eyebrow">Your updates</p><h2 id="notifications-title">Past notifications</h2></div><span class="lw-badge">{{ notifications.length }} {{ notifications.length === 1 ? 'update' : 'updates' }}</span></div>
+      <img v-if="notifications.length === 0" class="garry-mood" :src="'/garry/SleepyGarry.png'" alt="" aria-hidden="true">
       <p v-if="notifications.length === 0" class="lw-notifications__empty">No notifications yet.</p>
       <ol v-else class="lw-notification-list">
         <li v-for="notification in notifications" :key="notification.notificationId" class="lw-notification">

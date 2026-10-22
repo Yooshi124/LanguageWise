@@ -53,6 +53,7 @@ const trendGlyph = computed(() => {
         <h2 class="lw-card__title">AI Summary</h2>
         <p class="lw-card__hint">Personalised insights on your last 30 days</p>
 
+        <img v-if="isLoading" class="garry-mood" :src="'/garry/ThinkingGarry.png'" alt="" aria-hidden="true" />
         <p v-if="isLoading" class="lw-table__empty">Generating summary…</p>
         <p v-else-if="isError" class="lw-table__error">Failed to generate summary.</p>
         <p v-else-if="!data" class="lw-table__empty">No summary available.</p>
