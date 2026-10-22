@@ -1,4 +1,4 @@
-name: pre-commit-security
+name: Security Check
 
 on:
   pull_request:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: pre-commit-security-${{ github.ref }}
+  group: security-check-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -20,8 +20,8 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
 
 jobs:
-  pre-commit-security:
-    name: pre-commit-security
+  security-check:
+    name: Security Check
     runs-on: ubuntu-latest
 
     steps:
@@ -57,5 +57,18 @@ jobs:
           restore-keys: |
             nuget-${{ runner.os }}-
 
-      - name: Run pre-commit security hooks
-        run: pipx run pre-commit run --all-files --show-diff-on-failure
+      - name: Run security hooks on the whole repo
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/pre-commit
+          pipx run pre-commit run --all-files --show-diff-on-failure 2>&1 | tee reports/pre-commit/ci.log
+
+      - name: Write security check summary
+        if: always()
+        run: |
+          if [ -f reports/pre-commit/ci.log ]; then
+            python3 tools/security/summarize_precommit.py reports/pre-commit/ci.log >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf '## Security Check\n\nThe hooks did not produce a log.\n' >> "$GITHUB_STEP_SUMMARY"
+          fi

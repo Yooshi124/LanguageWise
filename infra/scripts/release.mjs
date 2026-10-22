@@ -8,7 +8,7 @@ import { loadFoundation } from './demo.mjs';
 export const REQUIRED_WORKFLOWS = Object.freeze([
   'shared.yml', 'mini-games-service.yml', 'quizzes-courses-service.yml',
   'chat-discussion-service.yml', 'quests-achievements-notifications-service.yml',
-  'leaderboard-analytics-service.yml', 'mcp-server.yml', 'pre-commit-security.yml',
+  'leaderboard-analytics-service.yml', 'mcp-server.yml', 'security-check.yml',
   'aws-infrastructure.yml', 'rag-server.yml', 'ai-e2e.yml',
 ]);
 
