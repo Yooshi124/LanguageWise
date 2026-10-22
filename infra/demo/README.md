@@ -31,25 +31,54 @@ retained and supplied as nonsecret values, not remote-state secret lookups.
   translates them to `schema_version=1` only for cleanup. Their original eighteen
   task/image inventory still resolves; enabling services requires version 2.
 
-## Two Phases
+## Cold Startup
 
-1. Under the retained controller/state locks, apply with
-   `services_enabled=false` (the default). This creates all infrastructure,
-  twenty application task definitions and the initializer definition, but
+1. Under the retained controller/state locks, first verify the disposable runtime
+  is absent. Only this verified cold path uses Terraform `-parallelism=10` and
+  `cold_start=true`. Apply with `services_enabled=false` (the default). This
+  creates all infrastructure, twenty application task definitions and the initializer definition, but
    **no ECS application services**.
 2. Start one Fargate task using `initializer_task_definition_arn`, the foundation
    cluster, `subnet_ids`, `initializer_security_group_ids`, public IP assignment
    and Linux/x86_64 platform 1.4.0. Await STOPPED; require no launch failures and
    exit code zero from container `database-initializer`. A successful RunTask
    API response is not evidence of successful initialization.
-3. Only then apply the same release with `services_enabled=true`. Terraform
-  creates twenty one-replica services and waits for steady state. The ALB
+3. Apply the same release with `services_enabled=true`, `cold_start=true` and
+  `startup_phase=dependencies`. Launch the five database APIs and RAG without
+  waiting for each individual service inside Terraform. The controller waits
+  for their complete deployments and current-revision running tasks before
+  launching dependent backends.
+4. Apply with `startup_phase=all` (the default) and `cold_start=true` to launch
+  all twenty one-replica services. The controller requires complete deployments,
+  a complete paginated task inventory and one healthy current-revision task per
+  service before HTTPS checks. PostgREST alone permits `UNKNOWN` container/task
+  health because its image has no ECS health check; it must still be running.
+  The ALB
    detaches its initial CloudFront managed-prefix-list SG and retains only the
    SG admitting CloudFront's service-managed VPC-origin SG.
-4. Repeated Up or a live release must not perform phase one or rerun the
-   initializer. The controller owns this gate, expiry and serialization.
-5. Down destroys this entire root, including RDS data and backups, with no final
+5. Repeated Up or a live release must not perform phase one or rerun the
+  initializer. Live releases, rollbacks and Down retain Terraform
+  `-parallelism=2`; default `cold_start=false` preserves per-service Terraform
+  waiters. Dependency-only staging is rejected outside an enabled cold start.
+  The controller owns these gates, expiry and serialization.
+6. Down destroys this entire root, including RDS data and backups, with no final
    snapshot. It does not touch foundation resources or secret metadata/values.
+
+The controller reports elapsed milliseconds for infrastructure, initialization,
+dependency launch/readiness, application launch/readiness and each HTTPS check.
+Terraform failures expose only allowlisted resource types, error codes and fixed
+categories, including readiness timeouts and deployment circuit breakers. HTTPS
+failures expose only fixed categories and numeric status; response bodies and
+raw provider errors remain suppressed. Named service snapshots report allowlisted
+deployment/task/health states, bounded counts and whether the running revision is
+current. Healthy tasks are counted even while another deployment is incomplete.
+While blocked, a stopped-task sample of at most 100 tasks is inspected at most
+once per minute. Only known service names, fixed stop/reason codes and numeric
+exit codes are reported; no task ARNs, raw AWS events or provider text are logged.
+Changed snapshots and deduplicated stopped-task details share a 200-line limit
+per readiness phase. Reaching it does not stop health checks or extend deadlines.
+These changes remove serialized cold-start waiters, not AWS provisioning latency;
+a faster live cold start remains unverified until a separately authorized run.
 
 The initializer's master JSON is injected by ECS directly from the RDS-managed
 secret into `RDS_MASTER_SECRET`. The controller must not fetch it, pass it as a

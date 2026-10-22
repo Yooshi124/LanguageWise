@@ -25,11 +25,13 @@ repos:
           - rag-server/requirements.txt
           - -r
           - tools/agentic-loop/requirements.txt
+          - -r
+          - tests/e2e/requirements.txt
           - --ignore-vuln=PYSEC-2026-311
           - --ignore-vuln=PYSEC-2026-3813
           - --ignore-vuln=PYSEC-2026-3814
           - --ignore-vuln=PYSEC-2026-3815
-        files: ^(rag-server|tools/agentic-loop)/requirements\.txt$
+        files: ^(rag-server|tools/agentic-loop|tests/e2e)/requirements\.txt$
 
   - repo: local
     hooks:
@@ -42,4 +44,5 @@ repos:
         name: dotnet vulnerable packages (backends)
         entry: python tools/security/audit_deps.py dotnet
         language: python
+        require_serial: true
         files: \.(slnx|csproj|props|targets)$|(^|/)nuget\.config$

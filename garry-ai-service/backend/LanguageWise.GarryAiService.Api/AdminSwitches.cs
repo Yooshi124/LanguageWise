@@ -11,6 +11,7 @@ public sealed record AdminSwitchState(bool AiMode, bool Mcp, bool Rag)
 public interface IAdminSwitches
 {
 	Task<AdminSwitchState> GetAsync(CancellationToken cancellationToken);
+	Task<AdminSwitchState> RefreshAsync(CancellationToken cancellationToken) => GetAsync(cancellationToken);
 }
 
 public sealed class AdminSwitches(IHttpClientFactory clients, ILogger<AdminSwitches> logger) : IAdminSwitches
@@ -19,10 +20,14 @@ public sealed class AdminSwitches(IHttpClientFactory clients, ILogger<AdminSwitc
 	private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(5);
 	private CachedState? cached;
 
-	public async Task<AdminSwitchState> GetAsync(CancellationToken cancellationToken)
+	public Task<AdminSwitchState> GetAsync(CancellationToken cancellationToken) => ReadAsync(false, cancellationToken);
+
+	public Task<AdminSwitchState> RefreshAsync(CancellationToken cancellationToken) => ReadAsync(true, cancellationToken);
+
+	private async Task<AdminSwitchState> ReadAsync(bool refresh, CancellationToken cancellationToken)
 	{
 		var current = cached;
-		if (current is not null && current.ExpiresAt > DateTime.UtcNow)
+		if (!refresh && current is not null && current.ExpiresAt > DateTime.UtcNow)
 		{
 			return current.State;
 		}

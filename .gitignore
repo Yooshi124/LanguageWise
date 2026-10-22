@@ -47,6 +47,9 @@ crash.log
 infra/generated/
 infra/foundation/expiry-dispatcher.zip
 
+# ---- Generated reports (pre-commit and post-commit) ----
+reports/
+
 # ---- Agentic Loop generated artefacts ----
 tools/agentic-loop/Sessions/*.md
 tools/agentic-loop/Plans/*.md

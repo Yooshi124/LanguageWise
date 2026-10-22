@@ -2,6 +2,49 @@
 
 ## Current Follow-up: 2026-10-22
 
+Timed Up [39695904779](https://github.com/Yooshi124/LanguageWise/actions/runs/39695904779)
+used the exact successful 21-image release `bd673cf22b96523de7674ddecb4c5a8ca830760f`.
+It failed in the Terraform ECS-service apply at 00:34:09 UTC, before HTTPS smoke
+checks and before the one-hour startup deadline. The old diagnostic retained only
+`resource_type=aws_ecs_service; code=unknown; category=provider-or-unknown`;
+the exact provider rejection or waiter failure cannot be recovered from that log.
+Automatic rollback verified Down at 01:06:20 UTC. Independent read-only checks
+confirm Down revision 51, no writer lock and no disposable resource residuals.
+Monthly reservations remain nine cycles and 36 hours of the unchanged 10/40 limits.
+
+Cold-start optimization now uses a verified-empty-runtime gate, Terraform
+parallelism 10 and controller-owned aggregate readiness rather than serialized
+per-service waiters. Initialization precedes the five database APIs and RAG;
+their ready tasks precede dependent application services. Live updates, rollbacks
+and destruction retain parallelism 2 and the default Terraform waiters.
+Readiness requires current-revision task health, with the documented PostgREST
+exception. Phase timings and fixed failure categories do not disclose raw errors.
+See the [cold-start contract](demo/README.md#cold-startup).
+
+The PR follow-up adds named, bounded service diagnostics and rate-limited,
+redacted stopped-task reason codes, so an incomplete deployment no longer hides
+all other healthy tasks behind a zero counter. Release publication can also
+reuse the complete previous immutable image set for strictly allowlisted
+runtime-only changes, with archive equality, ancestor-diff and ECR availability
+proof. Current-SHA checks, complete manifests and fresh release sequences remain
+mandatory; any unproven or image-affecting change uses the full build. See the
+[reuse contract](images/README.md#runtime-only-release-reuse). The initial
+publisher/control-code change deliberately rebuilds all images. These follow-ups
+are locally tested, not proof of a successful hosted publication or cold start.
+
+The failed run took about 17.5 minutes to reach initialization, then spread twenty
+service creations over 21.5 minutes. Quizzes backend DNS/health failures preceded
+its database service creation. Staging fixes that observed ordering; it does not
+prove it was the original Terraform failure's sole cause. A faster live startup
+and a successful active-demo image update remain unverified. No further Up is
+authorized, and no push, merge, size, quota, timeout or lease change was made.
+The owner revised the monthly planning budget to USD 160; credits offset charges,
+not gross costs. AWS Budget alerts and the OpenRouter limit were not changed.
+The existing pinned cleanup bundle remains unchanged; resource addresses and
+cleanup inputs remain compatible, including partial dependency-stage teardown.
+
+## Earlier Follow-up: 2026-10-22
+
 See the [MCP/RAG and reliable redeployment plan](../docs/aws-mcp-rag-and-redeployment-plan.md)
 for implementation evidence, continued local development and the live-update
 repair. Up `39424991893` succeeded and the owner verified app access,

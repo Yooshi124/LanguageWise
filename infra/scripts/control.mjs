@@ -76,7 +76,16 @@ export function validateRelease(release, foundation, { allowLegacy = false } = {
     requireThat(typeof image === 'string' && image.startsWith(`${foundation.repository_url}@sha256:`)
       && /^[a-f0-9]{64}$/.test(image.slice(`${foundation.repository_url}@sha256:`.length)), 'Images must be exact repository@sha256 digests');
   }
-  return { ...(legacy ? {} : { schemaVersion: 2 }), sha: release.sha, images: { ...release.images }, sequence: release.sequence };
+  for (const field of ['imageSourceSha', 'reusedFromSha']) {
+    requireThat(release[field] === undefined || !legacy && typeof release[field] === 'string' && /^[a-f0-9]{40}$/.test(release[field]), 'Invalid image source provenance');
+  }
+  requireThat(release.reusedFromSha === undefined || release.imageSourceSha !== undefined && release.reusedFromSha !== release.sha,
+    'Reused images require source provenance and a different approved release');
+  requireThat(release.imageSourceSha === undefined || release.reusedFromSha !== undefined || release.imageSourceSha === release.sha,
+    'Built images must originate from the current release');
+  return { ...(legacy ? {} : { schemaVersion: 2 }), sha: release.sha, images: { ...release.images }, sequence: release.sequence,
+    ...(release.imageSourceSha === undefined ? {} : { imageSourceSha: release.imageSourceSha }),
+    ...(release.reusedFromSha === undefined ? {} : { reusedFromSha: release.reusedFromSha }) };
 }
 
 export function releaseOrder(candidate, previous) {

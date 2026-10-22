@@ -7,7 +7,9 @@ public sealed record CompletionRequest(
     IReadOnlyList<ChatMessage>? History,
     string? DomainRules,
     string? CanonicalContext,
-    string? ToolScope = null)
+    string? ToolScope = null,
+    int? MaxTokens = null,
+    double? Temperature = null)
 {
     private const string Personality = """
         You are Garry, the LanguageWise learning assistant. Be encouraging, concise and educational.
@@ -27,6 +29,8 @@ public sealed record CompletionRequest(
             && item.Role is "user" or "assistant"
             && item.Content is { Length: > 0 })
         && request.History.Sum(item => item.Content.Length) + request.Message.Length <= 12000
+        && (request.MaxTokens is null or > 0 and <= 8192)
+        && (request.Temperature is null or >= 0 and <= 2)
         && (request.ToolScope is null || System.Text.RegularExpressions.Regex.IsMatch(request.ToolScope, "^[a-z]{1,32}$"));
 
     public IReadOnlyList<ChatMessage> BuildMessages()

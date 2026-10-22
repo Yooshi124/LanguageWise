@@ -2,13 +2,14 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { IMAGE_KEYS, requireThat, validateRelease } from './control.mjs';
 import { loadFoundation } from './demo.mjs';
 
 export const REQUIRED_WORKFLOWS = Object.freeze([
   'shared.yml', 'mini-games-service.yml', 'quizzes-courses-service.yml',
   'chat-discussion-service.yml', 'quests-achievements-notifications-service.yml',
-  'leaderboard-analytics-service.yml', 'mcp-server.yml', 'pre-commit-security.yml',
+  'leaderboard-analytics-service.yml', 'mcp-server.yml', 'security-check.yml',
   'aws-infrastructure.yml', 'rag-server.yml', 'ai-e2e.yml',
 ]);
 
@@ -37,6 +38,26 @@ export function validateCandidate(candidate, sha, config) {
   const release = validateRelease(candidate, config);
   requireThat(release.sha === sha, 'Candidate does not match the tested workflow SHA');
   return release;
+}
+
+export function reuseManifest({ previous, archived, comparison, sha, config, sequence }) {
+  validateCandidate(previous, previous?.sha, config);
+  requireThat(previous.schemaVersion === 2 && isDeepStrictEqual(previous, archived), 'Image reuse requires the exact immutable published archive');
+  requireThat(comparison?.status === 'ahead' && comparison.base_commit?.sha === previous.sha
+    && comparison.merge_base_commit?.sha === previous.sha && Array.isArray(comparison.files)
+    && comparison.files.length < 300, 'Complete ancestor comparison required for image reuse');
+  const runtimeOnly = path => typeof path === 'string' && (
+    ['README.md', 'infra/README.md', 'infra/demo/README.md', 'infra/scripts/demo.mjs'].includes(path)
+    || /^infra\/demo\/(?:[a-zA-Z0-9_-]+\.tf|\.terraform\.lock\.hcl)$/.test(path)
+    || /^infra\/demo\/tests\/[a-zA-Z0-9_-]+\.tftest\.hcl$/.test(path)
+    || /^infra\/tests\/[a-zA-Z0-9_-]+\.test\.mjs$/.test(path)
+    || /^docs\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+\.md$/.test(path));
+  requireThat(comparison.files.every(file => ['added', 'modified', 'removed', 'renamed', 'copied', 'changed', 'unchanged'].includes(file.status)
+    && runtimeOnly(file.filename) && (file.previous_filename === undefined || runtimeOnly(file.previous_filename))), 'Changed image inputs require a full build');
+  const imageSourceSha = previous.imageSourceSha === undefined ? previous.sha : previous.imageSourceSha;
+  requireThat(typeof imageSourceSha === 'string' && /^[a-f0-9]{40}$/.test(imageSourceSha), 'Invalid image source provenance');
+  return validateCandidate({ schemaVersion: 2, sha, sequence, images: previous.images,
+    reusedFromSha: previous.sha, imageSourceSha }, sha, config);
 }
 
 export function assertMaster(sha) {
@@ -68,13 +89,19 @@ export function buildArguments(service, image, sha) {
   return [...common, `${base}/${tier}`];
 }
 
-function build(sha, config, sequence) {
-  assertMaster(sha);
-  mkdirSync('infra/generated', { recursive: true });
-  const archived = 'infra/generated/published.json';
+export function build(sha, config, sequence, dependencies = {}) {
+  const execute = dependencies.run ?? run;
+  const lookup = dependencies.github ?? github;
+  const current = dependencies.assertMaster ?? assertMaster;
+  const report = dependencies.report ?? console.log;
+  const directory = dependencies.directory ?? 'infra/generated';
+  const output = resolve(directory, 'release.json');
+  current(sha);
+  mkdirSync(directory, { recursive: true });
+  const archived = resolve(directory, 'published.json');
   let published;
   try {
-    run('aws', ['s3api', 'get-object', '--bucket', config.artifact_bucket_name,
+    execute('aws', ['s3api', 'get-object', '--bucket', config.artifact_bucket_name,
       '--key', `releases/${sha}.json`, '--region', config.region, archived]);
     published = JSON.parse(readFileSync(archived, 'utf8'));
   } catch (error) {
@@ -82,13 +109,42 @@ function build(sha, config, sequence) {
   }
   if (published) {
     const existing = validateCandidate(published, sha, config);
-    writeFileSync('infra/generated/release.json', JSON.stringify(existing, null, 2), { mode: 0o600 });
-    console.log('Reusing the immutable published release; no rebuild or new sequence.');
+    current(sha);
+    writeFileSync(output, JSON.stringify(existing, null, 2), { mode: 0o600 });
+    report('Reusing the immutable published release; no rebuild or new sequence.');
+    return;
+  }
+  let reused;
+  try {
+    const previousFile = resolve(directory, 'previous.json');
+    execute('aws', ['s3api', 'get-object', '--bucket', config.artifact_bucket_name,
+      '--key', 'releases/latest.json', '--region', config.region, previousFile]);
+    const previousContent = JSON.parse(readFileSync(previousFile, 'utf8'));
+    const previous = validateCandidate(previousContent, previousContent?.sha, config);
+    const archiveFile = resolve(directory, 'previous-archive.json');
+    execute('aws', ['s3api', 'get-object', '--bucket', config.artifact_bucket_name,
+      '--key', `releases/${previous.sha}.json`, '--region', config.region, archiveFile]);
+    const candidate = reuseManifest({ previous, archived: JSON.parse(readFileSync(archiveFile, 'utf8')),
+      comparison: lookup(`compare/${previous.sha}...${sha}`), sha, config, sequence });
+    const digests = [...new Set(Object.values(candidate.images).map(image => image.split('@')[1]))];
+    const inventory = JSON.parse(execute('aws', ['ecr', 'describe-images', '--repository-name', config.repository_url.split('/').slice(1).join('/'),
+      '--image-ids', JSON.stringify(digests.map(imageDigest => ({ imageDigest }))), '--region', config.region, '--output', 'json']));
+    requireThat(Array.isArray(inventory.imageDetails) && inventory.imageDetails.length === digests.length
+      && new Set(inventory.imageDetails.map(image => image.imageDigest)).size === digests.length
+      && inventory.imageDetails.every(image => digests.includes(image.imageDigest)), 'Reusable ECR inventory is incomplete');
+    reused = candidate;
+  } catch {
+    report('Verified runtime-only image reuse unavailable; building all twenty-one images. Raw verification output suppressed.');
+  }
+  current(sha);
+  if (reused) {
+    writeFileSync(output, JSON.stringify(reused, null, 2), { mode: 0o600 });
+    report(`Reusing twenty-one immutable images from approved release ${reused.reusedFromSha}; current-SHA checks and a new release sequence remain required.`);
     return;
   }
   const registry = config.repository_url.split('/')[0];
-  const password = run('aws', ['ecr', 'get-login-password', '--region', config.region], { stdio: ['ignore', 'pipe', 'pipe'] });
-  run('docker', ['login', '--username', 'AWS', '--password-stdin', registry], { input: password, stdio: ['pipe', 'pipe', 'pipe'] });
+  const password = execute('aws', ['ecr', 'get-login-password', '--region', config.region], { stdio: ['ignore', 'pipe', 'pipe'] });
+  execute('docker', ['login', '--username', 'AWS', '--password-stdin', registry], { input: password, stdio: ['pipe', 'pipe', 'pipe'] });
   const images = {};
   try {
     for (const service of IMAGE_KEYS) {
@@ -96,24 +152,23 @@ function build(sha, config, sequence) {
       const args = buildArguments(service, tag, sha);
       if (['shared-db-api', 'mini-games-service-db', 'quizzes-courses-service-db', 'chat-discussion-service-db'].includes(service)) {
         const folder = service === 'shared-db-api' ? 'shared' : service.slice(0, -3);
-        run('docker', ['build', '--platform', 'linux/amd64', '--tag', `languagewise-build/${service}:${sha}`, `${folder}/database`],
+        execute('docker', ['build', '--platform', 'linux/amd64', '--tag', `languagewise-build/${service}:${sha}`, `${folder}/database`],
           { stdio: 'inherit', timeout: 20 * 60_000 });
       }
-      run('docker', args, { stdio: 'inherit', timeout: 20 * 60_000 });
-      run('docker', ['push', tag], { stdio: 'inherit', timeout: 10 * 60_000 });
-      const result = JSON.parse(run('aws', ['ecr', 'describe-images', '--repository-name', config.repository_url.split('/').slice(1).join('/'),
+      execute('docker', args, { stdio: 'inherit', timeout: 20 * 60_000 });
+      execute('docker', ['push', tag], { stdio: 'inherit', timeout: 10 * 60_000 });
+      const result = JSON.parse(execute('aws', ['ecr', 'describe-images', '--repository-name', config.repository_url.split('/').slice(1).join('/'),
         '--image-ids', `imageTag=${service}-${sha}`, '--region', config.region, '--output', 'json']));
       const digest = result.imageDetails?.[0]?.imageDigest;
       requireThat(/^sha256:[a-f0-9]{64}$/.test(digest), 'Published digest missing');
       images[service] = `${config.repository_url}@${digest}`;
-      run('docker', ['image', 'rm', tag], { stdio: ['ignore', 'pipe', 'pipe'] });
-      run('docker', ['builder', 'prune', '--force'], { stdio: ['ignore', 'pipe', 'pipe'] });
+      execute('docker', ['image', 'rm', tag], { stdio: ['ignore', 'pipe', 'pipe'] });
+      execute('docker', ['builder', 'prune', '--force'], { stdio: ['ignore', 'pipe', 'pipe'] });
     }
-    const release = validateRelease({ schemaVersion: 2, sha, images, sequence }, config);
-    mkdirSync('infra/generated', { recursive: true });
-    writeFileSync('infra/generated/release.json', JSON.stringify(release, null, 2), { mode: 0o600 });
+    const release = validateRelease({ schemaVersion: 2, sha, images, sequence, imageSourceSha: sha }, config);
+    writeFileSync(output, JSON.stringify(release, null, 2), { mode: 0o600 });
   } finally {
-    run('docker', ['logout', registry], { stdio: ['ignore', 'pipe', 'pipe'] });
+    execute('docker', ['logout', registry], { stdio: ['ignore', 'pipe', 'pipe'] });
   }
 }
 

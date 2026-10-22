@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using LanguageWise.GarryAiService.Api;
 using Microsoft.Extensions.Configuration;
 
@@ -7,6 +8,68 @@ namespace LanguageWise.GarryAiService.Api.Tests;
 
 public sealed class CompletionTests
 {
+    [TestCase("<|tool_call>")]
+    [TestCase("<|tool_call|>")]
+    [TestCase("<tool_call|>")]
+    [TestCase("<tool_call>")]
+    [TestCase("[TOOL_CALLS]")]
+    [TestCase("<function=")]
+    [TestCase("<|python_tag|>")]
+    public async Task Provider_WhenToolSyntaxSpansChunks_DoesNotExposeToolCalls(string marker)
+    {
+        for (var split = 1; split < marker.Length; split++)
+        {
+            var chunks = new[] { "Useful context.\n", marker[..split], marker[split..], "call:docs_search{query:what are achievements}" };
+            var body = string.Concat(chunks.Select(content => "data: " + JsonSerializer.Serialize(new
+            {
+                choices = new[] { new { delta = new { content } } }
+            }) + "\n\n")) + "data: [DONE]\n\n";
+            using var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) };
+            await using var stream = new ProviderStream(response, response.Content.ReadAsStream());
+            var events = new List<(string Type, string Value)>();
+            await foreach (var entry in stream.ReadAsync(CancellationToken.None)) events.Add(entry);
+            var text = string.Concat(events.Where(entry => entry.Type == "delta").Select(entry => entry.Value));
+
+            Assert.That(text, Does.Contain("Tools are unavailable"), $"split {split}");
+            Assert.That(text, Does.StartWith("Useful context.\n"));
+            Assert.That(text, Does.Not.Contain("docs_search"));
+            Assert.That(text, Does.Not.Contain(marker));
+            Assert.That(events[^1].Type, Is.EqualTo("done"));
+        }
+    }
+
+    [TestCase("{\"tool_calls\":[{\"function\":{\"name\":\"docs_search\",\"arguments\":\"{}\"}}]}", "tool_calls")]
+    [TestCase("{\"function_call\":{\"name\":\"docs_search\",\"arguments\":\"{}\"}}", "function_call")]
+    public async Task Provider_WhenStructuredToolCallsAppear_ExplainsToolsAreUnavailable(string delta, string reason)
+    {
+        var body = $"data: {{\"choices\":[{{\"delta\":{delta}}}]}}\n\n" +
+            $"data: {{\"choices\":[{{\"delta\":{{}},\"finish_reason\":\"{reason}\"}}]}}\n\n";
+        using var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) };
+        await using var stream = new ProviderStream(response, response.Content.ReadAsStream());
+        var events = new List<(string Type, string Value)>();
+        await foreach (var entry in stream.ReadAsync(CancellationToken.None)) events.Add(entry);
+        Assert.That(events.Single(entry => entry.Type == "delta").Value, Does.Contain("Tools are unavailable"));
+        Assert.That(events[^1], Is.EqualTo(("done", "stop")));
+    }
+
+    [Test]
+    public async Task Provider_WithOrdinaryTextSplitIntoCharacters_PreservesEveryCharacter()
+    {
+        const string text = "Normal prose, [notes], x < y, <markup>, and a trailing <";
+        var body = string.Concat(text.Select(character => "data: " + JsonSerializer.Serialize(new
+        {
+            choices = new[] { new { delta = new { content = character.ToString() } } }
+        }) + "\n\n")) + "data: [DONE]\n\n";
+        using var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) };
+        await using var stream = new ProviderStream(response, response.Content.ReadAsStream());
+        var result = new StringBuilder();
+        await foreach (var (type, value) in stream.ReadAsync(CancellationToken.None))
+        {
+            if (type == "delta") result.Append(value);
+        }
+        Assert.That(result.ToString(), Is.EqualTo(text));
+    }
+
     [Test]
     public void Prompt_PrependsSharedPersonalityAndRetainsDomainRules()
     {
