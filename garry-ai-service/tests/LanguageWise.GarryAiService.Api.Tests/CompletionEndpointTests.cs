@@ -31,9 +31,12 @@ public sealed class CompletionEndpointTests
             maxTokens = requestedTokens, temperature = 0.7
         });
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
-        var payload = fixture.ProviderRequests.Single();
-        Assert.That(payload.GetProperty("max_tokens").GetInt32(), Is.EqualTo(expectedTokens));
-        Assert.That(payload.GetProperty("temperature").GetDouble(), Is.EqualTo(0.7));
+        Assert.That(fixture.ProviderRequests, Has.Count.EqualTo(3));
+        foreach (var payload in fixture.ProviderRequests)
+        {
+            Assert.That(payload.GetProperty("max_tokens").GetInt32(), Is.EqualTo(expectedTokens));
+            Assert.That(payload.GetProperty("temperature").GetDouble(), Is.EqualTo(0.7));
+        }
     }
 
     [TestCase(0, 0.7)]
@@ -105,7 +108,7 @@ public sealed class CompletionEndpointTests
         Assert.That(body, Does.Not.Contain("tool_call"));
         Assert.That(body, Does.Not.Contain("event: tool"));
         Assert.That(body, Does.Contain("event: done"));
-        var payload = fixture.ProviderRequests.Single();
+        var payload = fixture.ProviderRequests.Last();
         Assert.That(payload.GetProperty("tool_choice").GetString(), Is.EqualTo("none"));
         Assert.That(payload.TryGetProperty("tools", out _), Is.False);
         Assert.That(payload.GetProperty("messages").EnumerateArray().Any(message =>

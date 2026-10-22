@@ -27,11 +27,15 @@ public sealed class GarryAgent
         """;
 
     private readonly List<ChatMessage> messages;
+    private readonly int? outputTokens;
+    private readonly double? temperature;
 
     public GarryAgent(CompletionRequest request, string systemPrompt)
     {
         messages = new List<ChatMessage>(request.BuildMessages());
         messages.Insert(1, new ChatMessage("system", systemPrompt));
+        outputTokens = request.MaxTokens;
+        temperature = request.Temperature;
     }
 
     public IReadOnlyList<ChatMessage> Messages => messages.AsReadOnly();
@@ -41,7 +45,7 @@ public sealed class GarryAgent
 
     public async Task<string> CompleteAsync(CompletionProviders providers, CancellationToken cancellationToken)
     {
-        await using var completion = await providers.StartAsync(Messages, cancellationToken);
+        await using var completion = await providers.StartAsync(Messages, cancellationToken, outputTokens, temperature);
         var answer = new StringBuilder();
         await foreach (var (type, value) in completion.ReadAsync(cancellationToken))
         {

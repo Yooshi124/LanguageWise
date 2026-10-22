@@ -46,7 +46,7 @@ public sealed class ToolLoopTests
 		using var fixture = new ToolFixture(ProgressToolCall, FinalAnswer);
 		using var client = fixture.CreateAuthorizedClient();
 
-		using var response = await client.PostAsJsonAsync("/api/completions", Request("courses"));
+		using var response = await client.PostAsJsonAsync("/api/completions", Request("courses", 96, 0.7));
 		var content = await response.Content.ReadAsStringAsync();
 
 		Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
@@ -63,6 +63,12 @@ public sealed class ToolLoopTests
 		var secondRound = fixture.Provider.ToolRequests[1];
 		Assert.That(secondRound, Does.Contain("\"role\":\"tool\""));
 		Assert.That(secondRound, Does.Contain("untrusted data"));
+		foreach (var requestBody in fixture.Provider.ToolRequests)
+		{
+			using var payload = JsonDocument.Parse(requestBody);
+			Assert.That(payload.RootElement.GetProperty("max_tokens").GetInt32(), Is.EqualTo(96));
+			Assert.That(payload.RootElement.GetProperty("temperature").GetDouble(), Is.EqualTo(0.7));
+		}
 		Assert.Multiple(() =>
 		{
 			Assert.That(fixture.Provider.StreamRequests, Has.Count.EqualTo(2));
@@ -356,13 +362,15 @@ public sealed class ToolLoopTests
 		Assert.That(fixture.Provider.StreamRequests, Has.Count.EqualTo(3));
 	}
 
-	private static object Request(string? toolScope) => new
+	private static object Request(string? toolScope, int? maxTokens = null, double? temperature = null) => new
 	{
 		message = "How am I going?",
 		history = Array.Empty<object>(),
 		domainRules = "course rules",
 		canonicalContext = "{}",
-		toolScope
+		toolScope,
+		maxTokens,
+		temperature
 	};
 
 	private sealed class ToolFixture(params string[] toolReplies) : WebApplicationFactory<Program>

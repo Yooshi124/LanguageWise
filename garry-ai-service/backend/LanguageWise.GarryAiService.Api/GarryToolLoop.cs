@@ -81,7 +81,7 @@ public sealed class GarryToolLoop(
 		var evidence = new List<ChatMessage>();
 		for (var round = 0; round < MaxRounds; round++)
 		{
-			var reply = await CompleteAsync(messages, toolSchema, allowTools: true, cancellationToken);
+			var reply = await CompleteAsync(messages, toolSchema, allowTools: true, request, cancellationToken);
 			if (reply.ToolCalls.Count == 0)
 			{
 				LogLimitReached(request.ToolScope, callsOverLimit, roundsExhausted: false);
@@ -134,7 +134,7 @@ public sealed class GarryToolLoop(
 		}
 
 		LogLimitReached(request.ToolScope, callsOverLimit, roundsExhausted: true);
-		var final = await CompleteAsync(messages, toolSchema, allowTools: false, cancellationToken);
+		var final = await CompleteAsync(messages, toolSchema, allowTools: false, request, cancellationToken);
 		return CompleteWorker(final.Content, evidence, citations);
 	}
 
@@ -195,8 +195,10 @@ public sealed class GarryToolLoop(
 	private static JsonObject ToNode(ChatMessage message) => new() { ["role"] = message.Role, ["content"] = message.Content };
 
 	private async Task<ProviderReply> CompleteAsync(
-		JsonArray messages, JsonArray tools, bool allowTools, CancellationToken cancellationToken)
+		JsonArray messages, JsonArray tools, bool allowTools, CompletionRequest completionRequest, CancellationToken cancellationToken)
 	{
+		var maxTokens = configuration.GetValue("OpenRouter:MaxOutputTokens", 1024);
+		maxTokens = Math.Min(completionRequest.MaxTokens ?? maxTokens, maxTokens);
 		var payload = new JsonObject
 		{
 			["model"] = configuration["OpenRouter:ToolModel"] ?? configuration["OpenRouter:Model"] ?? "google/gemma-4-26b-a4b-it",
@@ -204,7 +206,8 @@ public sealed class GarryToolLoop(
 			["tools"] = tools.DeepClone(),
 			["tool_choice"] = allowTools ? "auto" : "none",
 			["stream"] = false,
-			["max_tokens"] = configuration.GetValue("OpenRouter:MaxOutputTokens", 1024)
+			["max_tokens"] = maxTokens,
+			["temperature"] = completionRequest.Temperature
 		};
 
 		using var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions") { Content = JsonContent.Create(payload) };
