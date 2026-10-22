@@ -44,4 +44,5 @@ repos:
         name: dotnet vulnerable packages (backends)
         entry: python tools/security/audit_deps.py dotnet
         language: python
+        require_serial: true
         files: \.(slnx|csproj|props|targets)$|(^|/)nuget\.config$
