@@ -48,6 +48,12 @@ builder.Services.AddHttpClient(DocsTools.ServiceName, client =>
 	client.BaseAddress = new Uri((builder.Configuration["Services:Rag"] ?? "http://localhost:8100").TrimEnd('/') + "/");
 	client.Timeout = downstreamTimeout;
 });
+builder.Services.AddHttpClient(AdminSwitches.HttpClientName, client =>
+{
+	client.BaseAddress = new Uri((builder.Configuration["Services:Database"] ?? "http://localhost:6000").TrimEnd('/') + "/");
+	client.Timeout = TimeSpan.FromSeconds(5);
+});
+builder.Services.AddSingleton<IAdminSwitches, AdminSwitches>();
 
 builder.Services.AddMcpServer(options =>
 	{
@@ -61,6 +67,20 @@ builder.Services.AddMcpServer(options =>
 
 var app = builder.Build();
 app.UseMiddleware<ApiKeyMiddleware>();
+app.Use(async (context, next) =>
+{
+	if (context.Request.Path.StartsWithSegments(mcpPath)
+		&& !(await context.RequestServices.GetRequiredService<IAdminSwitches>().GetAsync(context.RequestAborted)).Mcp)
+	{
+		await Results.Problem(
+			title: "MCP is turned off.",
+			detail: "An administrator has turned off Garry's tools.",
+			statusCode: StatusCodes.Status503ServiceUnavailable,
+			extensions: new Dictionary<string, object?> { ["code"] = "mcp_disabled" }).ExecuteAsync(context);
+		return;
+	}
+	await next(context);
+});
 app.MapGet("/health", () => Results.Ok());
 app.MapMcp(mcpPath);
 app.Run();

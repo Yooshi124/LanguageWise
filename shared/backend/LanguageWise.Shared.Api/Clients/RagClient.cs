@@ -10,10 +10,10 @@ public sealed record RagResult(string Source, string Heading, double Relevance, 
 public sealed record RagQueryResponse(IReadOnlyList<RagResult> Results, int ResultCount, string? Confidence);
 
 /// <summary>
-/// Client for the host RAG server's general endpoint (<c>POST /query</c>), which never returns
+/// Client for the RAG server's general endpoint (<c>POST /query</c>), which never returns
 /// TECHNICAL- (internal) passages.
 /// </summary>
-public sealed class RagClient(HttpClient httpClient)
+public sealed class RagClient(HttpClient httpClient, IConfiguration configuration)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -22,6 +22,11 @@ public sealed class RagClient(HttpClient httpClient)
         int? nResults,
         CancellationToken cancellationToken = default)
     {
+        if (!configuration.GetValue("Rag:Enabled", true))
+        {
+            throw new InvalidOperationException("Documentation search is disabled.");
+        }
+
         using var response = await httpClient.PostAsJsonAsync(
             "query",
             new RagQueryBody(query, nResults),

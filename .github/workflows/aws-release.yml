@@ -1,0 +1,105 @@
+name: AWS Release
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: languagewise-aws-demo
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-southeast-2
+  AWS_PAGER: ''
+  AWS_EC2_METADATA_DISABLED: 'true'
+  TF_IN_AUTOMATION: 'true'
+  TF_INPUT: 'false'
+
+jobs:
+  publish:
+    if: github.repository == 'Yooshi124/LanguageWise' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    environment: aws-demo
+    timeout-minutes: 100
+    env:
+      FOUNDATION_CONFIG: ${{ vars.AWS_FOUNDATION_CONFIG }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Require successful exact-SHA checks before AWS authentication
+        run: node infra/scripts/release.mjs gate
+      - name: Check foundation contract
+        run: node --input-type=module -e "import {loadFoundation} from './infra/scripts/demo.mjs'; loadFoundation(process.env.FOUNDATION_CONFIG)"
+      - name: Assume image-publication role
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-southeast-2
+          role-to-assume: arn:aws:iam::047754151573:role/languagewise/languagewise-release
+          role-session-name: GitHubPublish-${{ github.run_id }}-${{ github.run_attempt }}
+          role-duration-seconds: 7200
+          role-skip-session-tagging: true
+          allowed-account-ids: '047754151573'
+          unset-current-credentials: true
+          force-skip-oidc: true
+          output-credentials: false
+      - name: Build and push immutable complete image manifest
+        run: node infra/scripts/release.mjs build
+      - name: Reject superseded build and stage nonsecret candidate
+        run: |
+          node infra/scripts/release.mjs current
+          node infra/scripts/release.mjs stage
+
+  deploy:
+    needs: publish
+    if: github.repository == 'Yooshi124/LanguageWise' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    environment: aws-demo
+    timeout-minutes: 100
+    env:
+      FOUNDATION_CONFIG: ${{ vars.AWS_FOUNDATION_CONFIG }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+        with:
+          terraform_version: '1.16.6'
+          terraform_wrapper: false
+      - name: Reject superseded queued deployment
+        run: node infra/scripts/release.mjs current
+      - name: Assume demo deployment role with a fresh session
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-southeast-2
+          role-to-assume: arn:aws:iam::047754151573:role/languagewise/languagewise-deploy
+          role-session-name: GitHubDeploy-${{ github.run_id }}-${{ github.run_attempt }}
+          role-duration-seconds: 7200
+          role-skip-session-tagging: true
+          allowed-account-ids: '047754151573'
+          unset-current-credentials: true
+          force-skip-oidc: true
+          output-credentials: false
+      - name: Fetch tested candidate and deploy only while Up
+        run: |
+          node infra/scripts/release.mjs fetch
+          node infra/scripts/demo.mjs release

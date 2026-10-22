@@ -27,10 +27,28 @@ def tracked(pattern: str) -> list[Path]:
     return [ROOT / line for line in result.stdout.splitlines() if line]
 
 
-def audit_npm() -> list[str]:
+SHARED_CONFIG = {"nuget.config", "directory.packages.props", "directory.build.props", "directory.build.targets"}
+
+
+def affected(candidates: list[Path], changed: list[Path]) -> list[Path]:
+    # No changed files means a manual full audit. Shared NuGet config in a parent folder also applies below it.
+    if not changed:
+        return candidates
+    return [
+        candidate
+        for candidate in candidates
+        if any(
+            candidate.parent in path.parents
+            or (path.name.lower() in SHARED_CONFIG and path.parent in candidate.parent.parents)
+            for path in changed
+        )
+    ]
+
+
+def audit_npm(changed: list[Path]) -> list[str]:
     npm = require("npm")
     failed = []
-    for lockfile in tracked("*package-lock.json"):
+    for lockfile in affected(tracked("*package-lock.json"), changed):
         project = lockfile.parent
         name = project.relative_to(ROOT).as_posix()
         # Dev-only tooling (vitest, build plugins) never ships in the nginx image.
@@ -58,10 +76,10 @@ def vulnerable_packages(report: dict) -> list[str]:
     return found
 
 
-def audit_dotnet() -> list[str]:
+def audit_dotnet(changed: list[Path]) -> list[str]:
     dotnet = require("dotnet")
     failed = []
-    for solution in tracked("*.slnx"):
+    for solution in affected(tracked("*.slnx"), changed):
         name = solution.relative_to(ROOT).as_posix()
         restore = run([dotnet, "restore", str(solution), "--verbosity", "quiet"], ROOT)
         if restore.returncode != 0:
@@ -89,9 +107,10 @@ def audit_dotnet() -> list[str]:
 
 def main() -> int:
     audits = {"npm": audit_npm, "dotnet": audit_dotnet}
-    if len(sys.argv) != 2 or sys.argv[1] not in audits:
-        sys.exit(f"usage: {Path(__file__).name} {{{'|'.join(audits)}}}")
-    failed = audits[sys.argv[1]]()
+    if len(sys.argv) < 2 or sys.argv[1] not in audits:
+        sys.exit(f"usage: {Path(__file__).name} {{{'|'.join(audits)}}} [changed files...]")
+    changed = [ROOT / arg for arg in sys.argv[2:]]
+    failed = audits[sys.argv[1]](changed)
     if failed:
         print(f"\nHigh/critical vulnerabilities in: {', '.join(failed)}")
         return 1

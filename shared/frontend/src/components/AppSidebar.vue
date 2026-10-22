@@ -134,6 +134,14 @@ onBeforeUnmount(() => clearTimeout(hoverTimer))
         :show-label="expanded || mobileOpen"
       />
       <SidebarNavItem
+        v-if="auth.isAdmin.value"
+        label="Admin Settings"
+        icon="settings"
+        href="/admin-settings"
+        :active="route.path === '/admin-settings'"
+        :show-label="expanded || mobileOpen"
+      />
+      <SidebarNavItem
         v-if="auth.isAuthenticated.value"
         :label="loggingOut ? 'Logging out' : 'Logout'"
         icon="logout"

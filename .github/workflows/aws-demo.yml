@@ -1,0 +1,65 @@
+name: AWS Demo Up / Down
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Demo operation (Down permanently removes demo data)
+        required: true
+        default: down
+        type: choice
+        options: [up, down]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: languagewise-aws-demo
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-southeast-2
+  AWS_PAGER: ''
+  AWS_EC2_METADATA_DISABLED: 'true'
+  TF_IN_AUTOMATION: 'true'
+  TF_INPUT: 'false'
+
+jobs:
+  demo:
+    if: github.repository == 'Yooshi124/LanguageWise' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    environment: aws-demo
+    timeout-minutes: 100
+    env:
+      FOUNDATION_CONFIG: ${{ vars.AWS_FOUNDATION_CONFIG }}
+      DEMO_OPERATION: ${{ inputs.operation }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+        with:
+          terraform_version: '1.16.6'
+          terraform_wrapper: false
+      - name: Validate operation and nonsecret foundation before authentication
+        run: |
+          node --input-type=module -e "import {loadFoundation} from './infra/scripts/demo.mjs'; loadFoundation(process.env.FOUNDATION_CONFIG); if (!['up','down'].includes(process.env.DEMO_OPERATION)) process.exit(1)"
+      - name: Assume scoped demo-control role
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-southeast-2
+          role-to-assume: arn:aws:iam::047754151573:role/languagewise/languagewise-control
+          role-session-name: GitHubDemo-${{ github.run_id }}-${{ github.run_attempt }}
+          role-duration-seconds: 7200
+          role-skip-session-tagging: true
+          allowed-account-ids: '047754151573'
+          unset-current-credentials: true
+          force-skip-oidc: true
+          output-credentials: false
+      - name: Execute serialized demo control
+        run: node infra/scripts/demo.mjs "$DEMO_OPERATION"

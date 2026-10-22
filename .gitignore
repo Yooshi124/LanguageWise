@@ -36,6 +36,20 @@ venv/
 *.key
 .mcp-api-key
 
+# ---- Terraform and generated deployment inputs ----
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+crash.log
+infra/generated/
+infra/foundation/expiry-dispatcher.zip
+
+# ---- Generated reports (pre-commit and post-commit) ----
+reports/
+
 # ---- Agentic Loop generated artefacts ----
 tools/agentic-loop/Sessions/*.md
 tools/agentic-loop/Sessions/*.jsonl

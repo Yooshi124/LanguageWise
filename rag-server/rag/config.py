@@ -30,7 +30,7 @@ class Settings:
 
 def load_settings() -> Settings:
     return Settings(
-        host=os.getenv("RAG_HOST", "0.0.0.0"),  # noqa: S104 - containers reach it via host.docker.internal
+        host=os.getenv("RAG_HOST", "0.0.0.0"),  # noqa: S104 - reachable on the private Compose network
         port=int(os.getenv("RAG_PORT", "8100")),
         chroma_dir=_resolve(os.getenv("RAG_CHROMA_DIR", ".chroma")),
         corpus_dir=_resolve(os.getenv("RAG_CORPUS_DIR", "corpus")),

@@ -1,0 +1,47 @@
+name: rag-server
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rag-server-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rag-server-build-and-test:
+    name: rag-server-build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: rag-server/requirements.txt
+
+      - name: Install RAG dependencies
+        run: python -m pip install -r rag-server/requirements.txt
+
+      - name: Test startup and corpus boundaries
+        working-directory: rag-server
+        run: python -m unittest discover -s tests -v
+
+      - name: Build the RAG image
+        run: docker build -t languagewise/rag-server:ci ./rag-server
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+
+      - name: Verify offline cold start and retrieval at the approved AWS task size
+        run: node infra/scripts/measure-rag.mjs languagewise/rag-server:ci

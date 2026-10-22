@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import AccountView from './views/AccountView.vue'
+import AdminSettingsView from './views/AdminSettingsView.vue'
 import CreateAccountView from './views/CreateAccountView.vue'
 import HomeView from './views/HomeView.vue'
 import LoginView from './views/LoginView.vue'
@@ -14,6 +15,12 @@ const router = createRouter({
     { path: '/login', name: 'login', component: LoginView },
     { path: '/create-account', name: 'create-account', component: CreateAccountView },
     { path: '/account', name: 'account', component: AccountView, meta: { requiresAuth: true } },
+    {
+      path: '/admin-settings',
+      name: 'admin-settings',
+      component: AdminSettingsView,
+      meta: { requiresAuth: true, requiresAdmin: true },
+    },
     { path: '/signed-out', name: 'signed-out', component: SignedOutView },
   ],
   scrollBehavior: () => ({ top: 0 }),
@@ -28,6 +35,10 @@ router.beforeEach(async (to) => {
     } catch {
       return { name: 'home' }
     }
+  }
+
+  if (to.meta.requiresAdmin && !useAuth().isAdmin.value) {
+    return { name: 'home' }
   }
 
   for (const remote of federatedRemotes) {

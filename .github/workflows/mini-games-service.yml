@@ -162,6 +162,31 @@ jobs:
           path: TestResults/
           if-no-files-found: warn
 
+      # Post-commit (push to master only): runs each student's two assigned
+      # endpoint tests and writes per-student reports. See tools/testing/.
+      - name: Run student endpoint tests
+        if: github.event_name == 'push'
+        run: |
+          filter=$(python3 tools/testing/student_endpoints.py filter --service mini-games-service)
+          dotnet test "${{ env.SOLUTION }}" -c Release --no-build \
+            --filter "$filter" \
+            --logger "trx;LogFileName=student-endpoints.trx" \
+            --results-directory reports/post-commit/mini-games-service
+
+      - name: Write student endpoint reports
+        if: always() && github.event_name == 'push'
+        run: >
+          python3 tools/testing/student_endpoints.py report --service mini-games-service
+          --results-dir reports/post-commit/mini-games-service
+
+      - name: Upload post-commit reports
+        if: always() && github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mini-games-service-post-commit-reports
+          path: reports/post-commit/
+          if-no-files-found: warn
+
       # Each tier builds from its own folder as the context, which proves the
       # image does not reach outside the microservice.
       - name: Build the database image
