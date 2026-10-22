@@ -39,6 +39,22 @@ variable "services_enabled" {
   default     = false
 }
 
+variable "cold_start" {
+  description = "Skip individual ECS waiters only for controller-verified empty-runtime provisioning. The controller waits for aggregate task health."
+  type        = bool
+  default     = false
+}
+
+variable "startup_phase" {
+  description = "Cold provisioning starts database APIs and RAG before application services."
+  type        = string
+  default     = "all"
+  validation {
+    condition     = contains(["all", "dependencies"], var.startup_phase) && (var.startup_phase == "all" || (var.cold_start && var.services_enabled))
+    error_message = "Dependency staging is allowed only during an enabled cold start."
+  }
+}
+
 provider "aws" {
   region              = var.foundation.region
   allowed_account_ids = [var.foundation.account_id]
