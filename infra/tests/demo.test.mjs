@@ -222,14 +222,19 @@ function harness(options = {}) {
       }
       else if (service === 'ecs') {
         if (operation === 'run-task') response.tasks = [{ taskArn: 'arn:aws:ecs:task/initializer' }];
-        if (operation === 'list-tasks') response.taskArns = input.family ? [] : activeServices.map(name => `arn:aws:ecs:task/${name}`);
+        if (operation === 'list-tasks' && input.desiredStatus === 'STOPPED' && options.stoppedInventoryFailure) throw new Error('private-diagnostic-sentinel');
+        if (operation === 'list-tasks') response.taskArns = input.family ? [] : input.desiredStatus === 'STOPPED'
+          ? (options.stoppedTasks ?? []).map(task => task.taskArn) : activeServices.map(name => `arn:aws:ecs:task/${name}`);
         if (operation === 'describe-tasks' && input.tasks[0] === 'arn:aws:ecs:task/initializer') {
           initialized = !options.initializerFailure;
           response.tasks = [{ lastStatus: 'STOPPED', containers: [{ exitCode: options.initializerFailure ? 1 : 0 }] }];
         } else if (operation === 'describe-tasks') {
           response.tasks = input.tasks.map(taskArn => {
+            const stopped = options.stoppedTasks?.find(task => task.taskArn === taskArn);
+            if (stopped) return stopped;
             const name = taskArn.split('/').at(-1);
-            const healthStatus = name === 'quests-achievements-notifications-service-db' ? 'UNKNOWN' : options.taskHealth ?? 'HEALTHY';
+            const healthStatus = name === 'quests-achievements-notifications-service-db' ? 'UNKNOWN'
+              : options.taskHealthByService?.[name] ?? (options.churningHealth && Math.floor((clock - now) / 10_000) % 2 ? 'UNKNOWN' : options.taskHealth ?? 'HEALTHY');
             return { taskArn, taskDefinitionArn: `definition:${name}`, group: `service:languagewise-demo-${name}`, lastStatus: 'RUNNING', healthStatus,
               containers: [{ name, lastStatus: 'RUNNING', healthStatus }] };
           });
@@ -239,7 +244,8 @@ function harness(options = {}) {
             services: input.services.map(serviceArn => ({ serviceArn, status: 'INACTIVE', desiredCount: 0, runningCount: 0, pendingCount: 0 })), failures: [],
           };
           else response.services = input.services.map(serviceName => ({ serviceName, taskDefinition: `definition:${serviceName.slice('languagewise-demo-'.length)}`, status: 'ACTIVE', desiredCount: 1,
-            runningCount: 1, pendingCount: 0, deployments: [{ rolloutState: 'COMPLETED' }] }));
+            runningCount: 1, pendingCount: 0, deployments: [{ rolloutState: options.failedDeployment === serviceName ? 'FAILED'
+              : options.slowDeployment === serviceName && clock < now + 10_000 ? 'IN_PROGRESS' : 'COMPLETED' }] }));
         }
       } else if (service === 'resourcegroupstaggingapi') response = options.tagPages?.[input.PaginationToken ?? 'first'] ?? {
         ResourceTagMappingList: (options.taggedResources ?? []).map(ResourceARN => ({ ResourceARN })),
@@ -475,6 +481,66 @@ test('cold startup does not launch backends while dependency tasks remain unheal
   const plans = fixture.calls.filter(call => call.binary === 'terraform' && call.args.includes('plan') && !call.args.includes('-destroy'));
   assert.deepEqual(plans.map(call => call.variables.startup_phase), ['all', 'dependencies']);
   assert.equal(fixture.state().status, 'down');
+});
+
+test('service diagnostics identify an incomplete deployment while counting other healthy dependencies', async () => {
+  const fixture = harness({ slowDeployment: 'languagewise-demo-quizzes-courses-service-db' });
+  try {
+    await fixture.controller.execute('up');
+    assert.ok(fixture.reports.includes('ECS task readiness: 6/6.'));
+    assert.ok(fixture.reports.some(report => report.includes('ECS quizzes-courses-service-db: deployment=IN_PROGRESS')));
+    assert.ok(fixture.reports.some(report => report.includes('ECS shared-db-api: deployment=COMPLETED')));
+    assert.ok(fixture.reports.filter(report => report.startsWith('ECS shared-db-api:')).length <= 2);
+  } finally { fixture.dispose(); }
+});
+
+test('unhealthy dependency diagnostics retain only allowlisted stopped-task codes with bounded deduplicated output', async () => {
+  const name = 'quizzes-courses-service-db';
+  const sentinel = 'private-stopped-task-sentinel';
+  const fixture = harness({ taskHealthByService: { [name]: 'UNHEALTHY' }, stoppedTasks: [{
+    taskArn: `arn:aws:ecs:task/${sentinel}`, taskDefinitionArn: `definition:${name}`,
+    group: `service:languagewise-demo-${name}`, lastStatus: 'STOPPED', stopCode: 'TaskFailedToStart',
+    stoppedReason: `ResourceInitializationError: ${sentinel}`, containers: [{ name, exitCode: 137, reason: sentinel }],
+  }] });
+  try {
+    await assert.rejects(fixture.controller.execute('up'), /deadline|cancelled/);
+    assert.ok(fixture.reports.includes('ECS task readiness: 5/6.'));
+    assert.ok(fixture.reports.some(report => report.includes(`ECS ${name}:`) && report.includes('health=UNHEALTHY')));
+    const stopped = fixture.reports.filter(report => report.includes('stop_code='));
+    assert.equal(stopped.length, 1);
+    assert.ok(stopped[0].includes('stop_code=TaskFailedToStart; reason_code=ResourceInitializationError; exit_code=137'));
+    assert.ok(!fixture.reports.join('\n').includes(sentinel));
+    assert.ok(fixture.reports.filter(report => report.startsWith('ECS ')).length < 200);
+  } finally { fixture.dispose(); }
+});
+
+test('failed ECS deployment is named before rollback without exposing raw service events', async () => {
+  const fixture = harness({ failedDeployment: 'languagewise-demo-shared-db-api' });
+  try {
+    await assert.rejects(fixture.controller.execute('up'), /ECS deployment failed/);
+    assert.ok(fixture.reports.some(report => report.includes('ECS shared-db-api: deployment=FAILED')));
+    assert.equal(fixture.state().status, 'down');
+  } finally { fixture.dispose(); }
+});
+
+test('noisy service diagnostics stop at their detail limit without skipping health checks or deadline cleanup', async () => {
+  const fixture = harness({ churningHealth: true, taskHealthByService: { 'quizzes-courses-service-db': 'UNHEALTHY' } });
+  try {
+    await assert.rejects(fixture.controller.execute('up'), /deadline|cancelled/);
+    assert.equal(fixture.reports.filter(report => report.includes('diagnostics limit reached')).length, 1);
+    assert.equal(fixture.reports.filter(report => /^ECS [a-z0-9-]+: deployment=/.test(report)).length, 200);
+    assert.equal(fixture.state().status, 'down');
+  } finally { fixture.dispose(); }
+});
+
+test('optional stopped-task diagnostics fail safely without exposing raw errors or blocking a healthy deployment', async () => {
+  const fixture = harness({ slowDeployment: 'languagewise-demo-shared-db-api', stoppedInventoryFailure: true });
+  try {
+    await fixture.controller.execute('up');
+    assert.ok(fixture.reports.includes('ECS stopped-task diagnostics unavailable; raw output suppressed.'));
+    assert.ok(!fixture.reports.join('\n').includes('private-diagnostic-sentinel'));
+    assert.equal(fixture.state().status, 'ready');
+  } finally { fixture.dispose(); }
 });
 
 test('fast Terraform provisioning cannot be requested by a live runtime', () => {

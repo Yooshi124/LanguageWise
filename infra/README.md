@@ -21,6 +21,17 @@ Readiness requires current-revision task health, with the documented PostgREST
 exception. Phase timings and fixed failure categories do not disclose raw errors.
 See the [cold-start contract](demo/README.md#cold-startup).
 
+The PR follow-up adds named, bounded service diagnostics and rate-limited,
+redacted stopped-task reason codes, so an incomplete deployment no longer hides
+all other healthy tasks behind a zero counter. Release publication can also
+reuse the complete previous immutable image set for strictly allowlisted
+runtime-only changes, with archive equality, ancestor-diff and ECR availability
+proof. Current-SHA checks, complete manifests and fresh release sequences remain
+mandatory; any unproven or image-affecting change uses the full build. See the
+[reuse contract](images/README.md#runtime-only-release-reuse). The initial
+publisher/control-code change deliberately rebuilds all images. These follow-ups
+are locally tested, not proof of a successful hosted publication or cold start.
+
 The failed run took about 17.5 minutes to reach initialization, then spread twenty
 service creations over 21.5 minutes. Quizzes backend DNS/health failures preceded
 its database service creation. Staging fixes that observed ordering; it does not

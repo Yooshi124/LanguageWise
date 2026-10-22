@@ -520,8 +520,56 @@ export class DemoController {
     }
   }
 
+  stoppedTaskDiagnostics(services, seen, report) {
+    this.phase();
+    try {
+      const inventory = this.aws('ecs', 'list-tasks', { cluster: this.config.cluster_arn, desiredStatus: 'STOPPED', maxResults: 100 }, ['--no-paginate']);
+      requireThat(Array.isArray(inventory.taskArns), 'Stopped task sample missing');
+      this.phase();
+      const sample = [...new Set(inventory.taskArns.slice(0, 100))].filter(arn => typeof arn === 'string' && !seen.has(arn));
+      if (!sample.length) return;
+      const result = this.aws('ecs', 'describe-tasks', { cluster: this.config.cluster_arn, tasks: sample });
+      requireThat(Array.isArray(result.tasks), 'Stopped task details missing');
+      for (const task of result.tasks) {
+        if (!sample.includes(task.taskArn)) continue;
+        seen.add(task.taskArn);
+        const service = services.find(entry => task.group === `service:${entry.serviceName}` && task.taskDefinitionArn === entry.taskDefinition);
+        const name = SERVICES.find(entry => service?.serviceName === `languagewise-demo-${entry}`);
+        if (!name) continue;
+        const stopCodes = ['TaskFailedToStart', 'EssentialContainerExited', 'UserInitiated', 'ServiceSchedulerInitiated', 'SpotInterruption', 'TerminationNotice'];
+        const stopCode = stopCodes.includes(task.stopCode) ? task.stopCode : 'unknown';
+        const text = [task.stoppedReason, ...(task.containers ?? []).map(container => container.reason)]
+          .filter(value => typeof value === 'string').join('\n');
+        const reasons = ['OutOfMemoryError', 'CannotPullContainerError', 'ResourceInitializationError', 'CannotStartContainerError',
+          'CannotCreateContainerError', 'ContainerRuntimeError', 'ContainerRuntimeTimeoutError', 'CannotInspectContainerError'];
+        const reasonCode = reasons.find(reason => new RegExp(`\\b${reason}\\b`).test(text))
+          ?? (/failed container health checks/i.test(text) ? 'container-health'
+            : /failed (?:ELB|load balancer) health checks/i.test(text) ? 'load-balancer-health' : 'unknown');
+        const exit = task.containers?.find(container => container.name === name)?.exitCode;
+        const exitCode = Number.isInteger(exit) && exit >= 0 && exit <= 255 ? exit : 'unknown';
+        report(`ECS ${name} stopped sample: stop_code=${stopCode}; reason_code=${reasonCode}; exit_code=${exitCode}.`);
+      }
+    } catch {
+      this.phase();
+      report('ECS stopped-task diagnostics unavailable; raw output suppressed.');
+    }
+  }
+
   async waitForServices(names) {
+    requireThat(Array.isArray(names) && names.length > 0 && names.length <= SERVICES.length && new Set(names).size === names.length
+      && names.every(name => SERVICES.some(service => name === `languagewise-demo-${service}`)), 'Expected known ECS readiness services');
     let previousProgress;
+    let nextStoppedScan = 0;
+    let diagnosticLines = 0;
+    const snapshots = new Map();
+    const seenStopped = new Set();
+    const report = text => {
+      if (diagnosticLines >= 200) return;
+      this.dependencies.report(text);
+      if (++diagnosticLines === 200) this.dependencies.report('ECS diagnostics limit reached; readiness checks continue.');
+    };
+    const known = (value, values) => values.includes(value) ? value : 'unknown';
+    const count = value => Number.isSafeInteger(value) && value >= 0 && value <= 1000 ? value : 'unknown';
     while (true) {
       this.phase();
       const services = [];
@@ -530,15 +578,14 @@ export class DemoController {
         requireThat(!result.failures?.length, 'ECS services missing');
         services.push(...(result.services ?? []));
       }
-      if (services.some(service => service.deployments?.some(deployment => deployment.rolloutState === 'FAILED'))) {
-        throw Object.assign(new Error('ECS deployment failed'), { failureCode: 'service-failed' });
-      }
+      requireThat(services.every(service => names.includes(service.serviceName)), 'ECS service inventory contains unknown services');
+      const failed = services.some(service => service.deployments?.some(deployment => deployment.rolloutState === 'FAILED'));
       const deployed = services.length === names.length && new Set(services.map(service => service.serviceName)).size === names.length
         && services.every(service => names.includes(service.serviceName) && service.status === 'ACTIVE' && service.desiredCount === 1
         && service.runningCount === 1 && service.pendingCount === 0 && service.deployments?.length === 1
         && service.deployments[0].rolloutState === 'COMPLETED');
       let healthy = 0;
-      if (deployed) {
+      if (services.length > 0) {
         const taskArns = [];
         const tokens = new Set();
         let token;
@@ -573,10 +620,30 @@ export class DemoController {
             && health.includes(task.healthStatus) && task.containers?.length === 1 && task.containers[0].name === name
             && task.containers[0].lastStatus === 'RUNNING' && health.includes(task.containers[0].healthStatus);
         }).length;
+        for (const service of services) {
+          const name = service.serviceName.slice('languagewise-demo-'.length);
+          const matches = tasks.filter(task => task.group === `service:${service.serviceName}`);
+          const current = matches.filter(task => task.taskDefinitionArn === service.taskDefinition);
+          const task = current.length === 1 ? current[0] : undefined;
+          const deployment = service.deployments?.find(entry => entry.status === 'PRIMARY') ?? service.deployments?.[0];
+          const status = known(task?.lastStatus, ['PROVISIONING', 'PENDING', 'ACTIVATING', 'RUNNING', 'DEACTIVATING', 'STOPPING', 'DEPROVISIONING', 'STOPPED']);
+          const health = known(task?.healthStatus, ['HEALTHY', 'UNHEALTHY', 'UNKNOWN']);
+          const containerHealth = known(task?.containers?.length === 1 ? task.containers[0].healthStatus : undefined, ['HEALTHY', 'UNHEALTHY', 'UNKNOWN']);
+          const rollout = known(deployment?.rolloutState, ['IN_PROGRESS', 'COMPLETED', 'FAILED']);
+          const revision = task ? 'current' : matches.length ? 'previous-or-ambiguous' : 'missing';
+          const snapshot = `ECS ${name}: deployment=${rollout}; desired=${count(service.desiredCount)}; running=${count(service.runningCount)}; pending=${count(service.pendingCount)}; tasks=${count(matches.length)}; task=${status}; health=${health}; container_health=${containerHealth}; revision=${revision}.`;
+          if (snapshots.get(name) !== snapshot) report(snapshot);
+          snapshots.set(name, snapshot);
+        }
       }
       const progress = `${healthy}/${names.length}`;
       if (progress !== previousProgress) this.dependencies.report(`ECS task readiness: ${progress}.`);
       previousProgress = progress;
+      if ((!deployed || healthy !== names.length) && diagnosticLines < 200 && this.dependencies.now() >= nextStoppedScan) {
+        nextStoppedScan = this.dependencies.now() + 60_000;
+        this.stoppedTaskDiagnostics(services, seenStopped, report);
+      }
+      if (failed) throw Object.assign(new Error('ECS deployment failed'), { failureCode: 'service-failed' });
       if (deployed && healthy === names.length) return;
       this.dependencies.sleep(10_000);
     }

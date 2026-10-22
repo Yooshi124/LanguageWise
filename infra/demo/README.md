@@ -69,7 +69,14 @@ dependency launch/readiness, application launch/readiness and each HTTPS check.
 Terraform failures expose only allowlisted resource types, error codes and fixed
 categories, including readiness timeouts and deployment circuit breakers. HTTPS
 failures expose only fixed categories and numeric status; response bodies and
-raw provider errors remain suppressed. Task readiness progress is aggregate only.
+raw provider errors remain suppressed. Named service snapshots report allowlisted
+deployment/task/health states, bounded counts and whether the running revision is
+current. Healthy tasks are counted even while another deployment is incomplete.
+While blocked, a stopped-task sample of at most 100 tasks is inspected at most
+once per minute. Only known service names, fixed stop/reason codes and numeric
+exit codes are reported; no task ARNs, raw AWS events or provider text are logged.
+Changed snapshots and deduplicated stopped-task details share a 200-line limit
+per readiness phase. Reaching it does not stop health checks or extend deadlines.
 These changes remove serialized cold-start waiters, not AWS provisioning latency;
 a faster live cold start remains unverified until a separately authorized run.
 
