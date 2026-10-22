@@ -61,6 +61,9 @@ function harness(options = {}) {
   let clock = now;
   let applyCount = 0;
   let initialized = false;
+  let plannedVariables;
+  let plannedDestroy = false;
+  let activeServices = options.state?.status === 'ready' ? [...SERVICES] : [];
   if (options.nativeLock) objects.set(`${foundation.demo_state_key}.tflock`, JSON.stringify(options.nativeLock));
   const outputs = {
     initializer_task_definition_arn: { value: `arn:aws:ecs:${region}:${account}:task-definition/initializer:1` },
@@ -82,6 +85,10 @@ function harness(options = {}) {
       if (binary === 'terraform') {
         const variablesArg = args.find(arg => arg.startsWith('-var-file='));
         calls.push({ binary, args, settings, variables: variablesArg ? JSON.parse(readFileSync(variablesArg.slice(10), 'utf8')) : undefined });
+        if (args.includes('plan')) {
+          plannedVariables = JSON.parse(readFileSync(variablesArg.slice(10), 'utf8'));
+          plannedDestroy = args.includes('-destroy');
+        }
         if (args.includes('apply')) {
           applyCount++;
           if (options.unlockFailure) {
@@ -96,6 +103,8 @@ function harness(options = {}) {
             store({ ...current, desiredMode: 'down', status: 'stopping', revision: current.revision + 1 });
           }
           if (options.failApply === applyCount) throw new Error('Terraform apply failed');
+          activeServices = plannedDestroy || !plannedVariables.services_enabled ? [] : SERVICES.filter(name =>
+            plannedVariables.startup_phase !== 'dependencies' || name.endsWith('-db') || ['shared-db-api', 'rag-server'].includes(name));
         }
         return args.includes('output') ? JSON.stringify(outputs) : '';
       }
@@ -213,15 +222,23 @@ function harness(options = {}) {
       }
       else if (service === 'ecs') {
         if (operation === 'run-task') response.tasks = [{ taskArn: 'arn:aws:ecs:task/initializer' }];
-        if (operation === 'describe-tasks') {
+        if (operation === 'list-tasks') response.taskArns = input.family ? [] : activeServices.map(name => `arn:aws:ecs:task/${name}`);
+        if (operation === 'describe-tasks' && input.tasks[0] === 'arn:aws:ecs:task/initializer') {
           initialized = !options.initializerFailure;
           response.tasks = [{ lastStatus: 'STOPPED', containers: [{ exitCode: options.initializerFailure ? 1 : 0 }] }];
+        } else if (operation === 'describe-tasks') {
+          response.tasks = input.tasks.map(taskArn => {
+            const name = taskArn.split('/').at(-1);
+            const healthStatus = name === 'quests-achievements-notifications-service-db' ? 'UNKNOWN' : options.taskHealth ?? 'HEALTHY';
+            return { taskArn, taskDefinitionArn: `definition:${name}`, group: `service:languagewise-demo-${name}`, lastStatus: 'RUNNING', healthStatus,
+              containers: [{ name, lastStatus: 'RUNNING', healthStatus }] };
+          });
         }
         if (operation === 'describe-services') {
           if (input.services[0]?.startsWith('arn:')) response = options.ecsResidualResponse ?? {
             services: input.services.map(serviceArn => ({ serviceArn, status: 'INACTIVE', desiredCount: 0, runningCount: 0, pendingCount: 0 })), failures: [],
           };
-          else response.services = input.services.map(serviceName => ({ serviceName, status: 'ACTIVE', desiredCount: 1,
+          else response.services = input.services.map(serviceName => ({ serviceName, taskDefinition: `definition:${serviceName.slice('languagewise-demo-'.length)}`, status: 'ACTIVE', desiredCount: 1,
             runningCount: 1, pendingCount: 0, deployments: [{ rolloutState: 'COMPLETED' }] }));
         }
       } else if (service === 'resourcegroupstaggingapi') response = options.tagPages?.[input.PaginationToken ?? 'first'] ?? {
@@ -298,6 +315,36 @@ test('native Terraform diagnostics ignore malformed, unknown and non-error event
     assert.ok(!JSON.stringify(error).includes('private-sentinel'));
     return true;
   });
+});
+
+test('native Terraform readiness timeouts are classified without disclosing the service name or provider detail', () => {
+  const sentinel = 'private-service-sentinel';
+  const event = { type: 'diagnostic', diagnostic: { severity: 'error', address: `aws_ecs_service.app["${sentinel}"]`,
+    summary: `waiting for ECS Service ${sentinel}: timeout while waiting for state to become steady`, detail: sentinel } };
+  const dependencies = nativeDependencies({}, undefined, () => {
+    throw Object.assign(new Error(sentinel), { stdout: JSON.stringify(event) });
+  });
+  assert.throws(() => dependencies.run('terraform', ['apply', '-json']), error => {
+    assert.equal(error.diagnostic, 'resource_type=aws_ecs_service; code=unknown; category=readiness-timeout');
+    assert.ok(!JSON.stringify(error).includes(sentinel));
+    return true;
+  });
+});
+
+test('native smoke failures expose only safe categories and numeric HTTP status', async () => {
+  for (const [status, type, body, category] of [
+    [503, 'application/json', 'private-response-sentinel', 'http-status'],
+    [200, 'text/html', 'private-response-sentinel', 'content-type'],
+    [200, 'application/json', 'private-response-sentinel', 'invalid-json'],
+  ]) {
+    const dependencies = nativeDependencies({}, async () => new Response(body, { status, headers: { 'Content-Type': type } }));
+    await assert.rejects(dependencies.probe('https://example.invalid/', 'json'), error => {
+      assert.equal(error.failureCode, category);
+      assert.equal(error.httpStatus, status);
+      assert.ok(!error.message.includes('private-response-sentinel'));
+      return true;
+    });
+  }
 });
 
 test('a failed Up reports its exact Terraform phase before successful rollback', async () => {
@@ -402,11 +449,47 @@ test('Terraform variables expose only foundation, immutable release and boolean 
 });
 
 test('Terraform plans and applies bound simultaneous rolling service updates', async () => {
+  const fixture = harness({ state: ready() });
+  await fixture.controller.execute('release', release(2, 'b'));
+  const commands = fixture.calls.filter(call => call.binary === 'terraform' && ['plan', 'apply'].some(command => call.args.includes(command)));
+  assert.equal(commands.length, 2);
+  assert.ok(commands.every(call => call.args.includes('-parallelism=2')));
+});
+
+test('cold startup launches healthy dependencies before the full application without per-service Terraform waits', async () => {
   const fixture = harness();
   await fixture.controller.execute('up');
-  const commands = fixture.calls.filter(call => call.binary === 'terraform' && ['plan', 'apply'].some(command => call.args.includes(command)));
-  assert.equal(commands.length, 4);
-  assert.ok(commands.every(call => call.args.includes('-parallelism=2')));
+  const plans = fixture.calls.filter(call => call.binary === 'terraform' && call.args.includes('plan'));
+  assert.deepEqual(plans.map(call => call.variables.startup_phase), ['all', 'dependencies', 'all']);
+  assert.deepEqual(plans.map(call => call.variables.cold_start), [true, true, true]);
+  assert.ok(plans.every(call => call.args.includes('-parallelism=10')));
+  const dependencyWait = fixture.calls.findIndex(call => call.operation === 'describe-services'
+    && call.input.services.length === 6);
+  const finalPlan = fixture.calls.indexOf(plans[2]);
+  assert.ok(dependencyWait > 0 && dependencyWait < finalPlan);
+});
+
+test('cold startup does not launch backends while dependency tasks remain unhealthy despite completed deployments', async () => {
+  const fixture = harness({ taskHealth: 'UNHEALTHY' });
+  await assert.rejects(fixture.controller.execute('up'), /deadline|cancelled/);
+  const plans = fixture.calls.filter(call => call.binary === 'terraform' && call.args.includes('plan') && !call.args.includes('-destroy'));
+  assert.deepEqual(plans.map(call => call.variables.startup_phase), ['all', 'dependencies']);
+  assert.equal(fixture.state().status, 'down');
+});
+
+test('fast Terraform provisioning cannot be requested by a live runtime', () => {
+  const fixture = harness({ state: ready() });
+  fixture.controller.acquire();
+  assert.throws(() => fixture.controller.terraform(release(), true, false, { coldStart: true }), /verified empty cold start/);
+  assert.ok(!fixture.calls.some(call => call.binary === 'terraform'));
+});
+
+test('phase failure reporting allowlists metadata and never emits raw errors or response bodies', async () => {
+  const fixture = harness();
+  const failure = Object.assign(new Error('private-phase-sentinel'), { failureCode: 'http-status', httpStatus: 503 });
+  await assert.rejects(fixture.controller.measure('https:/health', () => { throw failure; }), /private-phase-sentinel/);
+  assert.ok(fixture.reports.some(report => report.includes('category=http-status; http_status=503')));
+  assert.ok(!fixture.reports.join('\n').includes('private-phase-sentinel'));
 });
 
 test('expired locks are never stolen and competing owner cannot be removed', async () => {
@@ -423,7 +506,7 @@ test('new Up applies disabled services then initializes once and applies enabled
   assert.equal(fixture.state().status, 'ready');
   assert.equal(fixture.state().expiresAt, now + 2 * HOUR);
   const plans = fixture.calls.filter(call => call.binary === 'terraform' && call.args.includes('plan'));
-  assert.deepEqual(plans.map(call => call.variables.services_enabled), [false, true]);
+  assert.deepEqual(plans.map(call => call.variables.services_enabled), [false, true, true]);
   assert.equal(fixture.calls.filter(call => call.operation === 'run-task').length, 1);
   assert.equal(fixture.rows.has('lock'), false);
   assert.equal(JSON.parse(fixture.rows.get('quota#2026-10').payload.S).hours, 4);

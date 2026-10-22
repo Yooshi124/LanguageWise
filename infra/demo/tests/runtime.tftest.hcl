@@ -159,6 +159,56 @@ run "services_after_seed" {
     condition     = length(aws_lb.gateway.security_groups) == 1
     error_message = "The enabled ALB must detach the bootstrap prefix-list SG."
   }
+  assert {
+    condition     = alltrue([for service in aws_ecs_service.app : service.wait_for_steady_state])
+    error_message = "Default live updates must retain Terraform service waiters."
+  }
+}
+
+run "cold_dependency_stage" {
+  command = plan
+  variables {
+    services_enabled = true
+    cold_start       = true
+    startup_phase    = "dependencies"
+  }
+  assert {
+    condition = toset(keys(aws_ecs_service.app)) == toset([
+      "shared-db-api", "rag-server", "mini-games-service-db", "quizzes-courses-service-db",
+      "chat-discussion-service-db", "quests-achievements-notifications-service-db"
+    ]) && alltrue([for service in aws_ecs_service.app : !service.wait_for_steady_state && service.desired_count == 1])
+    error_message = "Cold dependencies must launch exactly the five database APIs and RAG without serial steady-state waiters."
+  }
+}
+
+run "cold_complete_stage" {
+  command = plan
+  variables {
+    services_enabled = true
+    cold_start       = true
+  }
+  assert {
+    condition     = length(aws_ecs_service.app) == 20 && alltrue([for service in aws_ecs_service.app : !service.wait_for_steady_state && service.desired_count == 1 && service.deployment_circuit_breaker[0].enable && service.deployment_circuit_breaker[0].rollback])
+    error_message = "Cold application launch must retain all twenty one-replica rollback-enabled services while the controller owns health readiness."
+  }
+}
+
+run "reject_warm_dependency_stage" {
+  command = plan
+  variables {
+    services_enabled = true
+    startup_phase    = "dependencies"
+  }
+  expect_failures = [var.startup_phase]
+}
+
+run "reject_disabled_dependency_stage" {
+  command = plan
+  variables {
+    cold_start    = true
+    startup_phase = "dependencies"
+  }
+  expect_failures = [var.startup_phase]
 }
 
 run "reject_missing_image" {

@@ -14,6 +14,7 @@ const encode = value => ({ S: JSON.stringify(value) });
 const decode = item => item?.payload ? JSON.parse(item.payload.S) : undefined;
 const key = id => ({ id: { S: id } });
 const conditional = error => error?.code === 'ConditionalCheckFailedException' || error?.code === 'TransactionCanceledException';
+const STARTUP_SERVICES = SERVICES.filter(name => name.endsWith('-db') || ['shared-db-api', 'rag-server'].includes(name));
 
 export function loadFoundation(input, read = readFileSync) {
   requireThat(typeof input === 'string' && input.trim().length > 0, 'FOUNDATION_CONFIG is required');
@@ -55,9 +56,12 @@ export function nativeDependencies(env = process.env, request = fetch, execute =
             const diagnostic = event.diagnostic;
             const type = typeof diagnostic.address === 'string' ? diagnostic.address.split('.')[0] : undefined;
             const diagnosticText = [diagnostic.summary, diagnostic.detail].filter(value => typeof value === 'string').join('\n');
+            const category = summaries.includes(diagnostic.summary) ? diagnostic.summary
+              : /deployment circuit breaker/i.test(diagnosticText) ? 'deployment-circuit-breaker'
+                : /timeout while waiting|timed out waiting/i.test(diagnosticText) ? 'readiness-timeout'
+                  : /unexpected state/i.test(diagnosticText) ? 'unexpected-state' : 'provider-or-unknown';
             diagnostics.push(`resource_type=${resourceTypes.includes(type) ? type : 'unknown'}; code=${errorCodes.find(value =>
-              new RegExp(`\\b${value}\\b`).test(diagnosticText)) ?? 'unknown'}; category=${summaries.includes(diagnostic.summary)
-              ? diagnostic.summary : 'provider-or-unknown'}`);
+              new RegExp(`\\b${value}\\b`).test(diagnosticText)) ?? 'unknown'}; category=${category}`);
           }
           safe.diagnostic = [...new Set(diagnostics)].slice(0, 10).join(' | ');
         }
@@ -67,27 +71,33 @@ export function nativeDependencies(env = process.env, request = fetch, execute =
     async probe(url, expectedType) {
       const response = await request(url, { signal: AbortSignal.timeout(20_000), redirect: 'error' });
       const reader = response.body?.getReader();
+      const check = (condition, failureCode, message) => {
+        if (!condition) throw Object.assign(new Error(message), { failureCode, httpStatus: response.status });
+      };
       try {
-        requireThat(response.ok && reader, 'HTTPS smoke check failed');
+        check(response.ok, 'http-status', 'HTTPS smoke check failed');
+        check(reader, 'empty-body', 'Empty smoke response');
         const type = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase();
         const types = { json: ['application/json'], html: ['text/html'], javascript: ['application/javascript', 'text/javascript'] };
-        requireThat(types[expectedType]?.includes(type), 'Unexpected smoke response content type');
+        check(types[expectedType]?.includes(type), 'content-type', 'Unexpected smoke response content type');
         const chunks = [];
         let length = 0;
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           length += value.byteLength;
-          requireThat(length <= 1024 * 1024, 'Smoke response exceeds 1 MiB');
+          check(length <= 1024 * 1024, 'body-too-large', 'Smoke response exceeds 1 MiB');
           chunks.push(value);
         }
         const body = Buffer.concat(chunks).toString('utf8');
-        requireThat(body.trim().length > 0, 'Empty smoke response');
-        if (expectedType === 'json') JSON.parse(body);
-        if (expectedType === 'html') requireThat(/<(?:!doctype\s+html|html)\b/i.test(body), 'Expected an HTML document');
+        check(body.trim().length > 0, 'empty-body', 'Empty smoke response');
+        if (expectedType === 'json') {
+          try { JSON.parse(body); } catch { check(false, 'invalid-json', 'Invalid smoke JSON'); }
+        }
+        if (expectedType === 'html') check(/<(?:!doctype\s+html|html)\b/i.test(body), 'invalid-content', 'Expected an HTML document');
         if (expectedType === 'javascript') {
-          requireThat(!/<(?:!doctype\s+html|html|head|body)\b/i.test(body)
-            && /\b(?:export|import|function|const|var|let)\b/.test(body), 'Expected JavaScript, not an SPA fallback');
+          check(!/<(?:!doctype\s+html|html|head|body)\b/i.test(body)
+            && /\b(?:export|import|function|const|var|let)\b/.test(body), 'invalid-content', 'Expected JavaScript, not an SPA fallback');
         }
       } finally { await reader?.cancel(); }
     },
@@ -136,6 +146,22 @@ export class DemoController {
   }
 
   state() { return decode(this.get('control')); }
+
+  async measure(name, action) {
+    const started = this.dependencies.now();
+    this.dependencies.report(`Phase ${name} started.`);
+    try {
+      const result = await action();
+      this.dependencies.report(`Phase ${name} completed; elapsed_ms=${this.dependencies.now() - started}.`);
+      return result;
+    } catch (error) {
+      const categories = ['http-status', 'content-type', 'empty-body', 'invalid-json', 'invalid-content', 'body-too-large', 'service-failed'];
+      const category = categories.includes(error.failureCode) ? error.failureCode : 'unknown';
+      const status = Number.isInteger(error.httpStatus) && error.httpStatus >= 100 && error.httpStatus <= 599 ? error.httpStatus : 'unknown';
+      this.dependencies.report(`Phase ${name} failed; elapsed_ms=${this.dependencies.now() - started}; category=${category}; http_status=${status}; raw output suppressed.`);
+      throw error;
+    }
+  }
 
   workerIdentity() {
     const identity = this.aws('sts', 'get-caller-identity');
@@ -424,12 +450,15 @@ export class DemoController {
     }
   }
 
-  terraform(release, enabled, destroy = false) {
+  terraform(release, enabled, destroy = false, { coldStart = false, startupPhase = 'all' } = {}) {
     this.assertLock();
     const state = destroy ? this.state() : this.phase();
+    requireThat(!coldStart || (!destroy && this.coldStartVerified && state.status === 'starting'), 'Fast provisioning requires a verified empty cold start');
     const deadline = destroy ? this.workerDeadline : Math.min(this.workerDeadline, state.expiresAt,
       state.status === 'starting' ? state.startupDeadline : this.workerDeadline);
-    const variables = this.releaseFile('demo.tfvars.json', terraformVariables(this.config, release, enabled));
+    const variables = this.releaseFile('demo.tfvars.json', { ...terraformVariables(this.config, release, enabled),
+      ...(coldStart ? { cold_start: true, startup_phase: startupPhase } : {}) });
+    const parallelism = coldStart ? 10 : 2;
     const plan = join(this.directory, 'demo.tfplan');
     const invoke = args => {
       this.assertLock();
@@ -437,12 +466,17 @@ export class DemoController {
       const remaining = deadline - this.dependencies.now();
       requireThat(remaining > 0, 'Terraform phase deadline reached');
       this.terraformUsed = true;
+      const started = this.dependencies.now();
+      const label = `Terraform ${destroy ? 'destroy' : enabled ? startupPhase : 'infrastructure'} ${args[0]}`;
+      this.dependencies.report(`${label} started.`);
       try {
-        return this.dependencies.run('terraform', [`-chdir=${join(ROOT, 'infra/demo')}`, ...args],
+        const result = this.dependencies.run('terraform', [`-chdir=${join(ROOT, 'infra/demo')}`, ...args],
         { timeout: Math.min(75 * 60_000, remaining), killSignal: 'SIGKILL', env: {
           ...this.dependencies.env, TF_DATA_DIR: join(this.directory, '.terraform'), TF_IN_AUTOMATION: 'true', TF_INPUT: 'false',
           TF_WORKSPACE: 'default', TF_CLI_ARGS: '', TF_CLI_ARGS_init: '', TF_CLI_ARGS_plan: '', TF_CLI_ARGS_apply: '',
         } });
+        this.dependencies.report(`${label} completed; elapsed_ms=${this.dependencies.now() - started}.`);
+        return result;
       } catch (error) {
         if (error.uncertainWriter) this.uncertainWriter = true;
         this.dependencies.report(`Terraform ${destroy ? 'destroy' : enabled ? 'services' : 'infrastructure'} ${args[0]} failed; ${
@@ -453,8 +487,8 @@ export class DemoController {
     invoke(['init', '-input=false', '-reconfigure', `-backend-config=bucket=${this.config.state_bucket_name}`,
       `-backend-config=key=${this.config.demo_state_key}`, `-backend-config=region=${this.config.region}`,
       '-backend-config=workspace_key_prefix=demo/workspaces', '-backend-config=use_lockfile=true']);
-    invoke(['plan', '-json', '-input=false', '-parallelism=2', '-lock-timeout=60s', ...(destroy ? ['-destroy'] : []), `-var-file=${variables}`, `-out=${plan}`]);
-    invoke(['apply', '-json', '-input=false', '-parallelism=2', '-lock-timeout=60s', plan]);
+    invoke(['plan', '-json', '-input=false', `-parallelism=${parallelism}`, '-lock-timeout=60s', ...(destroy ? ['-destroy'] : []), `-var-file=${variables}`, `-out=${plan}`]);
+    invoke(['apply', '-json', '-input=false', `-parallelism=${parallelism}`, '-lock-timeout=60s', plan]);
     this.assertLock();
     return JSON.parse(invoke(['output', '-json']));
   }
@@ -486,10 +520,8 @@ export class DemoController {
     }
   }
 
-  async smoke(outputs) {
-    const state = this.phase();
-    const names = outputs.service_names?.value;
-    requireThat(Array.isArray(names) && names.length === SERVICES.length && SERVICES.every(name => names.includes(`languagewise-demo-${name}`)), 'Expected complete version 2 ECS service inventory');
+  async waitForServices(names) {
+    let previousProgress;
     while (true) {
       this.phase();
       const services = [];
@@ -498,11 +530,63 @@ export class DemoController {
         requireThat(!result.failures?.length, 'ECS services missing');
         services.push(...(result.services ?? []));
       }
-      if (services.length === SERVICES.length && services.every(service => service.status === 'ACTIVE' && service.desiredCount === 1
+      if (services.some(service => service.deployments?.some(deployment => deployment.rolloutState === 'FAILED'))) {
+        throw Object.assign(new Error('ECS deployment failed'), { failureCode: 'service-failed' });
+      }
+      const deployed = services.length === names.length && new Set(services.map(service => service.serviceName)).size === names.length
+        && services.every(service => names.includes(service.serviceName) && service.status === 'ACTIVE' && service.desiredCount === 1
         && service.runningCount === 1 && service.pendingCount === 0 && service.deployments?.length === 1
-        && service.deployments[0].rolloutState === 'COMPLETED')) break;
+        && service.deployments[0].rolloutState === 'COMPLETED');
+      let healthy = 0;
+      if (deployed) {
+        const taskArns = [];
+        const tokens = new Set();
+        let token;
+        do {
+          this.phase();
+          const result = this.aws('ecs', 'list-tasks', { cluster: this.config.cluster_arn, desiredStatus: 'RUNNING', maxResults: 100,
+            ...(token ? { nextToken: token } : {}) });
+          requireThat(Array.isArray(result.taskArns), 'ECS task inventory missing');
+          taskArns.push(...result.taskArns);
+          token = result.nextToken;
+          requireThat(!token || typeof token === 'string' && !tokens.has(token), 'ECS task inventory pagination incomplete');
+          if (token) tokens.add(token);
+        } while (token);
+        requireThat(new Set(taskArns).size === taskArns.length, 'ECS task inventory contains duplicates');
+        const tasks = [];
+        for (let offset = 0; offset < taskArns.length; offset += 100) {
+          this.phase();
+          const batch = taskArns.slice(offset, offset + 100);
+          const result = this.aws('ecs', 'describe-tasks', { cluster: this.config.cluster_arn, tasks: batch });
+          requireThat(!result.failures?.length && result.tasks?.length === batch.length
+            && new Set(result.tasks.map(task => task.taskArn)).size === batch.length
+            && result.tasks.every(task => batch.includes(task.taskArn)), 'ECS running task inventory incomplete');
+          tasks.push(...result.tasks);
+        }
+        healthy = services.filter(service => {
+          const matches = tasks.filter(task => task.group === `service:${service.serviceName}`);
+          if (matches.length !== 1) return false;
+          const task = matches[0];
+          const name = service.serviceName.slice('languagewise-demo-'.length);
+          const health = name === 'quests-achievements-notifications-service-db' ? ['HEALTHY', 'UNKNOWN'] : ['HEALTHY'];
+          return task.lastStatus === 'RUNNING' && typeof service.taskDefinition === 'string' && task.taskDefinitionArn === service.taskDefinition
+            && health.includes(task.healthStatus) && task.containers?.length === 1 && task.containers[0].name === name
+            && task.containers[0].lastStatus === 'RUNNING' && health.includes(task.containers[0].healthStatus);
+        }).length;
+      }
+      const progress = `${healthy}/${names.length}`;
+      if (progress !== previousProgress) this.dependencies.report(`ECS task readiness: ${progress}.`);
+      previousProgress = progress;
+      if (deployed && healthy === names.length) return;
       this.dependencies.sleep(10_000);
     }
+  }
+
+  async smoke(outputs) {
+    const state = this.phase();
+    const names = outputs.service_names?.value;
+    requireThat(Array.isArray(names) && names.length === SERVICES.length && SERVICES.every(name => names.includes(`languagewise-demo-${name}`)), 'Expected complete version 2 ECS service inventory');
+    await this.measure('application-ready', () => this.waitForServices(names));
     const url = outputs.url?.value;
     requireThat(typeof url === 'string' && /^https:\/\/[a-z0-9]+\.cloudfront\.net\/?$/.test(url), 'Expected an HTTPS CloudFront URL');
     const probes = [
@@ -512,7 +596,7 @@ export class DemoController {
     ];
     for (const [path, expectedType] of probes) {
       this.phase();
-      await this.dependencies.probe(new URL(path, url).href, expectedType);
+      await this.measure(`https:${path}`, () => this.dependencies.probe(new URL(path, url).href, expectedType));
     }
     this.phase();
     this.dependencies.report(`Demo ${state.releaseSha}: ${url}\nExpires ${new Date(state.expiresAt).toISOString()} (two hours from Up request).`);
@@ -660,13 +744,17 @@ export class DemoController {
         }
         validateRelease(release, this.config);
         this.verifySecrets(true);
+        this.verifyResiduals();
+        this.coldStartVerified = true;
         const next = this.reserve(previous, release);
         try {
           this.verifyCleanup();
-          const infrastructure = this.terraform(release, false);
-          this.initialize(infrastructure);
+          const infrastructure = await this.measure('infrastructure', () => this.terraform(release, false, false, { coldStart: true }));
+          await this.measure('initializer', () => this.initialize(infrastructure));
           this.verifySecrets();
-          const outputs = this.terraform(release, true);
+          await this.measure('dependencies-launch', () => this.terraform(release, true, false, { coldStart: true, startupPhase: 'dependencies' }));
+          await this.measure('dependencies-ready', () => this.waitForServices(STARTUP_SERVICES.map(name => `languagewise-demo-${name}`)));
+          const outputs = await this.measure('application-launch', () => this.terraform(release, true, false, { coldStart: true }));
           await this.smoke(outputs);
           const current = this.phase();
           this.save({ ...current, status: 'ready', revision: current.revision + 1 }, current);
