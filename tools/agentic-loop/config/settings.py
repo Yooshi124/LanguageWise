@@ -16,7 +16,13 @@ TOOL_ROOT = Path(__file__).resolve().parent.parent
 
 # Same default model as the mini-games service OpenRouter setup.
 DEFAULT_MODEL = "google/gemma-4-26b-a4b-it"
+# The multi-agent workflow runs each agent on a different model family so the
+# planner, worker and reviewer are independent: luna plans, haiku works, and
+# gemma (OPENROUTER_REVIEW_MODEL, falling back to OPENROUTER_MODEL) reviews.
+DEFAULT_PLANNER_MODEL = "openai/gpt-6-luna"
+DEFAULT_WORKER_MODEL = "anthropic/claude-haiku-5.5"
 DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_GITHUB_DEPLOY_WORKFLOW = "aws-release.yml"
 DEFAULT_RAG_BASE_URL = "http://localhost:8100"
 DEFAULT_RAG_N_RESULTS = 5
 DEFAULT_MCP_BASE_URL = "http://localhost:8200"
@@ -141,10 +147,13 @@ class Settings:
     model: str
     selection_model: str
     review_model: str
+    planner_model: str
+    worker_model: str
     openrouter_base_url: str
     github_token: str
     github_repo: str
     github_workflow: str
+    github_deploy_workflow: str
     rag_base_url: str
     rag_request_timeout_seconds: int
     rag_default_n_results: int
@@ -203,8 +212,12 @@ class Settings:
             "Selection model": self.selection_model,
             "OpenRouter base URL": self.openrouter_base_url,
             "Review model": f"{self.review_model} via OpenRouter (mandatory)",
+            "Planner agent model": self.planner_model,
+            "Worker agent model": self.worker_model,
+            "Reviewer agent model": self.review_model,
             "GitHub repository": self.github_repo or "auto-detect from git remote",
             "GitHub workflow": self.github_workflow or "(latest failed run)",
+            "GitHub deploy workflow": self.github_deploy_workflow,
             "RAG server": self.rag_base_url,
             "MCP server": f"{self.mcp_base_url}/mcp (scope: {self.mcp_tool_scope})",
             "Repo root": str(self.repo_root),
@@ -272,6 +285,8 @@ def load_settings(
     model = get("OPENROUTER_MODEL") or DEFAULT_MODEL
     selection_model = get("OPENROUTER_SELECTION_MODEL") or model
     review_model = get("OPENROUTER_REVIEW_MODEL") or model
+    planner_model = get("OPENROUTER_PLANNER_MODEL") or DEFAULT_PLANNER_MODEL
+    worker_model = get("OPENROUTER_WORKER_MODEL") or DEFAULT_WORKER_MODEL
     openrouter_base_url = get("OPENROUTER_BASE_URL") or DEFAULT_OPENROUTER_BASE_URL
     if "://" not in openrouter_base_url:
         raise ConfigError(
@@ -344,6 +359,7 @@ def load_settings(
             f"GITHUB_REPO must look like 'owner/name', got '{github_repo}'."
         )
     github_workflow = get("GITHUB_WORKFLOW")
+    github_deploy_workflow = get("GITHUB_DEPLOY_WORKFLOW") or DEFAULT_GITHUB_DEPLOY_WORKFLOW
 
     rag_base_url = get("RAG_BASE_URL") or DEFAULT_RAG_BASE_URL
     if "://" not in rag_base_url:
@@ -401,10 +417,13 @@ def load_settings(
         model=model,
         selection_model=selection_model,
         review_model=review_model,
+        planner_model=planner_model,
+        worker_model=worker_model,
         openrouter_base_url=openrouter_base_url,
         github_token=github_token,
         github_repo=github_repo.strip("/"),
         github_workflow=github_workflow,
+        github_deploy_workflow=github_deploy_workflow,
         rag_base_url=rag_base_url,
         rag_request_timeout_seconds=rag_request_timeout_seconds,
         rag_default_n_results=rag_default_n_results,

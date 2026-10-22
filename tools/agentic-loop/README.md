@@ -41,6 +41,9 @@ python main.py
 # Or diagnose the latest failed GitHub Actions run against the code:
 python main.py --ci-failures
 
+# Or review the deployment a merged PR triggered (its logs or failure):
+python main.py --deploy-logs 66
+
 # Or cross-check the code against the local RAG server's documentation corpus
 # (rag-server/, started separately with `python server.py`):
 python main.py --rag-validate "how does the achievements service work"
@@ -68,6 +71,10 @@ python main.py --mcp-validate
 - **CI-failures mode:** `--ci-failures` pulls the latest failed GitHub Actions run
   and its test-log excerpts, then runs a round that diagnoses the root cause
   against the actual code
+- **Deploy-logs mode:** `--deploy-logs [PR]` resolves a merged pull request to
+  the deployment run its merge triggered (`GITHUB_DEPLOY_WORKFLOW`, default
+  `aws-release.yml`), pulls each job's outcome and log excerpt, then runs a
+  round that explains what was deployed or why the deployment failed
 - **RAG validation mode:** `--rag-validate [topic]` retrieves documentation
   passages from the local RAG server (`rag-server/`, not containerised) and runs
   a round that flags code which contradicts or drifts from documented behaviour;
@@ -81,8 +88,10 @@ python main.py --mcp-validate
   human to accept / partially accept / reject (with a reason and the evidence
   used), and appends the result to `workflow_history.jsonl` and
   `coordination_audit.jsonl` in the sessions directory; `--decide` records a
-  decision for a workflow left pending. Use a different `OPENROUTER_REVIEW_MODEL`
-  so the reviewer is independent of the worker
+  decision for a workflow left pending. Each agent runs on a different model —
+  planner `openai/gpt-6-luna`, worker `anthropic/claude-haiku-5.5`, reviewer
+  `google/gemma-4-26b-a4b-it` — overridable with `OPENROUTER_PLANNER_MODEL`,
+  `OPENROUTER_WORKER_MODEL` and `OPENROUTER_REVIEW_MODEL`
 - **Prompts:** every prompt lives in `prompts/` as markdown — change behaviour without touching Python
 - **Privacy:** `.env` files, keys, certificates and binaries are never sent to the API
 

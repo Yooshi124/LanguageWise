@@ -6,6 +6,7 @@ Run from this directory:
     python main.py --prompt "review tests"  # single round, then exit
     python main.py --scope ..\..\DatabaseService
     python main.py --ci-failures            # diagnose the latest failed CI run
+    python main.py --deploy-logs 66         # review the deployment PR #66 triggered
     python main.py --multi-agent "summarise the quests API"  # planner/worker/reviewer workflow
     python main.py --decide <workflow-id> "partial <reason>"  # record a pending human decision
 """
@@ -31,7 +32,7 @@ for _stream in (sys.stdout, sys.stderr):
             pass
 
 from config.settings import ConfigError, Settings, load_settings  # noqa: E402
-from collectors.github_actions import GithubActionsError  # noqa: E402
+from collectors.github_actions import GithubActionsError, parse_pr_reference  # noqa: E402
 from core.mcp_client import McpClient, McpError  # noqa: E402
 from core.rag_client import RagClient, RagError  # noqa: E402
 from core import console, stages  # noqa: E402
@@ -55,6 +56,8 @@ Commands
   /scope reset       Go back to the configured scope
   /session           Print the path of this session's evidence log
   /ci-failures [wf]  Pull the latest failed GitHub Actions run and diagnose it
+  /deploy-logs [pr]  Pull the deployment run a merged PR triggered (default: the
+                     latest merged PR) and review its logs / failure
   /rag-validate [t]  Cross-check the code in scope against RAG-retrieved docs
   /rag <question>    Query the local RAG server directly (no review round)
   /mcp-validate [t]  Exercise the local MCP server and validate it against the code
@@ -97,6 +100,17 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Fetch the latest failed GitHub Actions run (optionally for one "
             "workflow, e.g. student-3.yml) and diagnose it, then exit."
+        ),
+    )
+    parser.add_argument(
+        "--deploy-logs",
+        nargs="?",
+        const="",
+        metavar="PR",
+        help=(
+            "Fetch the deployment run (GITHUB_DEPLOY_WORKFLOW, default aws-release.yml) "
+            "triggered by merging this pull request (66, #66 or a PR URL; default: the "
+            "latest merged PR), review its job logs or failure, then exit."
         ),
     )
     parser.add_argument(
@@ -173,6 +187,10 @@ def session_details(settings: Settings, session_path: Path) -> dict[str, str]:
     return {
         "Model": settings.model,
         "Review agent": f"{settings.review_model} (via OpenRouter - mandatory)",
+        "Multi-agent models": (
+            f"planner {settings.planner_model} | worker {settings.worker_model} | "
+            f"reviewer {settings.review_model}"
+        ),
         "Repo root": str(settings.repo_root),
         "Scope": str(settings.scope)
         + ("" if settings.scope_is_targeted else "  (whole repository)"),
@@ -206,6 +224,7 @@ def run_repl(
     rag_validate: str | None = None,
     mcp_validate: str | None = None,
     multi_agent: str | None = None,
+    deploy_logs: str | None = None,
 ) -> int:
     if ci_failures is not None:
         orchestrator.interactive = False
@@ -216,6 +235,18 @@ def run_repl(
             writer.write_footer("CI-failures run failed before the first round.")
             return 1
         writer.write_footer("CI-failures run completed.")
+        console.print_success(f"\nEvidence log: {writer.path}")
+        return 0
+
+    if deploy_logs is not None:
+        orchestrator.interactive = False
+        try:
+            orchestrator.run_deploy_logs_round(parse_pr_reference(deploy_logs))
+        except GithubActionsError as exc:
+            console.print_error(f"Could not fetch deployment logs: {exc}")
+            writer.write_footer("Deploy-logs run failed before the first round.")
+            return 1
+        writer.write_footer("Deploy-logs run completed.")
         console.print_success(f"\nEvidence log: {writer.path}")
         return 0
 
@@ -291,6 +322,19 @@ def run_repl(
             if command == "/ci-failures":
                 try:
                     outcome = orchestrator.run_ci_failure_round(argument or None)
+                    pending = outcome.follow_up_prompt
+                    while pending:
+                        outcome = orchestrator.run_round(pending)
+                        pending = outcome.follow_up_prompt
+                    if outcome.end_session:
+                        closing_reason = "Session ended by the user after an empty review."
+                        end_session = True
+                except GithubActionsError as exc:
+                    console.print_error(str(exc))
+                continue
+            if command == "/deploy-logs":
+                try:
+                    outcome = orchestrator.run_deploy_logs_round(parse_pr_reference(argument))
                     pending = outcome.follow_up_prompt
                     while pending:
                         outcome = orchestrator.run_round(pending)
@@ -478,6 +522,9 @@ def main(argv: list[str] | None = None) -> int:
             "Analysis model": settings.model,
             "Selection model": settings.selection_model,
             "Review model": f"{settings.review_model} (via OpenRouter - mandatory)",
+            "Planner agent model": settings.planner_model,
+            "Worker agent model": settings.worker_model,
+            "Reviewer agent model": settings.review_model,
             "Started": format_timestamp(session.started_at),
         }
     )
@@ -505,6 +552,7 @@ def main(argv: list[str] | None = None) -> int:
             args.rag_validate,
             args.mcp_validate,
             args.multi_agent,
+            args.deploy_logs,
         )
     finally:
         writer.write_footer("Session closed.")

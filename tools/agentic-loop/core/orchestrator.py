@@ -44,6 +44,20 @@ CI_FAILURE_PROMPT = (
     "and the specific code change that would make the pipeline pass again."
 )
 
+DEPLOY_LOGS_PROMPT = (
+    "The deployment workflow run triggered by merging a pull request is "
+    "included in the observations below: each job's outcome, duration, steps "
+    "and a log excerpt (failure lines for failed jobs, the final lines for the "
+    "others). Using the deployment scripts, infrastructure and workflow code "
+    "in scope, explain what the deployment actually did and whether the "
+    "change reached the running environment. If any job failed, diagnose the "
+    "root cause and propose the concrete fix. If the run succeeded but the "
+    "logs show no real rollout (for example the deploy job only published or "
+    "skipped because the target environment was down), say so explicitly. "
+    "If a log says its raw output was suppressed, state what is unknown "
+    "rather than guessing, and name where the missing evidence would be found."
+)
+
 RAG_VALIDATION_PROMPT = (
     "Retrieved documentation passages describing how this service is expected "
     "to behave are included in the observations below. Compare the source code "
@@ -77,9 +91,9 @@ MULTI_AGENT_DESCRIPTION = (
 )
 
 REVIEWER_NOT_INDEPENDENT = (
-    "The reviewer agent is running on the same model as the worker agent, so its review "
-    "is not independent. Set OPENROUTER_REVIEW_MODEL to a different model for a "
-    "separate second opinion."
+    "The reviewer agent is running on the same model as the planner or worker agent, so "
+    "its review is not independent. Set OPENROUTER_PLANNER_MODEL, OPENROUTER_WORKER_MODEL "
+    "and OPENROUTER_REVIEW_MODEL to three different models for a separate second opinion."
 )
 
 ALLOWED_DECISIONS = [
@@ -265,6 +279,24 @@ class Orchestrator:
         for job in report.failed_jobs:
             console.print_info(f"  - {job.name}: {job.conclusion}")
         return self.run_round(CI_FAILURE_PROMPT, extra_context=report.as_prompt_text())
+
+    def run_deploy_logs_round(self, pr_number: int | None = None) -> RoundOutcome:
+        """Fetch the deployment run a merged PR triggered and review it as a round.
+
+        `pr_number=None` uses the most recently merged pull request. The
+        deployment report is injected into the OBSERVE stage alongside the code.
+        Raises `GithubActionsError` if no usable deployment data can be fetched.
+        """
+        client = github_actions.GithubActionsClient(self.settings)
+        target = f"PR #{pr_number}" if pr_number is not None else "the latest merged PR"
+        console.print_info(
+            f"Fetching the {self.settings.github_deploy_workflow} deployment for {target}..."
+        )
+        report = client.fetch_deployment_report(pr_number=pr_number)
+        console.print_info(f"Found: {report.summary_line()}")
+        for job in report.jobs:
+            console.print_info(f"  - {job.name}: {job.outcome}")
+        return self.run_round(DEPLOY_LOGS_PROMPT, extra_context=report.as_prompt_text())
 
     def run_rag_validation_round(self, topic: str | None = None) -> RoundOutcome:
         """Retrieve documentation context from the local RAG server and cross-check it.
@@ -660,7 +692,9 @@ class Orchestrator:
 
     def _stage_plan_workflow(self, round_state: RoundState, workflow: WorkflowRun) -> WorkflowPlan:
         self._stage_plan(round_state)
-        console.print_info(f"Planner agent planning the workflow with {self.settings.model}...")
+        console.print_info(
+            f"Planner agent planning the workflow with {self.settings.planner_model}..."
+        )
         try:
             result = workflow_planner.plan_workflow(
                 user_request=round_state.prompt,
@@ -704,7 +738,7 @@ class Orchestrator:
         console.print_stage_banner(stages.AGENT, MULTI_AGENT_DESCRIPTION)
         console.print_info(
             f"Worker agent executing the plan over {len(bundle.files)} file(s) "
-            f"with {self.settings.model}..."
+            f"with {self.settings.worker_model}..."
         )
         try:
             work = worker.execute_plan(
@@ -738,7 +772,7 @@ class Orchestrator:
         ]
 
         reviewer_section = ["#### 4b. Reviewer Agent", ""]
-        if self.settings.review_model == self.settings.model:
+        if not self._reviewer_independent():
             console.print_warning(REVIEWER_NOT_INDEPENDENT)
             reviewer_section += [f"> **Warning:** {REVIEWER_NOT_INDEPENDENT}", ""]
 
@@ -861,8 +895,8 @@ class Orchestrator:
         duration_ms = int(round_state.duration_seconds() * 1000)
         assessment = workflow.assessment
         models = {
-            "planner": self.settings.model,
-            "worker": self.settings.model,
+            "planner": self.settings.planner_model,
+            "worker": self.settings.worker_model,
             "reviewer": self.settings.review_model,
         }
         outputs = {
@@ -910,7 +944,7 @@ class Orchestrator:
             "human_approval_required": True,
             "human_decision": workflow.decision.value,
             **{f"{agent}_status": workflow.agent_status[agent] for agent in workflow_log.AGENT_KEYS},
-            "reviewer_independent": self.settings.review_model != self.settings.model,
+            "reviewer_independent": self._reviewer_independent(),
             "reviewer_risk": assessment.risk.value if assessment else None,
             "reviewer_recommendation": assessment.recommendation.value if assessment else None,
             "evidence_count": len(workflow.evidence_files),
@@ -922,6 +956,13 @@ class Orchestrator:
         return history, audit
 
     # -- helpers -------------------------------------------------------------
+
+    def _reviewer_independent(self) -> bool:
+        """The reviewer must not share a model with the agents it is checking."""
+        return self.settings.review_model not in (
+            self.settings.planner_model,
+            self.settings.worker_model,
+        )
 
     def _offer_next_step(self) -> str:
         """Ask what to do when a round produced nothing to accept or reject.

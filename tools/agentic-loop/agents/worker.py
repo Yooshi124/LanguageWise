@@ -46,6 +46,6 @@ def execute_plan(
         prompt=task,
         schema=WorkerOutput,
         system_instruction=system,
-        model=settings.model,
+        model=settings.worker_model,
     )
     return WorkerResult(output=output, response=response)

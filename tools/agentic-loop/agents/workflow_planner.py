@@ -40,6 +40,6 @@ def plan_workflow(
         prompt=task,
         schema=WorkflowPlan,
         system_instruction=system,
-        model=settings.model,
+        model=settings.planner_model,
     )
     return PlannerResult(plan=plan, response=response)

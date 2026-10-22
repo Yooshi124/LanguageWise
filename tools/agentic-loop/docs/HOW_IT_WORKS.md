@@ -68,7 +68,7 @@ main.py                     CLI entry point, REPL, slash commands
 │   ├── repo_scanner.py     scope walk, ignore rules, secret and binary filtering
 │   ├── file_reader.py      capped reads with explicit truncation markers
 │   ├── repo_observer.py    deterministic OBSERVE-stage evidence
-│   ├── github_actions.py   failed CI runs and job-log excerpts via the GitHub API
+│   ├── github_actions.py   failed CI runs, PR deployment runs and job-log excerpts via the GitHub API
 │   ├── rag_observer.py     retrieved documentation passages via the local RAG server
 │   └── mcp_observer.py     live initialize/tools/list/tools/call evidence via the local MCP server
 │
@@ -204,6 +204,26 @@ prompt:
 Everything else is identical to a normal round: the same six stages, the same
 evidence log, the same human review. `GITHUB_TOKEN` is sent only to
 `api.github.com` and is redacted from all output like the OpenRouter key.
+
+---
+
+## Deploy-logs mode
+
+`python main.py --deploy-logs [PR]` (or `/deploy-logs` in the REPL) does the
+same for a merged pull request's deployment:
+
+1. The PR (a number, `#N` or a PR URL; blank means the most recently merged
+   PR) is resolved to its merge commit. Unmerged PRs are rejected.
+2. The `GITHUB_DEPLOY_WORKFLOW` run (default `aws-release.yml`) for that commit
+   is found, and its jobs are listed with their steps and durations.
+3. Each completed job's log is cleaned (timestamps, step echo/env blocks,
+   runner and docker-layer noise, and post-job cleanup removed). Failed jobs
+   contribute their failure lines; other jobs contribute their final lines.
+4. The report is injected into the OBSERVE stage and the round's prompt asks
+   what the deployment actually did, and for a root cause and fix if it failed.
+
+If no job in the run has completed yet, the mode stops with the run URL,
+because GitHub only publishes a job's log once that job finishes.
 
 ---
 

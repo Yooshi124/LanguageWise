@@ -109,8 +109,10 @@ def decision_status(record: dict[str, Any]) -> str:
 
 def reviewer_is_independent(record: dict[str, Any]) -> bool:
     models = record.get("models") or {}
-    return bool(models.get("reviewer_agent")) and models.get("reviewer_agent") != models.get(
-        "worker_agent"
+    reviewer = models.get("reviewer_agent")
+    return bool(reviewer) and reviewer not in (
+        models.get("planner_agent"),
+        models.get("worker_agent"),
     )
 
 
@@ -137,9 +139,11 @@ def evidence_log_markdown(record: dict[str, Any], directory: Path) -> str:
             rows.append(row("Worker evidence count", "> 0", str(count), count > 0))
     rows.append(
         row(
-            "Reviewer independent of worker",
+            "Reviewer independent of planner and worker",
             "Separate review model",
-            f"worker `{models.get('worker_agent', '?')}`, reviewer `{models.get('reviewer_agent', '?')}`",
+            f"planner `{models.get('planner_agent', '?')}`, "
+            f"worker `{models.get('worker_agent', '?')}`, "
+            f"reviewer `{models.get('reviewer_agent', '?')}`",
             reviewer_is_independent(record),
         )
     )
