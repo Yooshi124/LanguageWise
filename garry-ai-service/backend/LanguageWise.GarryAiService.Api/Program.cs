@@ -27,6 +27,7 @@ builder.Services.AddSingleton<IAdminSwitches, AdminSwitches>();
 builder.Services.AddScoped<CompletionProviders>();
 builder.Services.AddSingleton<IMcpToolHost, McpToolHost>();
 builder.Services.AddScoped<GarryToolLoop>();
+builder.Services.AddScoped<GarryAgentPipeline>();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -76,10 +77,9 @@ app.MapGet("/api/availability", async (IAdminSwitches adminSwitches, IConfigurat
 app.MapPost("/api/completions", async (
     CompletionRequest? request,
     HttpContext context,
-    CompletionProviders providers,
-    GarryToolLoop toolLoop,
-    IAdminSwitches adminSwitches,
+    GarryAgentPipeline pipeline,
     ILoggerFactory loggerFactory,
+    IAdminSwitches adminSwitches,
     CancellationToken cancellationToken) =>
 {
     if (!CompletionRequest.IsValid(request))
@@ -97,26 +97,9 @@ app.MapPost("/api/completions", async (
             extensions: new Dictionary<string, object?> { ["code"] = "ai_disabled" });
     }
 
-    if (request!.ToolScope is not null && switches.Mcp && toolLoop.IsAvailable)
-    {
-        var authorization = context.Request.Headers.Authorization.ToString();
-        var userToken = authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? authorization[7..].Trim() : null;
-        return new ToolCompletionResult(request, userToken, toolLoop, providers, loggerFactory);
-    }
-
-    ProviderStream completion;
-    try
-    {
-        completion = await providers.StartAsync(request!.BuildMessages(), cancellationToken, request.MaxTokens, request.Temperature);
-    }
-    catch (Exception exception) when (exception is HttpRequestException or ProviderException
-        || (exception is OperationCanceledException && !cancellationToken.IsCancellationRequested))
-    {
-        loggerFactory.CreateLogger("GarryProviders").LogWarning("Both assistant providers could not start: {ErrorType}", exception.GetType().Name);
-        return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
-    }
-
-    return new CompletionResult(completion, loggerFactory.CreateLogger<CompletionResult>());
+    var authorization = context.Request.Headers.Authorization.ToString();
+    var userToken = authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? authorization[7..].Trim() : null;
+    return (IResult)new GarryCompletionResult(request!, userToken, pipeline, loggerFactory, switches);
 }).RequireRateLimiting("global-assistant");
 app.Run();
 
