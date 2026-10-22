@@ -4,6 +4,8 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using LanguageWise.MiniGamesService.Api.Clients;
 using LanguageWise.MiniGamesService.Api.Feature.Associations;
 using LanguageWise.MiniGamesService.Api.Feature.GuessTheWord;
@@ -24,6 +26,103 @@ namespace LanguageWise.MiniGamesService.Api.Tests;
 [TestFixture]
 public sealed class GameplayEndpointTests
 {
+    [TestCase("guess-the-word", 96)]
+    [TestCase("word-search", 750)]
+    [TestCase("associations", 1200)]
+    public async Task AiGeneration_AllGames_UseGarryWithoutLocalProviderKey(string game, int maxTokens)
+    {
+        using var fixture = new GameplayApiFixture(useRealAi: true);
+        using var client = fixture.CreateAuthenticatedClient();
+        using var response = await client.PostAsync($"/api/{game}/init?mode=ai", null);
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(fixture.CompletionRequests.Single().Payload.GetProperty("maxTokens").GetInt32(), Is.EqualTo(maxTokens));
+    }
+
+    [TestCase(HttpStatusCode.ServiceUnavailable)]
+    [TestCase(HttpStatusCode.Unauthorized)]
+    public async Task GameModes_WhenGarryCannotConfirmAvailability_DisablesAi(HttpStatusCode status)
+    {
+        using var fixture = new GameplayApiFixture { AvailabilityStatus = status };
+        using var client = fixture.CreateAuthenticatedClient();
+        var modes = await client.GetFromJsonAsync<JsonElement>("/api/game-modes");
+        Assert.That(modes.GetProperty("aiAvailable").GetBoolean(), Is.False);
+    }
+
+    [Test]
+    public async Task GameModes_WhenGarryStatusIsMalformed_DisablesAi()
+    {
+        using var fixture = new GameplayApiFixture { AvailabilityResponse = "invalid JSON" };
+        using var client = fixture.CreateAuthenticatedClient();
+        var modes = await client.GetFromJsonAsync<JsonElement>("/api/game-modes");
+        Assert.That(modes.GetProperty("aiAvailable").GetBoolean(), Is.False);
+    }
+
+    [Test]
+    public async Task GameModes_AfterAiIsSwitchedOffAndOn_RefreshesAvailability()
+    {
+        using var fixture = new GameplayApiFixture();
+        using var client = fixture.CreateAuthenticatedClient();
+        foreach (var enabled in new[] { true, false, true })
+        {
+            fixture.AiEnabled = enabled;
+            var modes = await client.GetFromJsonAsync<JsonElement>("/api/game-modes");
+            Assert.That(modes.GetProperty("aiAvailable").GetBoolean(), Is.EqualTo(enabled));
+        }
+    }
+
+    [Test]
+    public async Task AiGeneration_ThroughGarry_RespectsSwitchAndForwardsUserWithoutTools()
+    {
+        using var fixture = new GameplayApiFixture(useRealAi: true);
+        using var client = fixture.CreateAuthenticatedClient();
+        using var first = await client.PostAsync("/api/guess-the-word/init?mode=ai", null);
+        Assert.That(first.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        await client.PostAsync("/api/guess-the-word/reset", null);
+
+        fixture.AiEnabled = false;
+        using var disabled = await client.PostAsync("/api/guess-the-word/init?mode=ai", null);
+        Assert.That(disabled.StatusCode, Is.EqualTo(HttpStatusCode.ServiceUnavailable));
+
+        fixture.AiEnabled = true;
+        using var enabled = await client.PostAsync("/api/guess-the-word/init?mode=ai", null);
+        Assert.That(enabled.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(fixture.CompletionRequests, Has.Count.EqualTo(3));
+        foreach (var (token, payload) in fixture.CompletionRequests)
+        {
+            Assert.That(token, Is.EqualTo(fixture.Token));
+            Assert.That(payload.TryGetProperty("toolScope", out _), Is.False);
+            Assert.That(payload.GetProperty("domainRules").GetString(), Is.Not.Empty);
+            Assert.That(payload.GetProperty("maxTokens").GetInt32(), Is.EqualTo(96));
+        }
+    }
+
+    [TestCase("")]
+    [TestCase("event: error\ndata: {\"code\":\"provider_stream_error\"}\n\n")]
+    [TestCase("event: done\ndata: {\"reason\":\"length\"}\n\n")]
+    public async Task AiGeneration_WhenGarryStreamDoesNotFinish_ReturnsServiceUnavailable(string ending)
+    {
+        using var fixture = new GameplayApiFixture(useRealAi: true)
+        {
+            GarryResponse = "event: delta\ndata: {\"content\":\"{\\\"groups\\\":[]}\"}\n\n" + ending
+        };
+        using var client = fixture.CreateAuthenticatedClient();
+        using var response = await client.PostAsync("/api/guess-the-word/init?mode=ai", null);
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.ServiceUnavailable));
+    }
+
+    [Test]
+    public async Task GameModes_WithGarryConfiguredAndNoLocalProviderKey_EnablesAiGeneration()
+    {
+        using var fixture = new GameplayApiFixture();
+        using var client = fixture.CreateAuthenticatedClient();
+
+        var response = await client.GetAsync("/api/game-modes");
+        var modes = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(modes.GetProperty("aiAvailable").GetBoolean(), Is.True);
+    }
+
     [Test]
     public async Task GuessTheWord_InitThenCorrectGuess_CompletesTheRound()
     {
@@ -112,7 +211,7 @@ public sealed class GameplayEndpointTests
         });
     }
 
-    private sealed class GameplayApiFixture : WebApplicationFactory<MiniGamesApiAssemblyMarker>
+    private sealed class GameplayApiFixture(bool useRealAi = false) : WebApplicationFactory<MiniGamesApiAssemblyMarker>
     {
         private readonly RSA rsa = RSA.Create(2048);
         private readonly string publicKeyPath = Path.Combine(
@@ -121,6 +220,11 @@ public sealed class GameplayEndpointTests
         private string? token;
 
         internal string Token => token ??= CreateToken();
+        internal bool AiEnabled { get; set; } = true;
+        internal string? GarryResponse { get; init; }
+        internal HttpStatusCode AvailabilityStatus { get; init; } = HttpStatusCode.OK;
+        internal string? AvailabilityResponse { get; init; }
+        internal List<(string? Token, JsonElement Payload)> CompletionRequests { get; } = [];
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -130,14 +234,20 @@ public sealed class GameplayEndpointTests
             {
                 configuration.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["Auth:VerificationKeyPath"] = publicKeyPath
+                    ["Auth:VerificationKeyPath"] = publicKeyPath,
+                    ["OpenRouter:ApiKey"] = string.Empty,
+                    ["Services:Garry"] = "http://unused.invalid"
                 });
             });
             builder.ConfigureServices(services =>
             {
+                services.ConfigureHttpClientDefaults(client => client.ConfigurePrimaryHttpMessageHandler(() => new GarryStatusHandler(this)));
                 // AI mode needs no course content, so swap in canned vocabulary.
-                services.RemoveAll<IAiVocabularyProvider>();
-                services.AddSingleton<IAiVocabularyProvider>(new FakeAiVocabularyProvider());
+                if (!useRealAi)
+                {
+                    services.RemoveAll<IAiVocabularyProvider>();
+                    services.AddSingleton<IAiVocabularyProvider>(new FakeAiVocabularyProvider());
+                }
 
                 // Persistence and course-content lookups are optional-fail-open in GameSessionManager,
                 // so pointing them at a handler that always errors keeps these tests hermetic.
@@ -189,6 +299,41 @@ public sealed class GameplayEndpointTests
 
     // Always returns service-unavailable; GameSessionManager persistence and content-mode
     // checks are designed to degrade gracefully when their backing services are unreachable.
+    private sealed class GarryStatusHandler(GameplayApiFixture fixture) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Assert.That(request.RequestUri!.Host, Is.EqualTo("unused.invalid"));
+            if (request.Method == HttpMethod.Get)
+            {
+                Assert.That(request.RequestUri.AbsolutePath, Is.EqualTo("/api/availability"));
+                Assert.That(request.Headers.Authorization?.Parameter, Is.EqualTo(fixture.Token));
+                return new HttpResponseMessage(fixture.AvailabilityStatus)
+                {
+                    Content = fixture.AvailabilityResponse is { } body ? new StringContent(body, Encoding.UTF8, "application/json")
+                        : JsonContent.Create(new { aiAvailable = fixture.AiEnabled })
+                };
+            }
+            Assert.That(request.RequestUri.AbsolutePath, Is.EqualTo("/api/completions"));
+            using var document = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+            fixture.CompletionRequests.Add((request.Headers.Authorization?.Parameter, document.RootElement.Clone()));
+            if (!fixture.AiEnabled) return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+            var groups = document.RootElement.GetProperty("maxTokens").GetInt32() switch
+            {
+                96 => FakeAiVocabularyProvider.GuessTheWordGroups,
+                750 => FakeAiVocabularyProvider.WordSearchGroups,
+                _ => FakeAiVocabularyProvider.AssociationGroups
+            };
+            var vocabulary = JsonSerializer.Serialize(new { groups }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(fixture.GarryResponse ??
+                    $"event: delta\ndata: {JsonSerializer.Serialize(new { content = vocabulary })}\n\n" +
+                    "event: done\ndata: {\"reason\":\"stop\"}\n\n", Encoding.UTF8, "text/event-stream")
+            };
+        }
+    }
+
     private sealed class AlwaysUnavailableHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
@@ -197,7 +342,7 @@ public sealed class GameplayEndpointTests
 
     private sealed class FakeAiVocabularyProvider : IAiVocabularyProvider
     {
-        private static readonly VocabularyGroup[] AssociationGroups =
+        internal static readonly VocabularyGroup[] AssociationGroups =
         [
             new("Fruit", [new WordEntry("APPLE", null), new WordEntry("MANGO", null), new WordEntry("PEACH", null), new WordEntry("GRAPE", null)]),
             new("Transport", [new WordEntry("TRAIN", null), new WordEntry("PLANE", null), new WordEntry("BOAT", null), new WordEntry("TRUCK", null)]),
@@ -205,13 +350,13 @@ public sealed class GameplayEndpointTests
             new("Kitchen", [new WordEntry("SPOON", null), new WordEntry("KNIFE", null), new WordEntry("PLATE", null), new WordEntry("OVEN", null)])
         ];
 
-        private static readonly VocabularyGroup[] WordSearchGroups =
+        internal static readonly VocabularyGroup[] WordSearchGroups =
         [
             new("Space", new[] { "ASTRONAUT", "ECLIPSE", "GALAXY", "ROCKET", "COMET", "MARS", "MOON", "RING", "SUN" }
                 .Select(word => new WordEntry(word, null)).ToArray())
         ];
 
-        private static readonly VocabularyGroup[] GuessTheWordGroups =
+        internal static readonly VocabularyGroup[] GuessTheWordGroups =
         [
             new("Fruit", [new WordEntry("APPLE", null)])
         ];

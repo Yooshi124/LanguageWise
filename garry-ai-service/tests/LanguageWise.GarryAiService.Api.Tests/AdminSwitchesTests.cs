@@ -1,11 +1,29 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace LanguageWise.GarryAiService.Api.Tests;
 
 public sealed class AdminSwitchesTests
 {
+	[Test]
+	public async Task RefreshAsync_AfterRapidOffOnChanges_UpdatesCachedStateImmediately()
+	{
+		var factory = new Factory(HttpStatusCode.OK, "[]");
+		IAdminSwitches switches = new AdminSwitches(factory, NullLogger<AdminSwitches>.Instance);
+		Assert.That((await switches.GetAsync(CancellationToken.None)).AiMode, Is.False);
+		factory.Body = JsonSerializer.Serialize(new[] { new { name = "AIMode", isEnabled = true } });
+		Assert.That((await switches.GetAsync(CancellationToken.None)).AiMode, Is.False);
+
+		foreach (var enabled in new[] { true, false, true })
+		{
+			factory.Body = JsonSerializer.Serialize(new[] { new { name = "AIMode", isEnabled = enabled } });
+			Assert.That((await switches.RefreshAsync(CancellationToken.None)).AiMode, Is.EqualTo(enabled));
+			Assert.That((await switches.GetAsync(CancellationToken.None)).AiMode, Is.EqualTo(enabled));
+		}
+	}
+
 	[Test]
 	public async Task GetAsync_TurnsDependentsOffWhenAiModeIsOff()
 	{
@@ -41,20 +59,28 @@ public sealed class AdminSwitchesTests
 
 	private sealed class Factory(HttpStatusCode status, string body) : IHttpClientFactory
 	{
+		internal string Body { get; set; } = body;
 		public HttpClient CreateClient(string name) =>
-			new(new Handler(status, body)) { BaseAddress = new Uri("http://shared-db-api/") };
+			new(new Handler(status, () => Body)) { BaseAddress = new Uri("http://shared-db-api/") };
 	}
 
-	private sealed class Handler(HttpStatusCode status, string body) : HttpMessageHandler
+	private sealed class Handler(HttpStatusCode status, Func<string> body) : HttpMessageHandler
 	{
 		protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-			Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
+			Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body(), Encoding.UTF8, "application/json") });
 	}
 }
 
 public sealed class StubAdminSwitches : IAdminSwitches
 {
 	public AdminSwitchState State { get; set; } = new(AiMode: true, Mcp: true, Rag: true);
+	public int RefreshCalls { get; private set; }
+
+	public Task<AdminSwitchState> RefreshAsync(CancellationToken cancellationToken)
+	{
+		RefreshCalls++;
+		return GetAsync(cancellationToken);
+	}
 
 	public Task<AdminSwitchState> GetAsync(CancellationToken cancellationToken) => Task.FromResult(State);
 }
