@@ -12,6 +12,8 @@ export const LEGACY_IMAGE_KEYS = Object.freeze(IMAGE_KEYS.filter(name => !['mcp-
 export const HOUR = 3_600_000;
 export const LOCK_WINDOW = 150 * 60_000;
 export const WORKER_WINDOW = 90 * 60_000;
+export const MONTHLY_START_LIMIT = 20;
+export const MONTHLY_HOUR_LIMIT = MONTHLY_START_LIMIT * 4;
 
 export function requireThat(condition, message) {
   if (!condition) throw new Error(message);
@@ -112,7 +114,7 @@ export function beginUp(state, quota, release, now) {
     return { state, quota, repeated: true };
   }
   requireThat(!state || state.status === 'down', 'Previous runtime must be fully removed before Up');
-  requireThat((quota?.cycles ?? 0) < 10 && (quota?.hours ?? 0) + 4 <= 40, 'Monthly demo reservation exhausted');
+  requireThat((quota?.cycles ?? 0) < MONTHLY_START_LIMIT && (quota?.hours ?? 0) + 4 <= MONTHLY_HOUR_LIMIT, 'Monthly demo reservation exhausted');
   return {
     state: { desiredMode: 'up', status: 'starting', requestedAt: now, startupDeadline: now + HOUR,
       expiresAt: now + 2 * HOUR, reservedUntil: now + 4 * HOUR, releaseSha: release.sha, release,

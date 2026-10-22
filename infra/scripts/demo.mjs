@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
-import { SERVICES, LOCK_WINDOW, WORKER_WINDOW, requireThat, validateFoundation, validateRelease,
+import { SERVICES, LOCK_WINDOW, WORKER_WINDOW, MONTHLY_START_LIMIT, MONTHLY_HOUR_LIMIT, requireThat, validateFoundation, validateRelease,
   releaseOrder, cleanupDue, beginUp, assertPhase, terraformVariables } from './control.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -898,9 +898,17 @@ export async function main(args = process.argv.slice(2), dependencies = nativeDe
   return new DemoController(foundation, dependencies).execute(args[0], manifest);
 }
 
+export function demoFailureMessage(error) {
+  if (error?.message === 'Monthly demo reservation exhausted') {
+    return `Demo Up blocked: monthly limit reached (${MONTHLY_START_LIMIT} starts / ${MONTHLY_HOUR_LIMIT} reserved hours). No runtime resources were started. `
+      + 'An owner-approved budget review is required before increasing the limit; retrying Up will not help.';
+  }
+  return 'Demo command failed. Output suppressed to protect credentials/state; inspect control status and cleanup alarm.';
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  main().catch(() => {
-    console.error('Demo command failed. Output suppressed to protect credentials/state; inspect control status and cleanup alarm.');
+  main().catch(error => {
+    console.error(demoFailureMessage(error));
     process.exitCode = 1;
   });
 }
