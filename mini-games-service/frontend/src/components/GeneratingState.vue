@@ -1,5 +1,6 @@
 <template>
 	<div class="generating-state" role="status" aria-live="polite">
+		<img class="garry-mood" :src="'/garry/ThinkingGarry.png'" alt="" aria-hidden="true" />
 		<div class="generating-state__spinner" aria-hidden="true"></div>
 		<p class="generating-state__title">{{ title }}</p>
 		<p class="generating-state__hint">Generating fresh words for this round — this can take a moment. If this fails, please try again soon</p>

@@ -95,6 +95,7 @@ watch(courseCode, () => store.loadCourse(courseCode.value), { immediate: true })
         </template>
       </v-alert>
       <article v-else class="completion-content">
+        <img v-if="store.progress.value?.courseEligible" class="garry-mood" :src="'/garry/CelebrateGarry.png'" alt="" aria-hidden="true">
         <v-chip
           :color="store.progress.value?.courseEligible ? 'success' : 'primary'"
           variant="tonal"

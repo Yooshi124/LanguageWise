@@ -55,6 +55,9 @@ tools/agentic-loop/Sessions/*.md
 tools/agentic-loop/Plans/*.md
 tools/agentic-loop/output/
 
+# ---- Generated reports (pre-commit logs, post-commit test reports) ----
+/reports/
+
 # ---- IDE ----
 .vs/
 .idea/

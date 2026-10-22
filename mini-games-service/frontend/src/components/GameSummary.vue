@@ -6,6 +6,7 @@
 					<h2>{{ won ? 'You won!' : 'Game over' }}</h2>
 					<button ref="closeButtonRef" type="button" class="summary-card__close" aria-label="Close results" @click="close">&times;</button>
 				</header>
+				<img class="garry-mood" :src="won ? '/garry/CelebrateGarry.png' : '/garry/SadGarry.png'" alt="" aria-hidden="true" />
 				<p class="summary-card__subtitle">{{ gameName }}</p>
 				<dl v-if="displayedStats.length" class="summary-stats">
 					<div v-for="stat in displayedStats" :key="stat.label" class="summary-stats__item">
