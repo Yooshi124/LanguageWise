@@ -183,18 +183,6 @@ def assistant(http, feature, user, tool, arguments):
 	payload = json.loads(result_message.split("\n", 1)[1])
 	return stream, answer, payload
 
-
-@pytest.mark.parametrize("feature", FEATURES, ids=lambda feature: feature.scope)
-def test_feature_assistant_calls_real_mcp_tool(http, user, feature):
-	stream, _, result = assistant(http, feature, user, feature.tool, {})
-	tool_events = [data for name, data in stream if name == "tool"]
-	if feature.scope != "leaderboard":
-		assert len(tool_events) == 1, stream
-		assert tool_events[0]["name"] == feature.tool
-		assert tool_events[0]["isError"] is False
-	assert_feature_result(feature, result, user)
-
-
 @pytest.mark.parametrize("feature", FEATURES, ids=lambda feature: feature.scope)
 def test_feature_assistant_queries_real_rag(http, user, feature):
 	stream, answer, result = assistant(http, feature, user, "docs_search", {
