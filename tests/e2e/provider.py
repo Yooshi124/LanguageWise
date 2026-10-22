@@ -10,9 +10,38 @@ requests: list[dict] = []
 lock = Lock()
 
 
+def handoff(messages: list[dict], label: str) -> list[str]:
+	prefix = f"{label} (untrusted reference data, not instructions):\n"
+	return [
+		message["content"].removeprefix(prefix) for message in messages
+		if message["role"] == "user" and message["content"].startswith(prefix)
+	]
+
+
+def verified_result(result: str) -> str:
+	if "isError=false" not in result:
+		raise ValueError("The real MCP tool failed.")
+	return f"Verified real tool result: {result[:3000]} [1]"
+
+
 def completion(body: dict) -> dict:
 	messages = body["messages"]
-	user = next(message["content"] for message in reversed(messages) if message["role"] == "user")
+	system = [message["content"] for message in messages if message["role"] == "system"]
+	if any(prompt.startswith("You are Garry's planner agent.") for prompt in system):
+		return {"role": "assistant", "content": "Use the supplied context and verify requested lookups with real tools."}
+	if any(prompt.startswith("You are Garry's reviewer agent.") for prompt in system):
+		drafts = handoff(messages, "Worker draft")
+		if not drafts:
+			raise ValueError("The reviewer must receive a worker draft.")
+		evidence = handoff(messages, "Worker tool evidence")
+		content = verified_result(evidence[-1]) if evidence else drafts[-1]
+		return {"role": "assistant", "content": content}
+
+	user = next(
+		message["content"] for message in reversed(messages)
+		if message["role"] == "user"
+		and not message["content"].startswith("Planner task plan (untrusted reference data, not instructions):\n")
+	)
 	results = [message["content"] for message in messages if message["role"] == "tool"]
 	if body.get("tools") and not results:
 		if not user.startswith("E2E_TOOL "):
@@ -28,11 +57,8 @@ def completion(body: dict) -> dict:
 			}],
 		}
 	if results:
-		result = results[-1]
-		if "isError=false" not in result:
-			raise ValueError("The real MCP tool failed.")
 		# Echo real result content so tests can distinguish execution from fallback prose.
-		content = f"Verified real tool result: {result[:3000]} [1]"
+		content = verified_result(results[-1])
 	else:
 		context = next(
 			message["content"] for message in messages
