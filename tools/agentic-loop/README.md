@@ -66,8 +66,8 @@ python main.py --mcp-validate
 - **Model:** OpenRouter chat completions, default `google/gemma-4-26b-a4b-it`
   (the same provider pattern as the mini-games AI mode), set in `.env`
 - **Scope:** the whole repository by default, or one directory via `TARGETED_DIRECTORY`
-- **Two agents, configurable models:** an implementation agent proposes findings; a
-  mandatory OpenRouter review agent critiques them and cannot be disabled
+- **Three agents, configurable models:** a planner, a worker and a reviewer; the
+  reviewer cannot be disabled
 - **CI-failures mode:** `--ci-failures` pulls the latest failed GitHub Actions run
   and its test-log excerpts, then runs a round that diagnoses the root cause
   against the actual code
@@ -83,12 +83,12 @@ python main.py --mcp-validate
   server (`mcp-server/`, not containerised) with `initialize`, `tools/list` and a
   real `tools/call` probe, then runs a round validating the server code against
   the observed behaviour; `/mcp [tool]` lists or calls tools directly
-- **Multi-agent workflow mode:** `--multi-agent "<request>"` (or `/multi-agent`)
-  runs a planner -> worker -> reviewer workflow over the code in scope, asks the
-  human to accept / partially accept / reject (with a reason and the evidence
-  used), and appends the result to `workflow_history.jsonl` and
-  `coordination_audit.jsonl` in the sessions directory; `--decide` records a
-  decision for a workflow left pending. Each agent runs on a different model —
+- **Multi-agent base:** every round is a planner -> worker -> reviewer workflow over
+  the code in scope; the human then accepts / partially accepts / rejects (with a
+  reason and the evidence used), and the result is appended to
+  `workflow_history.jsonl` and `coordination_audit.jsonl` in the sessions directory.
+  `--decide` records a decision for a workflow left pending. Each agent runs on a
+  different model —
   planner `openai/gpt-6-luna`, worker `anthropic/claude-haiku-5.5`, reviewer
   `google/gemma-4-26b-a4b-it` — overridable with `OPENROUTER_PLANNER_MODEL`,
   `OPENROUTER_WORKER_MODEL` and `OPENROUTER_REVIEW_MODEL`

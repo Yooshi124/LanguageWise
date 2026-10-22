@@ -1,9 +1,11 @@
 """The agentic loop itself.
 
-One round walks the six canonical stages in order:
+One round is always the multi-agent workflow (planner -> worker -> reviewer -> human)
+and walks the six canonical stages in order:
 
     PLAN -> ACT -> OBSERVE -> AGENT -> HUMAN REVIEW -> ADAPT
 
+The CI, deployment, RAG and MCP modes only add extra context on top of it.
 Every stage prints a banner and writes a matching heading into the evidence log,
 including stages that could not be reached, so the structure of the loop is always
 visible in the record.
@@ -16,18 +18,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from agents import analyst, critic, decision_parser, file_selector, planner, reviewer, worker, workflow_planner
+from agents import file_selector, reviewer, worker, workflow_planner
 from collectors import file_reader, github_actions, mcp_observer, rag_observer, repo_observer, repo_scanner
 from config.settings import Settings
 from core import console, stages
 from core.mcp_client import McpClient
-from core.models import Finding, ReviewerAssessment, WorkerOutput, WorkflowDecision, WorkflowPlan
+from core.models import ReviewerAssessment, WorkerOutput, WorkflowDecision, WorkflowPlan
 from core.openrouter_client import OpenRouterClient, OpenRouterError
 from core.prompt_registry import PromptRegistry
 from core.rag_client import RagClient
 from core.session import RoundState, SessionState, format_timestamp, new_guid, utc_now
 from output import workflow_log
-from output.plan_writer import write_plan
 from output.session_writer import SessionWriter
 
 logger = logging.getLogger(__name__)
@@ -132,12 +133,7 @@ class RoundAborted(RuntimeError):
 @dataclass
 class RoundOutcome:
     round_state: RoundState
-    findings: list[Finding]
-    accepted: list[Finding]
-    plan_path: Path | None
     aborted_reason: str | None = None
-    end_session: bool = False
-    follow_up_prompt: str | None = None
     workflow: WorkflowRun | None = None
 
 
@@ -162,8 +158,6 @@ class Orchestrator:
         self.writer = writer
         self.input_fn = input_fn or console.ask
         self.interactive = interactive
-        self._end_session = False
-        self._follow_up_prompt: str | None = None
 
     def set_scope(self, directory: Path) -> None:
         self.settings = self.settings.with_scope(directory)
@@ -172,16 +166,12 @@ class Orchestrator:
         """Restore the scope the session started with (TARGETED_DIRECTORY or --scope)."""
         self.settings = self._initial_settings
 
-    def run_round(self, user_prompt: str, extra_context: str | None = None) -> RoundOutcome:
-        return self._guarded_round(
-            user_prompt, lambda round_state: self._review_round(round_state, extra_context)
-        )
-
-    def run_multi_agent_round(self, user_request: str) -> RoundOutcome:
+    def run_round(self, user_request: str, extra_context: str | None = None) -> RoundOutcome:
         """Run the planner -> worker -> reviewer -> human workflow as one round.
 
         PLAN: the planner agent turns the request into a workflow plan.
-        ACT/OBSERVE: files are selected using the request plus the plan.
+        ACT/OBSERVE: files are selected using the request plus the plan;
+        `extra_context` (CI, deployment, RAG or MCP evidence) is added to the observations.
         AGENT: the worker executes the plan; the reviewer assesses the risk.
         HUMAN REVIEW: the human accepts, partially accepts or rejects.
         ADAPT: the workflow history and coordination audit are appended.
@@ -189,7 +179,8 @@ class Orchestrator:
         """
         workflow = WorkflowRun()
         outcome = self._guarded_round(
-            user_request, lambda round_state: self._multi_agent_round(round_state, workflow)
+            user_request,
+            lambda round_state: self._workflow_round(round_state, workflow, extra_context),
         )
         outcome.workflow = workflow
         if outcome.aborted_reason:
@@ -199,50 +190,25 @@ class Orchestrator:
             workflow_log.append_workflow(self.settings.sessions_dir, history, audit)
         return outcome
 
-    def _review_round(self, round_state: RoundState, extra_context: str | None) -> RoundOutcome:
-        user_prompt = round_state.prompt
-        self._stage_plan(round_state)
-        selection, scan = self._stage_act(user_prompt)
-        bundle = file_reader.load_files(selection.entries, self.settings)
-        observation = self._stage_observe(scan, bundle, extra_context)
-        findings = self._stage_agent(user_prompt, bundle, observation, round_state)
-        accepted = self._stage_human_review(findings, round_state)
-        plan_path = self._stage_adapt(
-            user_prompt, accepted, findings, bundle, observation, round_state
-        )
-        if not findings:
-            # Asked after ADAPT so the six stages always print in order.
-            note = self._offer_next_step()
-            if note:
-                self.writer.write_note(f"**Human next step:** {note}")
-        return RoundOutcome(
-            round_state,
-            findings,
-            accepted,
-            plan_path,
-            end_session=self._end_session,
-            follow_up_prompt=self._follow_up_prompt,
-        )
-
-    def _multi_agent_round(self, round_state: RoundState, workflow: WorkflowRun) -> RoundOutcome:
+    def _workflow_round(
+        self, round_state: RoundState, workflow: WorkflowRun, extra_context: str | None
+    ) -> RoundOutcome:
         user_request = round_state.prompt
         plan = self._stage_plan_workflow(round_state, workflow)
         selection, scan = self._stage_act(_selection_prompt(user_request, plan))
         bundle = file_reader.load_files(selection.entries, self.settings)
         workflow.evidence_files = [file.relative_path for file in bundle.files]
-        observation = self._stage_observe(scan, bundle)
+        observation = self._stage_observe(scan, bundle, extra_context)
         self._stage_coordinate(user_request, plan, bundle, observation, round_state, workflow)
         self._stage_workflow_decision(workflow)
         self._stage_record_workflow(workflow, round_state)
-        return RoundOutcome(round_state, [], [], None)
+        return RoundOutcome(round_state)
 
     def _guarded_round(
         self, prompt: str, body: Callable[[RoundState], RoundOutcome]
     ) -> RoundOutcome:
         round_state = self.session.start_round(prompt)
         self.writer.start_round(round_state.number)
-        self._end_session = False
-        self._follow_up_prompt = None
 
         try:
             return body(round_state)
@@ -250,15 +216,15 @@ class Orchestrator:
         except RoundAborted as abort:
             self._record_unreached(abort.reason)
             console.print_error(f"Round {round_state.number} stopped: {abort.reason}")
-            return RoundOutcome(round_state, [], [], None, aborted_reason=abort.reason)
+            return RoundOutcome(round_state, aborted_reason=abort.reason)
         except KeyboardInterrupt:
             self._record_unreached("interrupted by the user")
             console.print_warning("\nRound interrupted - evidence log preserved.")
-            return RoundOutcome(round_state, [], [], None, aborted_reason="interrupted by user")
+            return RoundOutcome(round_state, aborted_reason="interrupted by user")
         except EOFError:
             self._record_unreached("input stream closed before the human replied")
             console.print_warning("\nInput closed - round ended, evidence log preserved.")
-            return RoundOutcome(round_state, [], [], None, aborted_reason="input stream closed")
+            return RoundOutcome(round_state, aborted_reason="input stream closed")
         except BaseException as exc:
             # Any other failure must still leave the six canonical stage headings
             # in the evidence log before it propagates to the REPL.
@@ -268,8 +234,8 @@ class Orchestrator:
     def run_ci_failure_round(self, workflow: str | None = None) -> RoundOutcome:
         """Fetch the latest failed GitHub Actions run and review it as a round.
 
-        The failure report is injected into the OBSERVE stage so both the
-        implementation agent and the review agent see it alongside the code.
+        The failure report is injected into the OBSERVE stage so the worker and
+        reviewer agents see it alongside the code.
         Raises `GithubActionsError` if no usable failure data can be fetched.
         """
         client = github_actions.GithubActionsClient(self.settings)
@@ -301,8 +267,8 @@ class Orchestrator:
     def run_rag_validation_round(self, topic: str | None = None) -> RoundOutcome:
         """Retrieve documentation context from the local RAG server and cross-check it.
 
-        The retrieved passages are injected into the OBSERVE stage so both the
-        implementation agent and the review agent see them alongside the code.
+        The retrieved passages are injected into the OBSERVE stage so the worker
+        and reviewer agents see them alongside the code.
         Raises `RagError` if the RAG server cannot be reached.
         """
         client = RagClient(self.settings)
@@ -315,9 +281,9 @@ class Orchestrator:
         """Exercise the shared local MCP server and validate it as a round.
 
         The live initialize/tools/list/tools/call report is injected into the
-        OBSERVE stage so both the implementation agent and the review agent see
-        it alongside the mcp-server source code. Raises `McpError` if the MCP
-        server cannot be reached or rejects the request.
+        OBSERVE stage so the worker and reviewer agents see it alongside the
+        mcp-server source code. Raises `McpError` if the MCP server cannot be
+        reached or rejects the request.
         """
         client = McpClient(self.settings)
         console.print_info(
@@ -426,269 +392,7 @@ class Orchestrator:
         self.writer.write_observe_stage(observation.as_text())
         return observation
 
-    # -- stage 4 -------------------------------------------------------------
-
-    def _stage_agent(
-        self,
-        user_prompt: str,
-        bundle: file_reader.CodeBundle,
-        observation: repo_observer.Observation,
-        round_state: RoundState,
-    ) -> list[Finding]:
-        console.print_stage_banner(stages.AGENT, stages.AGENT.description)
-        console.print_info(
-            f"Implementation agent reading {len(bundle.files)} file(s) "
-            f"({bundle.total_bytes} bytes) with {self.settings.model}..."
-        )
-
-        try:
-            analysis = analyst.analyse(
-                user_prompt=user_prompt,
-                bundle=bundle,
-                observation=observation,
-                settings=self.settings,
-                prompts=self.prompts,
-                client=self.client,
-            )
-        except OpenRouterError as exc:
-            self.writer.write_agent_stage(f"**Implementation agent failed:** {exc}")
-            raise RoundAborted(stages.AGENT, f"implementation agent failed: {exc}") from exc
-
-        round_state.tokens += analysis.response.total_tokens
-        proposed = analysis.findings
-
-        console.print_info(f"Implementation agent proposed {len(proposed.findings)} finding(s).")
-        if proposed.findings:
-            console.print_info(
-                f"Review agent critiquing with {self.settings.review_model} via OpenRouter..."
-            )
-
-        try:
-            outcome = critic.critique(
-                user_prompt=user_prompt,
-                proposed=proposed,
-                bundle=bundle,
-                observation=observation,
-                settings=self.settings,
-                prompts=self.prompts,
-                client=self.review_client,
-            )
-        except OpenRouterError as exc:
-            self.writer.write_agent_stage(f"**Review agent failed:** {exc}")
-            raise RoundAborted(stages.AGENT, f"review agent failed: {exc}") from exc
-
-        if outcome.response:
-            round_state.tokens += outcome.response.total_tokens
-
-        findings = list(outcome.result.findings)
-        round_state.findings_count = len(findings)
-
-        summary = outcome.result.summary.strip() or proposed.summary.strip()
-        console.print_findings(findings)
-        console.print_summary(summary)
-
-        self.writer.write_agent_stage(
-            self._agent_stage_markdown(proposed, outcome, findings, analysis, summary)
-        )
-        return findings
-
-    def _agent_stage_markdown(
-        self,
-        proposed,
-        outcome: critic.CritiqueOutcome,
-        findings: list[Finding],
-        analysis: analyst.AnalysisResult,
-        summary: str,
-    ) -> str:
-        lines = ["#### 4a. Implementation Agent", ""]
-        if proposed.findings:
-            for index, finding in enumerate(proposed.findings, start=1):
-                lines.extend(
-                    [
-                        f"{index}. **{finding.title}** ({finding.severity.value})",
-                        f"   - Problem: {finding.problem.strip()}",
-                        f"   - Suggested fix: {finding.suggested_fix.strip()}",
-                        f"   - Files: {', '.join(finding.files) if finding.files else '(none cited)'}",
-                        f"   - Evidence: {finding.evidence.strip() or '(none cited)'}",
-                    ]
-                )
-        else:
-            lines.append("_No findings proposed._")
-        lines.extend(["", f"_Call: {analysis.response.usage_line()}_", ""])
-
-        lines.extend(["#### 4b. Review Agent", ""])
-        if not outcome.was_run:
-            lines.extend([f"_Skipped: {outcome.skipped_reason}_", ""])
-        else:
-            if outcome.result.notes:
-                for note in outcome.result.notes:
-                    lines.append(
-                        f"- **{note.finding_title}** → `{note.verdict}`"
-                        + (f" — {note.reason.strip()}" if note.reason.strip() else "")
-                    )
-            else:
-                lines.append("_The review agent returned no per-finding notes._")
-            if outcome.response:
-                lines.extend(["", f"_Call: {outcome.response.usage_line()}_"])
-            lines.append("")
-
-        lines.extend(["#### 4c. Findings Presented to the Human", ""])
-        if findings:
-            for index, finding in enumerate(findings, start=1):
-                lines.extend(
-                    [
-                        f"{index}. **Problem:** {finding.problem.strip()} "
-                        f"({finding.severity.value})",
-                        "",
-                        f"   **Suggested fix:** {finding.suggested_fix.strip()}",
-                        "",
-                        f"   Files: {', '.join(f'`{f}`' for f in finding.files) if finding.files else '(none cited)'}",
-                        "",
-                    ]
-                )
-        else:
-            lines.extend(["_No evidence-backed issues identified._", ""])
-
-        if summary:
-            lines.extend([f"**Agent summary:** {summary}", ""])
-        return "\n".join(lines)
-
-    # -- stage 5 -------------------------------------------------------------
-
-    def _stage_human_review(
-        self,
-        findings: list[Finding],
-        round_state: RoundState,
-    ) -> list[Finding]:
-        console.print_stage_banner(stages.HUMAN_REVIEW, stages.HUMAN_REVIEW.description)
-
-        if not findings:
-            console.print_info("Nothing to review - the agent raised no issues.")
-            self.writer.write_human_review_stage(
-                "_No findings were presented, so there was nothing to accept or reject._"
-            )
-            return []
-
-        reply = self.input_fn(
-            "Which suggestions would you like to accept? (e.g. 'fix 1 and 2 please', 'all', 'none'):"
-        ).strip()
-
-        decision = decision_parser.parse_decision(
-            reply=reply,
-            findings=findings,
-            prompts=self.prompts,
-            client=self.client,
-        )
-        if decision.response:
-            round_state.tokens += decision.response.total_tokens
-
-        accepted = [findings[index - 1] for index in decision.accepted]
-        round_state.accepted_count = len(accepted)
-
-        console.print_success(decision.interpretation)
-        rejected = decision.rejected(len(findings))
-        if rejected:
-            console.print_info(f"Rejected: {', '.join(str(index) for index in rejected)}")
-
-        lines = [
-            "**User response (verbatim):**",
-            "",
-            f"```text\n{reply or '(empty reply)'}\n```",
-            "",
-            f"- Interpreted by: {decision.source}",
-            f"- Interpretation: {decision.interpretation}",
-            "",
-            "| # | Finding | Decision |",
-            "| --- | --- | --- |",
-        ]
-        for index, finding in enumerate(findings, start=1):
-            verdict = "**ACCEPTED**" if index in decision.accepted else "REJECTED"
-            lines.append(f"| {index} | {finding.title} | {verdict} |")
-        if decision.error:
-            lines.extend(["", f"_Interpretation warning: {decision.error}_"])
-
-        self.writer.write_human_review_stage("\n".join(lines))
-        return accepted
-
-    # -- stage 6 -------------------------------------------------------------
-
-    def _stage_adapt(
-        self,
-        user_prompt: str,
-        accepted: list[Finding],
-        findings: list[Finding],
-        bundle: file_reader.CodeBundle,
-        observation: repo_observer.Observation,
-        round_state: RoundState,
-    ) -> Path | None:
-        console.print_stage_banner(stages.ADAPT, stages.ADAPT.description)
-
-        if not accepted:
-            note = (
-                "No suggestions were accepted, so no implementation plan was created. "
-                "The findings above remain on record for a future round."
-                if findings
-                else "No findings were raised, so there was nothing to adapt."
-            )
-            console.print_info(note)
-            self.writer.write_adapt_stage(
-                f"- Plan created: no\n- Note: {note}\n"
-                f"- Round duration: {round_state.duration_seconds():.1f}s"
-            )
-            return None
-
-        console.print_info(
-            f"Building an implementation plan for {len(accepted)} accepted finding(s)..."
-        )
-        try:
-            result = planner.build_plan(
-                user_prompt=user_prompt,
-                accepted=accepted,
-                bundle=bundle,
-                observation=observation,
-                settings=self.settings,
-                prompts=self.prompts,
-                client=self.client,
-            )
-        except OpenRouterError as exc:
-            self.writer.write_adapt_stage(
-                f"- Plan created: no\n- Planning agent failed: {exc}\n"
-                f"- Accepted findings preserved: {', '.join(f.title for f in accepted)}"
-            )
-            raise RoundAborted(stages.ADAPT, f"planning agent failed: {exc}") from exc
-
-        round_state.tokens += result.response.total_tokens
-        path = write_plan(
-            plans_dir=self.settings.plans_dir,
-            plan=result.plan,
-            accepted=accepted,
-            user_prompt=user_prompt,
-            scope=self.settings.scope,
-            session_guid=self.session.guid,
-            round_number=round_state.number,
-            model=self.settings.model,
-        )
-        round_state.plan_path = path
-        console.print_plan_saved(path)
-
-        self.writer.write_adapt_stage(
-            "\n".join(
-                [
-                    f"- Accepted findings: {len(accepted)} of {len(findings)}",
-                    "- Implementation plan saved to: " f"`{path}`",
-                    f"- Plan items: {len(result.plan.items)}",
-                    f"- Round duration: {round_state.duration_seconds():.1f}s",
-                    "",
-                    f"_Planning call: {result.response.usage_line()}_",
-                    "",
-                    "**Adaptation:** the accepted suggestions are now a concrete plan for the "
-                    "human to implement. Rerun the loop after the changes land to verify them.",
-                ]
-            )
-        )
-        return path
-
-    # -- multi-agent workflow stages ----------------------------------------
+    # -- workflow stages (4-6) ----------------------------------------------
 
     def _stage_plan_workflow(self, round_state: RoundState, workflow: WorkflowRun) -> WorkflowPlan:
         self._stage_plan(round_state)
@@ -963,33 +667,6 @@ class Orchestrator:
             self.settings.planner_model,
             self.settings.worker_model,
         )
-
-    def _offer_next_step(self) -> str:
-        """Ask what to do when a round produced nothing to accept or reject.
-
-        Returns a short description of the choice for the evidence log.
-        """
-        if not self.interactive:
-            return ""
-
-        try:
-            reply = self.input_fn(
-                "Nothing to accept. Type another prompt to try again, "
-                "Enter to carry on, or 'q' to quit:"
-            ).strip()
-        except (EOFError, KeyboardInterrupt):
-            self._end_session = True
-            console.print_warning("\nEnding session.")
-            return "ended the session"
-
-        if not reply:
-            return "carried on"
-        if reply.lower() in {"q", "quit", "exit", "/exit", "/quit"}:
-            self._end_session = True
-            return "ended the session"
-
-        self._follow_up_prompt = reply
-        return f"re-prompted with: {reply}"
 
     def _record_unreached(self, reason: str) -> None:
         """Write a heading for every stage of this round that never reached the log.

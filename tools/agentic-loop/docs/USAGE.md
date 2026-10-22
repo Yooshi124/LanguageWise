@@ -21,7 +21,7 @@ All commands run from `LanguageWise\Tools\AgenticLoop`.
 | `python main.py --rag-validate "achievements service"` | Same, but scopes the retrieval to that topic. |
 | `python main.py --mcp-validate` | Exercises the local MCP server (`initialize`, `tools/list`, one `tools/call` probe) and validates the mcp-server code against the observed behaviour, writes the session log, exits. |
 | `python main.py --mcp-validate courses_list_courses` | Same, but probes that specific tool. |
-| `python main.py --multi-agent "summarise how XP is awarded"` | Runs one planner -> worker -> reviewer workflow over the code in scope, records it with the human decision left `Pending`, exits (exit code 1 if the workflow aborted). |
+| `python main.py --prompt "summarise how XP is awarded"` | Runs one planner -> worker -> reviewer workflow over the code in scope, records it with the human decision left `Pending`, exits (exit code 1 if the workflow aborted). |
 | `python main.py --decide 7212a99a "partial seed row clashes with Id 1" --evidence-used "seed.sql, reviewer retest"` | Records the human decision (accept / partial / reject + reason) for a pending multi-agent workflow (full ID or unique prefix). No model is called. |
 | `python main.py --scope ..\..\DatabaseService` | Overrides `TARGETED_DIRECTORY` for this run only. |
 | `python main.py --env C:\path\to\other.env` | Uses an alternative configuration file. |
@@ -49,8 +49,7 @@ review prompt.
 | `/rag <question>` | Query the local RAG server directly and print the results, without running a full review round. |
 | `/mcp-validate [tool]` | Exercise the local MCP server (`initialize`, `tools/list`, one `tools/call` probe) and validate the mcp-server code in scope against the observed behaviour. |
 | `/mcp [tool]` | List the MCP tools for the configured scope, or call one directly with empty arguments, without running a full review round. |
-| `/multi-agent <request>` | Run the planner -> worker -> reviewer workflow for the request, then accept, partially accept or reject the output. |
-| `/decide <workflow-id> <decision> <reason>` | Record the human decision for a multi-agent workflow that was left pending. |
+| `/decide <workflow-id> <decision> <reason>` | Record the human decision for a workflow that was left pending. |
 | `/exit` | End the session, write the log footer, and list any plans created. |
 
 ---
@@ -134,7 +133,10 @@ user JWT for per-user tools).
 
 ## Multi-agent workflow
 
-The multi-agent mode coordinates three agents and a human through the same six
+Every round - a plain prompt, `--ci-failures`, `--deploy-logs`, `--rag-validate` or
+`--mcp-validate` - runs the multi-agent workflow; the mode flags only add extra
+evidence to the OBSERVE stage. The workflow coordinates three agents and a human
+through the same six
 stages:
 
 | Stage | Multi-agent behaviour |
@@ -143,11 +145,11 @@ stages:
 | ACT | Files are selected using the request plus the plan's steps and evidence requirements. |
 | OBSERVE | Deterministic observations, as in any round. |
 | AGENT | The **worker agent** (`OPENROUTER_WORKER_MODEL`, haiku by default) executes the plan using only the supplied code: output, evidence used, limitations. The **reviewer agent** (`OPENROUTER_REVIEW_MODEL`, gemma by default via `OPENROUTER_MODEL`) checks it against the plan and evidence: risk, corrections, retest checks, recommendation. The three agents run on three different models so the review is independent; if the reviewer shares a model with the planner or worker, a warning is logged and the evidence log marks the check as failed. |
-| HUMAN REVIEW | You reply `accept`, `partial` or `reject` (or `a` / `p` / `r`) followed by your reason, then say which evidence informed the decision. Overriding the reviewer's recommendation is recorded. Non-interactive runs (`--multi-agent`) leave the decision `Pending`; record it later with `--decide` or `/decide`. |
+| HUMAN REVIEW | You reply `accept`, `partial` or `reject` (or `a` / `p` / `r`) followed by your reason, then say which evidence informed the decision. Overriding the reviewer's recommendation is recorded. Non-interactive runs (`--prompt`, `--ci-failures`, ...) leave the decision `Pending`; record it later with `--decide` or `/decide`. |
 | ADAPT | The workflow is appended to `workflow_history.jsonl` (planner, worker and reviewer results with each agent's status, plus the human decision) and `coordination_audit.jsonl` (compact governance record with per-agent status, evidence count, reviewer independence, risk and decision) in `SESSIONS_DIR`. Aborted workflows are recorded too. The session log gets an **Evidence Log** checklist: workflow ID, each agent `completed`, worker evidence count > 0, independent reviewer, human decision recorded, and both JSONL files present. |
 
 ```
-agentic-loop > /multi-agent summarise how the leaderboard service awards XP
+agentic-loop > summarise how the leaderboard service awards XP
 ```
 
 A decision recorded afterwards with `--decide` is appended as a separate
