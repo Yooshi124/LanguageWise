@@ -2,16 +2,17 @@
 
 ## Current Monthly Startup Policy
 
-Owner-approved on 2026-10-22: the ongoing admission guard is **20 starts and
-80 reserved hours per calendar month**, not a one-month exception. Existing usage
+Owner-approved on 2026-10-23: the ongoing admission guard is **20 starts and
+240 reserved hours per calendar month**, not a one-month exception. Existing usage
 is preserved; the limit change does not reset or refund reservations. Every new
-start reserves four hours, even if startup fails or the demo is stopped early.
+start reserves twelve hours, even if startup fails or the demo is stopped early.
 Reservations are not actual AWS charges or credit usage.
 
-The two-hour lease, one-hour startup deadline and independent cleanup remain
-unchanged. The $160 planning budget is unchanged; AWS budget alerts are not
+New starts have a ten-hour lease from the Up request; existing leases are not
+extended. The one-hour startup deadline and independent cleanup remain unchanged.
+The $160 planning budget is unchanged; AWS budget alerts are not
 modified by this code change. Historical cost estimates below are not a fresh
-quote for an 80-hour month. Publishing this change does not itself launch Up.
+quote for a 240-hour month. Publishing this change does not itself launch Up.
 
 ## Earlier Cold-Start Follow-up: 2026-10-22
 
@@ -249,7 +250,7 @@ audit performed.
    Full application startup and HTTPS smoke checks have not passed.
    Review the scoped IAM and inactive-metadata repairs above, preserve the immutable cleanup-source
    process and require exact-SHA CI/release success before an explicitly approved
-   cycle. Failed cycles retain their four-hour reservation. Do not apply an old
+   cycle. Failed cycles retain their original reservation. Do not apply an old
    saved foundation plan or assume these repairs prove application readiness.
 
 The cleanup IAM repair was applied separately to avoid an unrelated ECS Exec
@@ -432,15 +433,15 @@ needed. Both this workflow and automatic release use concurrency group
 lock and Terraform S3 lock.
 
 **Up** selects the latest tested manifest, verifies cleanup readiness and required
-non-database secrets, then reserves four billed hours atomically. It creates
+non-database secrets, then reserves twelve hours atomically. It creates
 infrastructure with application services disabled, runs the one-off initializer,
 checks its exit code and published database-secret metadata, then starts twenty
 services. It waits for steady state and checks HTTPS, canonical routes and five
 federation entries. The run reports the current CloudFront URL and expiry.
 
-The two-hour lease starts **at the Up request**, including startup; it is not two
+The ten-hour lease starts **at the Up request**, including startup; it is not ten
 hours after readiness. Startup has a one-hour deadline. Each new cycle reserves
-four hours against ten cycles/forty hours per UTC calendar month. Failed cycles
+twelve hours against twenty cycles/240 reserved hours per UTC calendar month. Failed cycles
 retain their reservation; this is a conservative admission allowance, not an
 invoice meter or hard billing cap. Repeated Up does not extend the lease, consume
 another reservation, or reseed. There is no implicit renewal/extension button.
