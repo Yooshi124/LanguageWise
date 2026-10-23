@@ -98,7 +98,24 @@ state_bucket_name demo_state_key
 Service role maps have the 20 Compose service names excluding `shared-db`,
 plus `database-initializer`. Secret keys are `db-shared`, `db-mini-games`,
 `db-quizzes-courses`, `db-chat-discussion`, `db-quests`, `openrouter-api-key`,
-`signing-private-key`, `signing-public-key`, `mcp-api-key`.
+`signing-private-key`, `signing-public-key`, `mcp-api-key`, `smtp-credentials`.
+
+`smtp-credentials` is one JSON secret with lowercase `username` and `password`
+fields, populated by the owner directly in Secrets Manager. Only the notifications
+backend execution role can read it, for ECS injection as `Smtp__Username` and
+`Smtp__Password`. Host and port retain the application's nonsecret defaults
+(`smtp.gmail.com`, `587`, STARTTLS). Terraform manages metadata and permissions
+only, never secret versions or values. The owner populated the secret and its
+`AWSCURRENT` metadata was verified without retrieving values. The approved
+Down-only cleanup-source, exact metadata permissions and matching ten-secret
+GitHub/CodeBuild contract cutover is complete; see
+[SMTP publication status](../README.md#smtp-setup-cutover-complete).
+Terraform state/outputs were synchronized through a refresh-only plan without AWS
+resource mutations. The new pinned source passed native cleanup verification
+while already Down; all four alarms remain OK with actions enabled. Application
+publication and actual email delivery are still unverified. Future contract
+changes must likewise be coordinated with reviewed cleanup-source activation,
+not exported into GitHub or CodeBuild independently.
 
 The MCP key is a dedicated AWS raw-plaintext secret, not the developer file key.
 Only MCP and its six backend callers receive it through exact execution-role
