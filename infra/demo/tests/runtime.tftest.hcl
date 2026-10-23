@@ -50,7 +50,7 @@ variables {
     ) : name => "arn:aws:iam::123456789012:role/fixture-task" }
     secret_arns = { for name in [
       "db-shared", "db-mini-games", "db-quizzes-courses", "db-chat-discussion", "db-quests",
-      "openrouter-api-key", "signing-private-key", "signing-public-key", "mcp-api-key"
+      "openrouter-api-key", "signing-private-key", "signing-public-key", "mcp-api-key", "smtp-credentials"
     ] : name => "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:${name}-abcdef" }
   }
   release = {
@@ -93,6 +93,18 @@ run "infrastructure_before_seed" {
       [for secret in jsondecode(task.container_definitions)[0].secrets : secret.name], "OpenRouter__ApiKey"
     )]) == toset(["garry-ai-service-backend", "quests-achievements-notifications-service-backend", "leaderboard-analytics-service-backend"])
     error_message = "Only the three intended AI consumers may receive OpenRouter credentials."
+  }
+  assert {
+    condition = alltrue([for setting, field in { Smtp__Username = "username", Smtp__Password = "password" } :
+      one([for secret in jsondecode(aws_ecs_task_definition.app["quests-achievements-notifications-service-backend"].container_definitions)[0].secrets : secret.valueFrom if secret.name == setting]) == "${var.foundation.secret_arns["smtp-credentials"]}:${field}::"
+    ])
+    error_message = "Notification SMTP credentials must use exact JSON-key secret references, never plaintext task values."
+  }
+  assert {
+    condition = toset([for name, task in aws_ecs_task_definition.app : name if anytrue([
+      for secret in jsondecode(task.container_definitions)[0].secrets : startswith(secret.name, "Smtp__")
+    ])]) == toset(["quests-achievements-notifications-service-backend"])
+    error_message = "Only the notifications backend may receive SMTP credentials; host and port must not be secrets."
   }
   assert {
     condition = alltrue([for name in local.backends : alltrue([

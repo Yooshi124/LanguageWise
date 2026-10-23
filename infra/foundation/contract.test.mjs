@@ -27,6 +27,22 @@ test('discovery preserves the existing absent custom-health configuration on rea
   assert.match(discovery, /type = "A"/);
 });
 
+test('SMTP credentials are metadata-only and injected only into the notifications backend', () => {
+  const consumers = main.split('secret_consumers = {')[1].split('database_secrets =')[0];
+  const smtpConsumers = [...consumers.matchAll(/^\s*([a-z-]+)\s*=\s*(\[[^\n]+\])/gm)]
+    .filter(match => JSON.parse(match[2]).includes('smtp-credentials')).map(match => match[1]);
+  assert.deepEqual(smtpConsumers, ['quests-achievements-notifications-service-backend']);
+  assert.match(main, /secret_names\s*=.*"smtp-credentials"/);
+  assert.doesNotMatch(main, /aws_secretsmanager_secret_version/);
+  const secrets = demoServices.split('service_secrets =')[1];
+  assert.match(secrets, /name == "quests-achievements-notifications-service-backend" \? \{\s*Smtp__Username/);
+  for (const [setting, field] of [['Username', 'username'], ['Password', 'password']]) {
+    assert.match(secrets, new RegExp(`Smtp__${setting}\\s*=\\s*"\\$\\{var\\.foundation\\.secret_arns\\["smtp-credentials"\\]\\}:${field}::"`));
+  }
+  assert.doesNotMatch(secrets, /Smtp__(Host|Port)\s*=/);
+  assert.match(identity, /Resource = \[for name in local\.secret_consumers\[each\.key\] : aws_secretsmanager_secret\.application\[name\]\.arn\]/);
+});
+
 test('EC2 creation authorizes new tagged resources separately from tagged parents', () => {
   const creation = statement('CreateTaggedNetwork');
   assert.match(creation, /Condition = local\.demo_creation/);
