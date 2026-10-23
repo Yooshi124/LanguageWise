@@ -95,7 +95,7 @@ run "infrastructure_before_seed" {
     error_message = "Only the three intended AI consumers may receive OpenRouter credentials."
   }
   assert {
-    condition = alltrue([for setting, field in { Smtp__Username = "username", Smtp__Password = "password" } :
+    condition = alltrue([for setting, field in { Smtp__Username = "username", Smtp__Password = "password" } : # pragma: allowlist secret
       one([for secret in jsondecode(aws_ecs_task_definition.app["quests-achievements-notifications-service-backend"].container_definitions)[0].secrets : secret.valueFrom if secret.name == setting]) == "${var.foundation.secret_arns["smtp-credentials"]}:${field}::"
     ])
     error_message = "Notification SMTP credentials must use exact JSON-key secret references, never plaintext task values."
