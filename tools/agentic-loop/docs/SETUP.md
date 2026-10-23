@@ -87,6 +87,10 @@ in the REPL).
   `GITHUB_TOKEN` in `.env`.
 - Set `GITHUB_WORKFLOW` (e.g. `student-3.yml`) to always inspect one workflow;
   leave it blank to use the most recent failed run of any workflow.
+- The same token powers the deploy-logs mode (`python main.py --deploy-logs 66`,
+  or `/deploy-logs 66`), which also needs **Pull requests: read** for a
+  fine-grained token. Set `GITHUB_DEPLOY_WORKFLOW` if merges are deployed by a
+  workflow other than `aws-release.yml`.
 
 ---
 
@@ -160,7 +164,9 @@ key is never committed.
 | --- | --- | --- | --- |
 | `OPENROUTER_MODEL` | `google/gemma-4-26b-a4b-it` | Model used for analysis and planning. Any OpenRouter model id. | `anthropic/claude-sonnet-4` |
 | `OPENROUTER_SELECTION_MODEL` | falls back to `OPENROUTER_MODEL` | Model used to pick which files to read. A cheaper model is fine here. | `google/gemma-4-26b-a4b-it` |
-| `OPENROUTER_REVIEW_MODEL` | falls back to `OPENROUTER_MODEL` | Model used for the mandatory critique pass. Choose a different model for an independent second opinion. | `anthropic/claude-sonnet-4` |
+| `OPENROUTER_REVIEW_MODEL` | falls back to `OPENROUTER_MODEL` | Model used for the mandatory critique pass and the multi-agent **reviewer agent**. Choose a different model for an independent second opinion. | `anthropic/claude-sonnet-4` |
+| `OPENROUTER_PLANNER_MODEL` | `openai/gpt-6-luna` | Model used by the multi-agent **planner agent**. | `openai/gpt-6-luna` |
+| `OPENROUTER_WORKER_MODEL` | `anthropic/claude-haiku-5.5` | Model used by the multi-agent **worker agent**. Keep planner, worker and reviewer on three different models so the review is independent. | `anthropic/claude-haiku-5.5` |
 | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | API base URL. Only change for a compatible proxy. | `https://openrouter.ai/api/v1` |
 
 ### GitHub Actions integration
@@ -170,6 +176,7 @@ key is never committed.
 | `GITHUB_TOKEN` | *(blank)* | Personal access token used by the CI-failures mode. Optional for public repos, required for private ones. Never committed or sent anywhere except `api.github.com`. | `ghp_...` |
 | `GITHUB_REPO` | auto-detected from the `origin` remote | Repository as `owner/name`. | `my-org/LanguageWise` |
 | `GITHUB_WORKFLOW` | *(blank)* | Workflow file or name to inspect. Blank means the most recent failed run of any workflow. | `student-3.yml` |
+| `GITHUB_DEPLOY_WORKFLOW` | `aws-release.yml` | Workflow file that deploys merged PRs; used by the deploy-logs mode. | `aws-release.yml` |
 
 ### RAG integration
 
@@ -327,7 +334,10 @@ round, your prompt verbatim, and an ACCEPTED/REJECTED table.
   implementation, planning and file-selection steps. Do not point the tool at a
   repository you are not permitted to share.
 - In CI-failures mode, excerpts from failed GitHub Actions job logs are fetched
-  from `api.github.com` and included in that same context. Your `GITHUB_TOKEN`
+  from `api.github.com` and included in that same context. In deploy-logs mode,
+  cleaned excerpts from every job of the PR's deployment run are included the
+  same way (step env blocks are stripped, but run output such as resource names
+  or account IDs printed by deploy scripts can still appear). Your `GITHUB_TOKEN`
   is only ever sent to `api.github.com` and is redacted from all output.
 - The Review Agent uses OpenRouter. The same source code and findings the
   implementation agent already saw are sent for the critique pass.
@@ -357,6 +367,9 @@ round, your prompt verbatim, and an ACCEPTED/REJECTED table.
 | `Could not determine the GitHub repository` | No `origin` remote and no `GITHUB_REPO` set. Add the remote or set `GITHUB_REPO=owner/name` in `.env`. |
 | `GitHub API returned HTTP 401/403/404` in CI-failures mode | The repo is private or the rate limit is exhausted. Set `GITHUB_TOKEN` in `.env`. |
 | `No failed GitHub Actions runs found` | There is no failed run for the chosen workflow. Run the workflow, or clear `GITHUB_WORKFLOW` to search all workflows. |
+| `PR #N is not merged` (deploy-logs) | Only merged PRs trigger a deployment. Pick a merged PR, or omit the number to use the latest merged one. |
+| `No '<workflow>' run was triggered by PR #N's merge commit` | The PR merged into a branch that does not deploy, the run aged out of retention, or `GITHUB_DEPLOY_WORKFLOW` names the wrong workflow. |
+| `... no job has completed yet` (deploy-logs) | The deployment is still queued or running (e.g. waiting on its concurrency group). GitHub publishes logs per job once it finishes; retry later or follow the printed run URL. |
 | `Could not reach the MCP server at http://localhost:8200/mcp` | The MCP server is not running. Start it with `dotnet run` from `mcp-server/src/LanguageWise.McpServer`. |
 | `No MCP API key is configured` | Neither `MCP_API_KEY` nor the key file (`mcp-server/.mcp-api-key`) exists. Run `pwsh mcp-server/scripts/New-McpApiKey.ps1` once per machine. |
 | `The MCP server rejected the shared API key (HTTP 401)` | The key does not match the server's. Re-check `MCP_API_KEY` / `MCP_API_KEY_PATH` against the file the server loads. |

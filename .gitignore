@@ -52,8 +52,10 @@ reports/
 
 # ---- Agentic Loop generated artefacts ----
 tools/agentic-loop/Sessions/*.md
+tools/agentic-loop/Sessions/*.jsonl
 tools/agentic-loop/Plans/*.md
-tools/agentic-loop/output/
+tools/agentic-loop/output/*
+!tools/agentic-loop/output/*.py
 
 # ---- Generated reports (pre-commit logs, post-commit test reports) ----
 /reports/

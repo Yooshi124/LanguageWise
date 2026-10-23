@@ -144,3 +144,87 @@ class Decision(BaseModel):
         description="One sentence restating what the human chose.",
         json_schema_extra={"maxLength": RATIONALE_MAX_CHARS},
     )
+
+
+class Recommendation(str, Enum):
+    ACCEPT = "accept"
+    PARTIALLY_ACCEPT = "partially_accept"
+    REJECT = "reject"
+
+
+class WorkflowDecision(str, Enum):
+    """The human's final call on a multi-agent workflow."""
+
+    ACCEPT = "Accept"
+    PARTIALLY_ACCEPT = "Partially Accept"
+    REJECT = "Reject"
+    PENDING = "Pending"
+
+    @classmethod
+    def parse(cls, reply: str) -> tuple["WorkflowDecision | None", str]:
+        """Split a reply such as 'partial - needs a retest' into (decision, note)."""
+        word, _, note = reply.strip().partition(" ")
+        aliases = {
+            "a": cls.ACCEPT,
+            "accept": cls.ACCEPT,
+            "p": cls.PARTIALLY_ACCEPT,
+            "partial": cls.PARTIALLY_ACCEPT,
+            "partially": cls.PARTIALLY_ACCEPT,
+            "r": cls.REJECT,
+            "reject": cls.REJECT,
+        }
+        decision = aliases.get(word.lower().rstrip(":,.-"))
+        if decision is cls.PARTIALLY_ACCEPT and note.lower().startswith("accept"):
+            note = note[len("accept"):]
+        return decision, note.strip(" :,.-")
+
+
+class WorkflowPlan(BaseModel):
+    objective: str = Field(
+        description="One sentence restating what the workflow must deliver.",
+        json_schema_extra={"maxLength": RATIONALE_MAX_CHARS},
+    )
+    steps: list[str] = Field(
+        min_length=1,
+        description="Three to five ordered, concrete steps for the worker agent.",
+    )
+    evidence_required: list[str] = Field(
+        default_factory=list,
+        description="Files, components or facts the worker must ground its output in.",
+    )
+    human_approval: str = Field(
+        default="",
+        description="What the human must confirm before the output can be trusted.",
+        json_schema_extra={"maxLength": RATIONALE_MAX_CHARS},
+    )
+
+
+class WorkerOutput(BaseModel):
+    output: str = Field(description="The deliverable, produced only from supplied evidence.")
+    evidence_used: list[str] = Field(
+        default_factory=list,
+        description="Repository-relative paths or observation lines the output relies on.",
+    )
+    limitations: list[str] = Field(
+        default_factory=list,
+        description="Missing evidence, assumptions avoided, or plan steps not completed.",
+    )
+
+
+class ReviewerAssessment(BaseModel):
+    risk: Severity = Field(description="Overall risk of trusting the worker output as-is.")
+    risk_summary: str = Field(
+        description="One or two sentences naming the main risk.",
+        json_schema_extra={"maxLength": SUMMARY_MAX_CHARS},
+    )
+    corrections: list[str] = Field(
+        default_factory=list,
+        description="Specific corrections the output needs, each citing the evidence.",
+    )
+    retest: list[str] = Field(
+        default_factory=list,
+        description="Checks a human should run to confirm the output.",
+    )
+    recommendation: Recommendation = Field(
+        description="Advice to the human reviewer: accept, partially_accept or reject.",
+    )

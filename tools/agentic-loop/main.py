@@ -1,11 +1,14 @@
-r"""Agentic Loop - a read-only rubber duck code reviewer powered by OpenRouter.
+r"""Agentic Loop - a read-only planner/worker/reviewer code workflow powered by OpenRouter.
 
+Every round runs the multi-agent workflow; the flags below add context on top of it.
 Run from this directory:
 
     python main.py                          # interactive REPL
     python main.py --prompt "review tests"  # single round, then exit
     python main.py --scope ..\..\DatabaseService
     python main.py --ci-failures            # diagnose the latest failed CI run
+    python main.py --deploy-logs 66         # review the deployment PR #66 triggered
+    python main.py --decide <workflow-id> "partial <reason>"  # record a pending human decision
 """
 
 from __future__ import annotations
@@ -29,16 +32,17 @@ for _stream in (sys.stdout, sys.stderr):
             pass
 
 from config.settings import ConfigError, Settings, load_settings  # noqa: E402
-from collectors.github_actions import GithubActionsError  # noqa: E402
+from collectors.github_actions import GithubActionsError, parse_pr_reference  # noqa: E402
 from core.mcp_client import McpClient, McpError  # noqa: E402
 from core.rag_client import RagClient, RagError  # noqa: E402
 from core import console, stages  # noqa: E402
 from core.openrouter_client import OpenRouterClient  # noqa: E402
-from core.orchestrator import Orchestrator  # noqa: E402
+from core.orchestrator import Orchestrator, record_human_decision  # noqa: E402
 from core.prompt_registry import PromptError, PromptRegistry  # noqa: E402
 from core.redaction import register_secret  # noqa: E402
 from core.session import SessionState, format_timestamp  # noqa: E402
 from output.session_writer import SessionWriter  # noqa: E402
+from output.workflow_log import WorkflowLogError  # noqa: E402
 
 BANNER_TITLE = "Agentic Loop - Rubber Duck Code Review"
 
@@ -52,13 +56,19 @@ Commands
   /scope reset       Go back to the configured scope
   /session           Print the path of this session's evidence log
   /ci-failures [wf]  Pull the latest failed GitHub Actions run and diagnose it
+  /deploy-logs [pr]  Pull the deployment run a merged PR triggered (default: the
+                     latest merged PR) and review its logs / failure
   /rag-validate [t]  Cross-check the code in scope against RAG-retrieved docs
   /rag <question>    Query the local RAG server directly (no review round)
   /mcp-validate [t]  Exercise the local MCP server and validate it against the code
   /mcp [tool]        List MCP tools (or call one) directly (no review round)
+  /decide <id> <d>   Record the human decision (accept / partial / reject + reason)
+                     for a workflow that was left pending
   /exit              End the session and write the log footer
 
-Anything else is treated as a review prompt, for example:
+Anything else runs the planner -> worker -> reviewer workflow, then you decide
+accept / partial / reject (logged to workflow_history.jsonl and
+coordination_audit.jsonl in the sessions dir), for example:
   review the database validation logic
   is the test coverage for the user service adequate?
 """
@@ -71,7 +81,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--prompt",
-        help="Run a single review round with this prompt, then exit.",
+        help=(
+            "Run a single planner -> worker -> reviewer workflow for this request, "
+            "leaving the human decision pending, then exit."
+        ),
     )
     parser.add_argument(
         "--scope",
@@ -89,6 +102,17 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Fetch the latest failed GitHub Actions run (optionally for one "
             "workflow, e.g. student-3.yml) and diagnose it, then exit."
+        ),
+    )
+    parser.add_argument(
+        "--deploy-logs",
+        nargs="?",
+        const="",
+        metavar="PR",
+        help=(
+            "Fetch the deployment run (GITHUB_DEPLOY_WORKFLOW, default aws-release.yml) "
+            "triggered by merging this pull request (66, #66 or a PR URL; default: the "
+            "latest merged PR), review its job logs or failure, then exit."
         ),
     )
     parser.add_argument(
@@ -113,6 +137,22 @@ def build_parser() -> argparse.ArgumentParser:
             "scope against the observed behaviour, then exit. Requires the MCP server "
             "running locally (mcp-server/, dotnet run)."
         ),
+    )
+    parser.add_argument(
+        "--decide",
+        nargs=2,
+        metavar=("WORKFLOW_ID", "DECISION"),
+        help=(
+            "Record the human decision for a workflow left pending, e.g. "
+            "--decide 7212a99a \"partial seed row clashes with Id 1\". DECISION is "
+            "accept / partial / reject followed by the reason. No model is called."
+        ),
+    )
+    parser.add_argument(
+        "--evidence-used",
+        default="",
+        metavar="TEXT",
+        help="With --decide: which evidence (files, agent fields, checks) informed the decision.",
     )
     return parser
 
@@ -140,12 +180,33 @@ def session_details(settings: Settings, session_path: Path) -> dict[str, str]:
     return {
         "Model": settings.model,
         "Review agent": f"{settings.review_model} (via OpenRouter - mandatory)",
+        "Agent models": (
+            f"planner {settings.planner_model} | worker {settings.worker_model} | "
+            f"reviewer {settings.review_model}"
+        ),
         "Repo root": str(settings.repo_root),
         "Scope": str(settings.scope)
         + ("" if settings.scope_is_targeted else "  (whole repository)"),
         "Evidence log": str(session_path),
         "Mode": "read-only - no source file is ever modified",
     }
+
+
+def run_decide(sessions_dir: Path, workflow_id: str, reply: str, evidence_used: str) -> int:
+    try:
+        record, session_path = record_human_decision(sessions_dir, workflow_id, reply, evidence_used)
+    except (WorkflowLogError, ValueError) as exc:
+        console.print_error(str(exc))
+        return 1
+    console.print_success(
+        f"Human decision for workflow {record['workflow_id']}: "
+        f"{record['human_decision']['status']}"
+    )
+    if session_path:
+        console.print_success(f"Evidence log updated: {session_path}")
+    else:
+        console.print_warning("The session log for this workflow was not found; JSONL logs updated.")
+    return 0
 
 
 def run_repl(
@@ -155,6 +216,7 @@ def run_repl(
     ci_failures: str | None = None,
     rag_validate: str | None = None,
     mcp_validate: str | None = None,
+    deploy_logs: str | None = None,
 ) -> int:
     if ci_failures is not None:
         orchestrator.interactive = False
@@ -165,6 +227,18 @@ def run_repl(
             writer.write_footer("CI-failures run failed before the first round.")
             return 1
         writer.write_footer("CI-failures run completed.")
+        console.print_success(f"\nEvidence log: {writer.path}")
+        return 0
+
+    if deploy_logs is not None:
+        orchestrator.interactive = False
+        try:
+            orchestrator.run_deploy_logs_round(parse_pr_reference(deploy_logs))
+        except GithubActionsError as exc:
+            console.print_error(f"Could not fetch deployment logs: {exc}")
+            writer.write_footer("Deploy-logs run failed before the first round.")
+            return 1
+        writer.write_footer("Deploy-logs run completed.")
         console.print_success(f"\nEvidence log: {writer.path}")
         return 0
 
@@ -194,14 +268,13 @@ def run_repl(
 
     if single_prompt:
         orchestrator.interactive = False
-        orchestrator.run_round(single_prompt)
+        outcome = orchestrator.run_round(single_prompt)
         writer.write_footer("Single-prompt run completed.")
         console.print_success(f"\nEvidence log: {writer.path}")
-        return 0
+        return 1 if outcome.aborted_reason else 0
 
-    console.print_info("Type a review prompt, or /help for commands.")
+    console.print_info("Type a request, or /help for commands.")
     closing_reason = "Session ended normally."
-    end_session = False
 
     while True:
         try:
@@ -232,40 +305,25 @@ def run_repl(
                 continue
             if command == "/ci-failures":
                 try:
-                    outcome = orchestrator.run_ci_failure_round(argument or None)
-                    pending = outcome.follow_up_prompt
-                    while pending:
-                        outcome = orchestrator.run_round(pending)
-                        pending = outcome.follow_up_prompt
-                    if outcome.end_session:
-                        closing_reason = "Session ended by the user after an empty review."
-                        end_session = True
+                    orchestrator.run_ci_failure_round(argument or None)
+                except GithubActionsError as exc:
+                    console.print_error(str(exc))
+                continue
+            if command == "/deploy-logs":
+                try:
+                    orchestrator.run_deploy_logs_round(parse_pr_reference(argument))
                 except GithubActionsError as exc:
                     console.print_error(str(exc))
                 continue
             if command == "/rag-validate":
                 try:
-                    outcome = orchestrator.run_rag_validation_round(argument or None)
-                    pending = outcome.follow_up_prompt
-                    while pending:
-                        outcome = orchestrator.run_round(pending)
-                        pending = outcome.follow_up_prompt
-                    if outcome.end_session:
-                        closing_reason = "Session ended by the user after an empty review."
-                        end_session = True
+                    orchestrator.run_rag_validation_round(argument or None)
                 except RagError as exc:
                     console.print_error(str(exc))
                 continue
             if command == "/mcp-validate":
                 try:
-                    outcome = orchestrator.run_mcp_validation_round(argument or None)
-                    pending = outcome.follow_up_prompt
-                    while pending:
-                        outcome = orchestrator.run_round(pending)
-                        pending = outcome.follow_up_prompt
-                    if outcome.end_session:
-                        closing_reason = "Session ended by the user after an empty review."
-                        end_session = True
+                    orchestrator.run_mcp_validation_round(argument or None)
                 except McpError as exc:
                     console.print_error(str(exc))
                 continue
@@ -286,6 +344,14 @@ def run_repl(
                             console.print_info(f"- {tool.name}: {tool.description}")
                 except McpError as exc:
                     console.print_error(str(exc))
+                continue
+            if command == "/decide":
+                workflow_id, _, reply = argument.partition(" ")
+                if not workflow_id or not reply.strip():
+                    console.print_warning("Usage: /decide <workflow-id> <accept|partial|reject> <reason>")
+                    continue
+                evidence_used = console.ask("Which evidence informed this decision? (Enter to skip):")
+                run_decide(orchestrator.settings.sessions_dir, workflow_id, reply, evidence_used)
                 continue
             if command == "/rag":
                 if not argument:
@@ -338,30 +404,15 @@ def run_repl(
             continue
 
         try:
-            pending: str | None = raw
-            while pending:
-                outcome = orchestrator.run_round(pending)
-                pending = outcome.follow_up_prompt
-                if outcome.end_session:
-                    closing_reason = "Session ended by the user after an empty review."
-                    end_session = True
-                    break
+            orchestrator.run_round(raw)
         except KeyboardInterrupt:
             console.print_warning("\nRound interrupted.")
         except Exception as exc:  # keep the REPL alive, but record the failure
             logging.getLogger(__name__).exception("Round failed")
             console.print_error(f"Round failed: {exc}")
 
-        if end_session:
-            break
-
     writer.write_footer(closing_reason)
     console.print_success(f"\nEvidence log: {writer.path}")
-    plans = orchestrator.session.plans_created
-    if plans:
-        console.print_success("Plans created this session:")
-        for path in plans:
-            console.print_info(f"  {path}")
     return 0
 
 
@@ -388,6 +439,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     _quieten_third_party_logs(settings.log_level)
 
+    if args.decide:
+        workflow_id, reply = args.decide
+        return run_decide(settings.sessions_dir, workflow_id, reply, args.evidence_used)
+
     session = SessionState()
     writer = SessionWriter(settings.sessions_dir, session)
     writer.write_header(
@@ -398,6 +453,9 @@ def main(argv: list[str] | None = None) -> int:
             "Analysis model": settings.model,
             "Selection model": settings.selection_model,
             "Review model": f"{settings.review_model} (via OpenRouter - mandatory)",
+            "Planner agent model": settings.planner_model,
+            "Worker agent model": settings.worker_model,
+            "Reviewer agent model": settings.review_model,
             "Started": format_timestamp(session.started_at),
         }
     )
@@ -424,6 +482,7 @@ def main(argv: list[str] | None = None) -> int:
             args.ci_failures,
             args.rag_validate,
             args.mcp_validate,
+            args.deploy_logs,
         )
     finally:
         writer.write_footer("Session closed.")

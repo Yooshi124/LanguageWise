@@ -17,7 +17,7 @@ from rich.table import Table
 from rich.text import Text
 
 from core import stages
-from core.models import Finding, Severity
+from core.models import Finding, ReviewerAssessment, Severity, WorkerOutput, WorkflowPlan
 from core.redaction import scrub
 
 SEVERITY_STYLE = {
@@ -112,6 +112,57 @@ def print_summary(summary: str) -> None:
         # the full text is still recorded in the evidence log.
         text = text[:SUMMARY_DISPLAY_LIMIT].rstrip() + "... (full text in the evidence log)"
     console.print(f"[italic]{_safe(text)}[/italic]")
+
+
+def _print_list(label: str, items: list[str]) -> None:
+    if not items:
+        return
+    console.print(f"   [bold]{label}:[/bold]")
+    for item in items:
+        console.print(f"     - {_safe(item)}")
+
+
+def print_workflow_plan(plan: WorkflowPlan) -> None:
+    console.print()
+    console.print(f"[bold]Objective:[/bold] {_safe(plan.objective)}")
+    console.print("   [bold]Steps:[/bold]")
+    for index, step in enumerate(plan.steps, start=1):
+        console.print(f"     {index}. {_safe(step)}")
+    _print_list("Evidence required", plan.evidence_required)
+    if plan.human_approval.strip():
+        console.print(f"   [bold]Human approval:[/bold] {_safe(plan.human_approval)}")
+
+
+def print_worker_output(output: WorkerOutput) -> None:
+    console.print()
+    console.print(Panel(Markdown(scrub(output.output)), title="Worker output", expand=False))
+    _print_list("Evidence used", output.evidence_used)
+    _print_list("Limitations", output.limitations)
+
+
+def print_review(assessment: ReviewerAssessment) -> None:
+    style = SEVERITY_STYLE.get(assessment.risk, "white")
+    console.print()
+    console.print(
+        f"[bold]Risk:[/bold] [{style}]{assessment.risk.value}[/{style}] - "
+        f"{_safe(assessment.risk_summary)}"
+    )
+    _print_list("Corrections", assessment.corrections)
+    _print_list("Retest", assessment.retest)
+    console.print(f"   [bold]Recommendation:[/bold] {assessment.recommendation.value}")
+
+
+def print_workflow_recorded(history_path: Path, audit_path: Path) -> None:
+    console.print()
+    console.print(
+        Panel(
+            f"Workflow history: [bold]{_safe(history_path)}[/bold]\n"
+            f"Coordination audit: [bold]{_safe(audit_path)}[/bold]",
+            title="ADAPT",
+            border_style="green",
+            expand=False,
+        )
+    )
 
 
 def print_plan_saved(path: Path) -> None:

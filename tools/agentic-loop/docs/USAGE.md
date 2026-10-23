@@ -15,10 +15,14 @@ All commands run from `LanguageWise\Tools\AgenticLoop`.
 | `python main.py --prompt "review test coverage"` | Runs a single round, writes the session log, exits. Useful for scripting. |
 | `python main.py --ci-failures` | Pulls the latest failed GitHub Actions run (with job-log excerpts), diagnoses it against the code, writes the session log, exits. |
 | `python main.py --ci-failures student-3.yml` | Same, but only looks at that workflow's latest failed run. |
+| `python main.py --deploy-logs 66` | Finds the deployment run (`GITHUB_DEPLOY_WORKFLOW`) that merging PR #66 triggered, pulls every job's outcome and log excerpt, reviews it against the code, writes the session log, exits. Also accepts `#66` or a PR URL. |
+| `python main.py --deploy-logs` | Same, for the most recently merged PR. |
 | `python main.py --rag-validate` | Retrieves documentation context from the local RAG server and cross-checks the code in scope against it, writes the session log, exits. |
 | `python main.py --rag-validate "achievements service"` | Same, but scopes the retrieval to that topic. |
 | `python main.py --mcp-validate` | Exercises the local MCP server (`initialize`, `tools/list`, one `tools/call` probe) and validates the mcp-server code against the observed behaviour, writes the session log, exits. |
 | `python main.py --mcp-validate courses_list_courses` | Same, but probes that specific tool. |
+| `python main.py --prompt "summarise how XP is awarded"` | Runs one planner -> worker -> reviewer workflow over the code in scope, records it with the human decision left `Pending`, exits (exit code 1 if the workflow aborted). |
+| `python main.py --decide 7212a99a "partial seed row clashes with Id 1" --evidence-used "seed.sql, reviewer retest"` | Records the human decision (accept / partial / reject + reason) for a pending multi-agent workflow (full ID or unique prefix). No model is called. |
 | `python main.py --scope ..\..\DatabaseService` | Overrides `TARGETED_DIRECTORY` for this run only. |
 | `python main.py --env C:\path\to\other.env` | Uses an alternative configuration file. |
 | `python main.py --help` | Shows the flags. |
@@ -40,10 +44,12 @@ review prompt.
 | `/scope reset` | Return to the configured scope. |
 | `/session` | Print the evidence log path. |
 | `/ci-failures [workflow]` | Pull the latest failed GitHub Actions run and diagnose it against the code. |
+| `/deploy-logs [pr]` | Pull the deployment run a merged PR triggered (default: the latest merged PR) and review its logs or failure against the code. |
 | `/rag-validate [topic]` | Retrieve documentation context from the local RAG server and cross-check the code in scope against it. |
 | `/rag <question>` | Query the local RAG server directly and print the results, without running a full review round. |
 | `/mcp-validate [tool]` | Exercise the local MCP server (`initialize`, `tools/list`, one `tools/call` probe) and validate the mcp-server code in scope against the observed behaviour. |
 | `/mcp [tool]` | List the MCP tools for the configured scope, or call one directly with empty arguments, without running a full review round. |
+| `/decide <workflow-id> <decision> <reason>` | Record the human decision for a workflow that was left pending. |
 | `/exit` | End the session, write the log footer, and list any plans created. |
 
 ---
@@ -71,6 +77,34 @@ workflow filter).
 
 ---
 
+## Reviewing a PR's deployment
+
+The deploy-logs mode turns the deployment a merge triggered into a normal
+review round:
+
+```
+agentic-loop > /deploy-logs 69
+Fetching the aws-release.yml deployment for PR #69...
+Found: my-org/LanguageWise PR #69 -> aws-release.yml run 39426732157 on d220f4c0 - failure, 2 job(s)
+  - publish: success
+  - deploy: failure
+```
+
+It resolves the PR to its merge commit, finds the `GITHUB_DEPLOY_WORKFLOW` run
+for that commit, and adds every job's outcome, duration, steps and a log
+excerpt to the OBSERVE stage. Failed jobs contribute their failure lines;
+other jobs contribute their final lines, so a "successful" run that only
+published (for example because the demo environment was Down) is visible too.
+Step echo/env blocks are stripped from the excerpts. The implementation agent
+is asked to explain what the deployment actually did and, if it failed,
+diagnose the root cause and propose the fix.
+
+GitHub only publishes a job's log once that job finishes, so a run that is
+still queued or has no completed job is reported as an error with its URL
+instead of starting a round.
+
+---
+
 ## Validating the MCP server
 
 The MCP-validate mode turns a live MCP interaction into a normal review round:
@@ -94,6 +128,37 @@ tool; without one, the first tool requiring no arguments is probed.
 Setup lives in `.env`: `MCP_BASE_URL`, `MCP_API_KEY` (defaults to reading
 `mcp-server/.mcp-api-key`), `MCP_TOOL_SCOPE`, and `MCP_USER_TOKEN` (optional
 user JWT for per-user tools).
+
+---
+
+## Multi-agent workflow
+
+Every round - a plain prompt, `--ci-failures`, `--deploy-logs`, `--rag-validate` or
+`--mcp-validate` - runs the multi-agent workflow; the mode flags only add extra
+evidence to the OBSERVE stage. The workflow coordinates three agents and a human
+through the same six
+stages:
+
+| Stage | Multi-agent behaviour |
+| --- | --- |
+| PLAN | The **planner agent** (`OPENROUTER_PLANNER_MODEL`, luna by default) turns the request into an objective, 3-5 steps, the evidence required, and what the human must approve. |
+| ACT | Files are selected using the request plus the plan's steps and evidence requirements. |
+| OBSERVE | Deterministic observations, as in any round. |
+| AGENT | The **worker agent** (`OPENROUTER_WORKER_MODEL`, haiku by default) executes the plan using only the supplied code: output, evidence used, limitations. The **reviewer agent** (`OPENROUTER_REVIEW_MODEL`, gemma by default via `OPENROUTER_MODEL`) checks it against the plan and evidence: risk, corrections, retest checks, recommendation. The three agents run on three different models so the review is independent; if the reviewer shares a model with the planner or worker, a warning is logged and the evidence log marks the check as failed. |
+| HUMAN REVIEW | You reply `accept`, `partial` or `reject` (or `a` / `p` / `r`) followed by your reason, then say which evidence informed the decision. Overriding the reviewer's recommendation is recorded. Non-interactive runs (`--prompt`, `--ci-failures`, ...) leave the decision `Pending`; record it later with `--decide` or `/decide`. |
+| ADAPT | The workflow is appended to `workflow_history.jsonl` (planner, worker and reviewer results with each agent's status, plus the human decision) and `coordination_audit.jsonl` (compact governance record with per-agent status, evidence count, reviewer independence, risk and decision) in `SESSIONS_DIR`. Aborted workflows are recorded too. The session log gets an **Evidence Log** checklist: workflow ID, each agent `completed`, worker evidence count > 0, independent reviewer, human decision recorded, and both JSONL files present. |
+
+```
+agentic-loop > summarise how the leaderboard service awards XP
+```
+
+A decision recorded afterwards with `--decide` is appended as a separate
+`human_decision` event to both JSONL files (earlier lines are never rewritten),
+and a dated **Human Decision** addendum with the updated evidence log is appended
+to the session log that ran the workflow.
+
+Prompts live in `prompts/workflow_planner/`, `prompts/worker/` and
+`prompts/reviewer/`.
 
 ---
 
