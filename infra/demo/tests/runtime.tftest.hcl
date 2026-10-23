@@ -50,7 +50,7 @@ variables {
     ) : name => "arn:aws:iam::123456789012:role/fixture-task" }
     secret_arns = { for name in [
       "db-shared", "db-mini-games", "db-quizzes-courses", "db-chat-discussion", "db-quests",
-      "openrouter-api-key", "signing-private-key", "signing-public-key", "mcp-api-key"
+      "openrouter-api-key", "signing-private-key", "signing-public-key", "mcp-api-key", "smtp-credentials"
     ] : name => "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:${name}-abcdef" }
   }
   release = {
@@ -93,6 +93,18 @@ run "infrastructure_before_seed" {
       [for secret in jsondecode(task.container_definitions)[0].secrets : secret.name], "OpenRouter__ApiKey"
     )]) == toset(["garry-ai-service-backend", "quests-achievements-notifications-service-backend", "leaderboard-analytics-service-backend"])
     error_message = "Only the three intended AI consumers may receive OpenRouter credentials."
+  }
+  assert {
+    condition = alltrue([for setting, field in { Smtp__Username = "username", Smtp__Password = "password" } : # pragma: allowlist secret
+      one([for secret in jsondecode(aws_ecs_task_definition.app["quests-achievements-notifications-service-backend"].container_definitions)[0].secrets : secret.valueFrom if secret.name == setting]) == "${var.foundation.secret_arns["smtp-credentials"]}:${field}::"
+    ])
+    error_message = "Notification SMTP credentials must use exact JSON-key secret references, never plaintext task values."
+  }
+  assert {
+    condition = toset([for name, task in aws_ecs_task_definition.app : name if anytrue([
+      for secret in jsondecode(task.container_definitions)[0].secrets : startswith(secret.name, "Smtp__")
+    ])]) == toset(["quests-achievements-notifications-service-backend"])
+    error_message = "Only the notifications backend may receive SMTP credentials; host and port must not be secrets."
   }
   assert {
     condition = alltrue([for name in local.backends : alltrue([
@@ -159,6 +171,56 @@ run "services_after_seed" {
     condition     = length(aws_lb.gateway.security_groups) == 1
     error_message = "The enabled ALB must detach the bootstrap prefix-list SG."
   }
+  assert {
+    condition     = alltrue([for service in aws_ecs_service.app : service.wait_for_steady_state])
+    error_message = "Default live updates must retain Terraform service waiters."
+  }
+}
+
+run "cold_dependency_stage" {
+  command = plan
+  variables {
+    services_enabled = true
+    cold_start       = true
+    startup_phase    = "dependencies"
+  }
+  assert {
+    condition = toset(keys(aws_ecs_service.app)) == toset([
+      "shared-db-api", "rag-server", "mini-games-service-db", "quizzes-courses-service-db",
+      "chat-discussion-service-db", "quests-achievements-notifications-service-db"
+    ]) && alltrue([for service in aws_ecs_service.app : !service.wait_for_steady_state && service.desired_count == 1])
+    error_message = "Cold dependencies must launch exactly the five database APIs and RAG without serial steady-state waiters."
+  }
+}
+
+run "cold_complete_stage" {
+  command = plan
+  variables {
+    services_enabled = true
+    cold_start       = true
+  }
+  assert {
+    condition     = length(aws_ecs_service.app) == 20 && alltrue([for service in aws_ecs_service.app : !service.wait_for_steady_state && service.desired_count == 1 && service.deployment_circuit_breaker[0].enable && service.deployment_circuit_breaker[0].rollback])
+    error_message = "Cold application launch must retain all twenty one-replica rollback-enabled services while the controller owns health readiness."
+  }
+}
+
+run "reject_warm_dependency_stage" {
+  command = plan
+  variables {
+    services_enabled = true
+    startup_phase    = "dependencies"
+  }
+  expect_failures = [var.startup_phase]
+}
+
+run "reject_disabled_dependency_stage" {
+  command = plan
+  variables {
+    cold_start    = true
+    startup_phase = "dependencies"
+  }
+  expect_failures = [var.startup_phase]
 }
 
 run "reject_missing_image" {

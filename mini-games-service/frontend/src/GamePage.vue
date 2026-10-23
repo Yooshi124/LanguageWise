@@ -70,6 +70,7 @@
 						<span v-if="stat.bestTime" class="completion-tracker__best">Best {{ stat.bestTime }}</span>
 					</li>
 				</ul>
+				<img v-if="currentStreak > 0 && currentStreak % 7 === 0" class="garry-mood" :src="'/garry/CelebrateGarry.png'" alt="" aria-hidden="true" />
 				<p v-if="currentStreak > 0" class="completion-tracker__streak">
 					🔥 {{ currentStreak }} day{{ currentStreak === 1 ? '' : 's' }} streak
 				</p>

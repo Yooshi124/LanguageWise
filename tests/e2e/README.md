@@ -26,9 +26,11 @@ RAG and a feature backend and assert explicit errors. A final retrieval test run
 after starting RAG again with the same volumes to exercise automatic reindexing.
 
 Only **external AI text generation** is replaced. The test-only HTTP provider
-requests a specified tool and verifies Garry sends back its real result before
-generating a predictable response. It also supports streamed docs answers grounded
-in actual retrieved context. These tests verify application integration, not a
+supports Garry's planner, worker and reviewer requests, requests a specified tool
+from the worker, and verifies Garry sends back its real result and hands the
+evidence to the reviewer before generating a predictable response. It also supports
+streamed docs answers grounded in actual retrieved context. Provider regression
+tests run alongside the deployed-stack tests. These tests verify application integration, not a
 real language model's answer quality or ability to select tools.
 
 Reports and container diagnostics are written to the temporary

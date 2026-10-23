@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { DemoController, loadFoundation, nativeDependencies } from '../scripts/demo.mjs';
+import { DemoController, demoFailureMessage, loadFoundation, nativeDependencies } from '../scripts/demo.mjs';
 import { SERVICES, IMAGE_KEYS, LEGACY_IMAGE_KEYS, HOUR, LOCK_WINDOW, beginUp, cleanupDue, canAcquireLock,
   assertPhase, releaseOrder, terraformVariables, validateFoundation, validateRelease } from '../scripts/control.mjs';
 
@@ -27,7 +27,7 @@ const foundation = {
   service_execution_role_arns: Object.fromEntries(IMAGE_KEYS.map(name => [name, role(`${name}-execution`)])),
   service_task_role_arns: Object.fromEntries(IMAGE_KEYS.map(name => [name, role(`${name}-task`)])),
   secret_arns: Object.fromEntries(['db-shared', 'db-mini-games', 'db-quizzes-courses', 'db-chat-discussion', 'db-quests',
-    'signing-private-key', 'signing-public-key', 'openrouter-api-key', 'mcp-api-key'].map(name =>
+    'signing-private-key', 'signing-public-key', 'openrouter-api-key', 'mcp-api-key', 'smtp-credentials'].map(name =>
     [name, `arn:aws:secretsmanager:${region}:${account}:secret:languagewise/demo/${name}-123456`])),
 };
 const release = (sequence = 1, character = 'a') => ({ schemaVersion: 2, sha: character.repeat(40), sequence,
@@ -61,6 +61,9 @@ function harness(options = {}) {
   let clock = now;
   let applyCount = 0;
   let initialized = false;
+  let plannedVariables;
+  let plannedDestroy = false;
+  let activeServices = options.state?.status === 'ready' ? [...SERVICES] : [];
   if (options.nativeLock) objects.set(`${foundation.demo_state_key}.tflock`, JSON.stringify(options.nativeLock));
   const outputs = {
     initializer_task_definition_arn: { value: `arn:aws:ecs:${region}:${account}:task-definition/initializer:1` },
@@ -82,6 +85,10 @@ function harness(options = {}) {
       if (binary === 'terraform') {
         const variablesArg = args.find(arg => arg.startsWith('-var-file='));
         calls.push({ binary, args, settings, variables: variablesArg ? JSON.parse(readFileSync(variablesArg.slice(10), 'utf8')) : undefined });
+        if (args.includes('plan')) {
+          plannedVariables = JSON.parse(readFileSync(variablesArg.slice(10), 'utf8'));
+          plannedDestroy = args.includes('-destroy');
+        }
         if (args.includes('apply')) {
           applyCount++;
           if (options.unlockFailure) {
@@ -96,6 +103,8 @@ function harness(options = {}) {
             store({ ...current, desiredMode: 'down', status: 'stopping', revision: current.revision + 1 });
           }
           if (options.failApply === applyCount) throw new Error('Terraform apply failed');
+          activeServices = plannedDestroy || !plannedVariables.services_enabled ? [] : SERVICES.filter(name =>
+            plannedVariables.startup_phase !== 'dependencies' || name.endsWith('-db') || ['shared-db-api', 'rag-server'].includes(name));
         }
         return args.includes('output') ? JSON.stringify(outputs) : '';
       }
@@ -208,21 +217,35 @@ function harness(options = {}) {
       else if (service === 'secretsmanager') {
         const database = input.SecretId.includes('/db-');
         response = { ARN: input.SecretId, ...(options.deletedDatabase && database ? { DeletedDate: '2026-10-19' } : {}),
-          VersionIdsToStages: options.missingSecret || database && (options.dbNeverInitialized || options.firstUp && !initialized)
+          VersionIdsToStages: options.missingSecret === true || options.missingSecret === input.SecretId || database && (options.dbNeverInitialized || options.firstUp && !initialized)
             ? {} : { version: ['AWSCURRENT'] } };
       }
       else if (service === 'ecs') {
         if (operation === 'run-task') response.tasks = [{ taskArn: 'arn:aws:ecs:task/initializer' }];
-        if (operation === 'describe-tasks') {
+        if (operation === 'list-tasks' && input.desiredStatus === 'STOPPED' && options.stoppedInventoryFailure) throw new Error('private-diagnostic-sentinel');
+        if (operation === 'list-tasks') response.taskArns = input.family ? [] : input.desiredStatus === 'STOPPED'
+          ? (options.stoppedTasks ?? []).map(task => task.taskArn) : activeServices.map(name => `arn:aws:ecs:task/${name}`);
+        if (operation === 'describe-tasks' && input.tasks[0] === 'arn:aws:ecs:task/initializer') {
           initialized = !options.initializerFailure;
           response.tasks = [{ lastStatus: 'STOPPED', containers: [{ exitCode: options.initializerFailure ? 1 : 0 }] }];
+        } else if (operation === 'describe-tasks') {
+          response.tasks = input.tasks.map(taskArn => {
+            const stopped = options.stoppedTasks?.find(task => task.taskArn === taskArn);
+            if (stopped) return stopped;
+            const name = taskArn.split('/').at(-1);
+            const healthStatus = name === 'quests-achievements-notifications-service-db' ? 'UNKNOWN'
+              : options.taskHealthByService?.[name] ?? (options.churningHealth && Math.floor((clock - now) / 10_000) % 2 ? 'UNKNOWN' : options.taskHealth ?? 'HEALTHY');
+            return { taskArn, taskDefinitionArn: `definition:${name}`, group: `service:languagewise-demo-${name}`, lastStatus: 'RUNNING', healthStatus,
+              containers: [{ name, lastStatus: 'RUNNING', healthStatus }] };
+          });
         }
         if (operation === 'describe-services') {
           if (input.services[0]?.startsWith('arn:')) response = options.ecsResidualResponse ?? {
             services: input.services.map(serviceArn => ({ serviceArn, status: 'INACTIVE', desiredCount: 0, runningCount: 0, pendingCount: 0 })), failures: [],
           };
-          else response.services = input.services.map(serviceName => ({ serviceName, status: 'ACTIVE', desiredCount: 1,
-            runningCount: 1, pendingCount: 0, deployments: [{ rolloutState: 'COMPLETED' }] }));
+          else response.services = input.services.map(serviceName => ({ serviceName, taskDefinition: `definition:${serviceName.slice('languagewise-demo-'.length)}`, status: 'ACTIVE', desiredCount: 1,
+            runningCount: 1, pendingCount: 0, deployments: [{ rolloutState: options.failedDeployment === serviceName ? 'FAILED'
+              : options.slowDeployment === serviceName && clock < now + 10_000 ? 'IN_PROGRESS' : 'COMPLETED' }] }));
         }
       } else if (service === 'resourcegroupstaggingapi') response = options.tagPages?.[input.PaginationToken ?? 'first'] ?? {
         ResourceTagMappingList: (options.taggedResources ?? []).map(ResourceARN => ({ ResourceARN })),
@@ -241,6 +264,35 @@ function harness(options = {}) {
   return { controller, calls, reports, rows, objects, state, store, dependencies,
     advance: duration => { clock += duration; }, dispose: () => rmSync(controller.directory, { recursive: true, force: true }) };
 }
+
+test('quota exhaustion reports an actionable failure without reserving or starting runtime resources', async () => {
+  const previous = { desiredMode: 'down', status: 'down', revision: 56 };
+  const fixture = harness({ state: previous });
+  const quota = { id: { S: 'quota#2026-10' }, payload: { S: JSON.stringify({ cycles: 20, hours: 240 }) } };
+  fixture.rows.set('quota#2026-10', quota);
+
+  await assert.rejects(fixture.controller.execute('up'), error => {
+    assert.equal(error.message, 'Monthly demo reservation exhausted');
+    assert.match(demoFailureMessage(error), /monthly limit reached \(20 starts \/ 240 reserved hours\)/);
+    assert.match(demoFailureMessage(error), /owner-approved budget review/);
+    return true;
+  });
+
+  assert.deepEqual(fixture.state(), previous);
+  assert.deepEqual(fixture.rows.get('quota#2026-10'), quota);
+  assert.ok(!fixture.rows.has('lock'));
+  assert.ok(!fixture.calls.some(call => call.binary === 'terraform'
+    || call.operation === 'transact-write-items' || call.operation === 'run-task'));
+});
+
+test('failure reporting never exposes unknown error messages or near-matching quota errors', () => {
+  for (const error of [undefined, new Error('private-error-sentinel'),
+    new Error('Monthly demo reservation exhausted: private-error-sentinel')]) {
+    const message = demoFailureMessage(error);
+    assert.match(message, /Output suppressed to protect credentials\/state/);
+    assert.ok(!message.includes('private-error-sentinel'));
+  }
+});
 
 test('Down before the first release is idempotent only when disposable state and resources are absent', async () => {
   const fixture = harness();
@@ -298,6 +350,36 @@ test('native Terraform diagnostics ignore malformed, unknown and non-error event
     assert.ok(!JSON.stringify(error).includes('private-sentinel'));
     return true;
   });
+});
+
+test('native Terraform readiness timeouts are classified without disclosing the service name or provider detail', () => {
+  const sentinel = 'private-service-sentinel';
+  const event = { type: 'diagnostic', diagnostic: { severity: 'error', address: `aws_ecs_service.app["${sentinel}"]`,
+    summary: `waiting for ECS Service ${sentinel}: timeout while waiting for state to become steady`, detail: sentinel } };
+  const dependencies = nativeDependencies({}, undefined, () => {
+    throw Object.assign(new Error(sentinel), { stdout: JSON.stringify(event) });
+  });
+  assert.throws(() => dependencies.run('terraform', ['apply', '-json']), error => {
+    assert.equal(error.diagnostic, 'resource_type=aws_ecs_service; code=unknown; category=readiness-timeout');
+    assert.ok(!JSON.stringify(error).includes(sentinel));
+    return true;
+  });
+});
+
+test('native smoke failures expose only safe categories and numeric HTTP status', async () => {
+  for (const [status, type, body, category] of [
+    [503, 'application/json', 'private-response-sentinel', 'http-status'],
+    [200, 'text/html', 'private-response-sentinel', 'content-type'],
+    [200, 'application/json', 'private-response-sentinel', 'invalid-json'],
+  ]) {
+    const dependencies = nativeDependencies({}, async () => new Response(body, { status, headers: { 'Content-Type': type } }));
+    await assert.rejects(dependencies.probe('https://example.invalid/', 'json'), error => {
+      assert.equal(error.failureCode, category);
+      assert.equal(error.httpStatus, status);
+      assert.ok(!error.message.includes('private-response-sentinel'));
+      return true;
+    });
+  }
 });
 
 test('a failed Up reports its exact Terraform phase before successful rollback', async () => {
@@ -366,21 +448,55 @@ test('legacy manifests remain readable and destroyable but cannot start or repla
   assert.ok(!live.calls.some(call => call.binary === 'terraform'));
 });
 
-test('quota atomically reserves four nonrefundable hours and repeated Up preserves deadlines', () => {
-  const initial = beginUp(undefined, { cycles: 9, hours: 36 }, release(), now);
-  assert.deepEqual(initial.quota, { cycles: 10, hours: 40 });
-  assert.equal(initial.state.expiresAt, now + 2 * HOUR);
+test('quota atomically reserves twelve nonrefundable hours and repeated Up preserves deadlines', () => {
+  const initial = beginUp(undefined, { cycles: 19, hours: 228 }, release(), now);
+  assert.deepEqual(initial.quota, { cycles: 20, hours: 240 });
+  assert.equal(initial.state.expiresAt, now + 10 * HOUR);
+  assert.equal(initial.state.reservedUntil, now + 12 * HOUR);
   assert.equal(initial.state.startupDeadline, now + HOUR);
   const repeated = beginUp(initial.state, initial.quota, release(2, 'b'), now + 1);
   assert.equal(repeated.state, initial.state);
+  assert.equal(repeated.quota, initial.quota);
   assert.equal(repeated.repeated, true);
   assert.throws(() => beginUp(undefined, initial.quota, release(), now), /exhausted/);
   assert.throws(() => beginUp({ ...initial.state, desiredMode: 'down' }, undefined, release(), now), /fully removed/);
 });
 
+test('the 20-start monthly quota applies continuously rather than as an October exception', () => {
+  for (const month of ['2026-10-22', '2026-11-01', '2027-01-01']) {
+    const requestedAt = Date.parse(`${month}T10:00:00Z`);
+    const next = beginUp(undefined, { cycles: 10, hours: 40 }, release(), requestedAt);
+    assert.deepEqual(next.quota, { cycles: 11, hours: 52 });
+    const last = beginUp(undefined, { cycles: 19, hours: 228 }, release(), requestedAt);
+    assert.deepEqual(last.quota, { cycles: 20, hours: 240 });
+    assert.throws(() => beginUp(undefined, last.quota, release(), requestedAt), /reservation exhausted/);
+  }
+});
+
+test('the monthly start and reserved-hour limits each reject further admission independently', () => {
+  assert.throws(() => beginUp(undefined, { cycles: 20, hours: 0 }, release(), now), /reservation exhausted/);
+  assert.throws(() => beginUp(undefined, { cycles: 0, hours: 229 }, release(), now), /reservation exhausted/);
+  assert.throws(() => beginUp(undefined, { cycles: 0, hours: 240 }, release(), now), /reservation exhausted/);
+  assert.deepEqual(beginUp(undefined, { cycles: 0, hours: 228 }, release(), now).quota, { cycles: 1, hours: 240 });
+});
+
+test('previously stored lease deadlines and reservations are not extended or recharged', () => {
+  const state = { ...ready(), expiresAt: now + 2 * HOUR, reservedUntil: now + 4 * HOUR };
+  const quota = { cycles: 1, hours: 4 };
+  const repeated = beginUp(state, quota, release(2, 'b'), now + HOUR);
+  assert.equal(repeated.state, state);
+  assert.equal(repeated.quota, quota);
+  assert.equal(repeated.repeated, true);
+  assert.equal(cleanupDue(state, now + 2 * HOUR - 1), false);
+  assert.equal(cleanupDue(state, now + 2 * HOUR), true);
+  assert.throws(() => beginUp(state, quota, release(), now + 2 * HOUR), /expired/);
+});
+
 test('cleanup catches partial startup, expiry and explicit Down, not ready unexpired demos', () => {
   assert.equal(cleanupDue(ready(), now), false);
-  assert.equal(cleanupDue(ready(), now + 2 * HOUR), true);
+  assert.equal(cleanupDue(ready(), now + 2 * HOUR), false);
+  assert.equal(cleanupDue(ready(), now + 10 * HOUR - 1), false);
+  assert.equal(cleanupDue(ready(), now + 10 * HOUR), true);
   assert.equal(cleanupDue({ ...ready(), status: 'starting' }, now + HOUR), true);
   assert.equal(cleanupDue({ ...ready(), desiredMode: 'down' }, now), true);
   assert.equal(cleanupDue({ desiredMode: 'down', status: 'down' }, now), false);
@@ -402,11 +518,107 @@ test('Terraform variables expose only foundation, immutable release and boolean 
 });
 
 test('Terraform plans and applies bound simultaneous rolling service updates', async () => {
+  const fixture = harness({ state: ready() });
+  await fixture.controller.execute('release', release(2, 'b'));
+  const commands = fixture.calls.filter(call => call.binary === 'terraform' && ['plan', 'apply'].some(command => call.args.includes(command)));
+  assert.equal(commands.length, 2);
+  assert.ok(commands.every(call => call.args.includes('-parallelism=2')));
+});
+
+test('cold startup launches healthy dependencies before the full application without per-service Terraform waits', async () => {
   const fixture = harness();
   await fixture.controller.execute('up');
-  const commands = fixture.calls.filter(call => call.binary === 'terraform' && ['plan', 'apply'].some(command => call.args.includes(command)));
-  assert.equal(commands.length, 4);
-  assert.ok(commands.every(call => call.args.includes('-parallelism=2')));
+  const plans = fixture.calls.filter(call => call.binary === 'terraform' && call.args.includes('plan'));
+  assert.deepEqual(plans.map(call => call.variables.startup_phase), ['all', 'dependencies', 'all']);
+  assert.deepEqual(plans.map(call => call.variables.cold_start), [true, true, true]);
+  assert.ok(plans.every(call => call.args.includes('-parallelism=10')));
+  const dependencyWait = fixture.calls.findIndex(call => call.operation === 'describe-services'
+    && call.input.services.length === 6);
+  const finalPlan = fixture.calls.indexOf(plans[2]);
+  assert.ok(dependencyWait > 0 && dependencyWait < finalPlan);
+});
+
+test('cold startup does not launch backends while dependency tasks remain unhealthy despite completed deployments', async () => {
+  const fixture = harness({ taskHealth: 'UNHEALTHY' });
+  await assert.rejects(fixture.controller.execute('up'), /deadline|cancelled/);
+  const plans = fixture.calls.filter(call => call.binary === 'terraform' && call.args.includes('plan') && !call.args.includes('-destroy'));
+  assert.deepEqual(plans.map(call => call.variables.startup_phase), ['all', 'dependencies']);
+  assert.equal(fixture.state().status, 'down');
+});
+
+test('service diagnostics identify an incomplete deployment while counting other healthy dependencies', async () => {
+  const fixture = harness({ slowDeployment: 'languagewise-demo-quizzes-courses-service-db' });
+  try {
+    await fixture.controller.execute('up');
+    assert.ok(fixture.reports.includes('ECS task readiness: 6/6.'));
+    assert.ok(fixture.reports.some(report => report.includes('ECS quizzes-courses-service-db: deployment=IN_PROGRESS')));
+    assert.ok(fixture.reports.some(report => report.includes('ECS shared-db-api: deployment=COMPLETED')));
+    assert.ok(fixture.reports.filter(report => report.startsWith('ECS shared-db-api:')).length <= 2);
+  } finally { fixture.dispose(); }
+});
+
+test('unhealthy dependency diagnostics retain only allowlisted stopped-task codes with bounded deduplicated output', async () => {
+  const name = 'quizzes-courses-service-db';
+  const sentinel = 'private-stopped-task-sentinel';
+  const fixture = harness({ taskHealthByService: { [name]: 'UNHEALTHY' }, stoppedTasks: [{
+    taskArn: `arn:aws:ecs:task/${sentinel}`, taskDefinitionArn: `definition:${name}`,
+    group: `service:languagewise-demo-${name}`, lastStatus: 'STOPPED', stopCode: 'TaskFailedToStart',
+    stoppedReason: `ResourceInitializationError: ${sentinel}`, containers: [{ name, exitCode: 137, reason: sentinel }],
+  }] });
+  try {
+    await assert.rejects(fixture.controller.execute('up'), /deadline|cancelled/);
+    assert.ok(fixture.reports.includes('ECS task readiness: 5/6.'));
+    assert.ok(fixture.reports.some(report => report.includes(`ECS ${name}:`) && report.includes('health=UNHEALTHY')));
+    const stopped = fixture.reports.filter(report => report.includes('stop_code='));
+    assert.equal(stopped.length, 1);
+    assert.ok(stopped[0].includes('stop_code=TaskFailedToStart; reason_code=ResourceInitializationError; exit_code=137'));
+    assert.ok(!fixture.reports.join('\n').includes(sentinel));
+    assert.ok(fixture.reports.filter(report => report.startsWith('ECS ')).length < 200);
+  } finally { fixture.dispose(); }
+});
+
+test('failed ECS deployment is named before rollback without exposing raw service events', async () => {
+  const fixture = harness({ failedDeployment: 'languagewise-demo-shared-db-api' });
+  try {
+    await assert.rejects(fixture.controller.execute('up'), /ECS deployment failed/);
+    assert.ok(fixture.reports.some(report => report.includes('ECS shared-db-api: deployment=FAILED')));
+    assert.equal(fixture.state().status, 'down');
+  } finally { fixture.dispose(); }
+});
+
+test('noisy service diagnostics stop at their detail limit without skipping health checks or deadline cleanup', async () => {
+  const fixture = harness({ churningHealth: true, taskHealthByService: { 'quizzes-courses-service-db': 'UNHEALTHY' } });
+  try {
+    await assert.rejects(fixture.controller.execute('up'), /deadline|cancelled/);
+    assert.equal(fixture.reports.filter(report => report.includes('diagnostics limit reached')).length, 1);
+    assert.equal(fixture.reports.filter(report => /^ECS [a-z0-9-]+: deployment=/.test(report)).length, 200);
+    assert.equal(fixture.state().status, 'down');
+  } finally { fixture.dispose(); }
+});
+
+test('optional stopped-task diagnostics fail safely without exposing raw errors or blocking a healthy deployment', async () => {
+  const fixture = harness({ slowDeployment: 'languagewise-demo-shared-db-api', stoppedInventoryFailure: true });
+  try {
+    await fixture.controller.execute('up');
+    assert.ok(fixture.reports.includes('ECS stopped-task diagnostics unavailable; raw output suppressed.'));
+    assert.ok(!fixture.reports.join('\n').includes('private-diagnostic-sentinel'));
+    assert.equal(fixture.state().status, 'ready');
+  } finally { fixture.dispose(); }
+});
+
+test('fast Terraform provisioning cannot be requested by a live runtime', () => {
+  const fixture = harness({ state: ready() });
+  fixture.controller.acquire();
+  assert.throws(() => fixture.controller.terraform(release(), true, false, { coldStart: true }), /verified empty cold start/);
+  assert.ok(!fixture.calls.some(call => call.binary === 'terraform'));
+});
+
+test('phase failure reporting allowlists metadata and never emits raw errors or response bodies', async () => {
+  const fixture = harness();
+  const failure = Object.assign(new Error('private-phase-sentinel'), { failureCode: 'http-status', httpStatus: 503 });
+  await assert.rejects(fixture.controller.measure('https:/health', () => { throw failure; }), /private-phase-sentinel/);
+  assert.ok(fixture.reports.some(report => report.includes('category=http-status; http_status=503')));
+  assert.ok(!fixture.reports.join('\n').includes('private-phase-sentinel'));
 });
 
 test('expired locks are never stolen and competing owner cannot be removed', async () => {
@@ -421,12 +633,12 @@ test('new Up applies disabled services then initializes once and applies enabled
   const fixture = harness();
   await fixture.controller.execute('up');
   assert.equal(fixture.state().status, 'ready');
-  assert.equal(fixture.state().expiresAt, now + 2 * HOUR);
+  assert.equal(fixture.state().expiresAt, now + 10 * HOUR);
   const plans = fixture.calls.filter(call => call.binary === 'terraform' && call.args.includes('plan'));
-  assert.deepEqual(plans.map(call => call.variables.services_enabled), [false, true]);
+  assert.deepEqual(plans.map(call => call.variables.services_enabled), [false, true, true]);
   assert.equal(fixture.calls.filter(call => call.operation === 'run-task').length, 1);
   assert.equal(fixture.rows.has('lock'), false);
-  assert.equal(JSON.parse(fixture.rows.get('quota#2026-10').payload.S).hours, 4);
+  assert.equal(JSON.parse(fixture.rows.get('quota#2026-10').payload.S).hours, 12);
   assert.equal(fixture.calls.filter(call => call.probe).length, 12);
   for (const call of fixture.calls.filter(call => call.binary === 'terraform' && call.args.includes('init'))) {
     assert.ok(call.args.includes('-backend-config=key=demo/terraform.tfstate'));
@@ -446,7 +658,18 @@ test('repeated Up never provisions, initializes, charges or extends the lease', 
   assert.ok(!fixture.rows.has('quota#2026-10'));
 });
 
-for (const [name, settings] of [['disabled scheduler', { scheduleDisabled: true }], ['provenance mismatch', { badHash: true }], ['unpopulated secret', { missingSecret: true }]]) {
+test('SMTP metadata is required before preflight can authorize paid provisioning', () => {
+  const fixture = harness();
+  fixture.controller.config = { ...foundation, secret_arns: { ...foundation.secret_arns } };
+  delete fixture.controller.config.secret_arns['smtp-credentials'];
+  try {
+    assert.throws(() => fixture.controller.verifySecrets(true), /SMTP secret metadata is required/);
+    assert.ok(!fixture.rows.has('quota#2026-10'));
+    assert.ok(!fixture.calls.some(call => call.binary === 'terraform' || call.service === 'secretsmanager'));
+  } finally { fixture.dispose(); }
+});
+
+for (const [name, settings] of [['disabled scheduler', { scheduleDisabled: true }], ['provenance mismatch', { badHash: true }], ['unpopulated secret', { missingSecret: true }], ['unpopulated SMTP secret', { missingSecret: foundation.secret_arns['smtp-credentials'] }]]) {
   test(`Up fails before reservation or Terraform for ${name}`, async () => {
     const fixture = harness(settings);
     await assert.rejects(fixture.controller.execute('up'));
@@ -515,7 +738,7 @@ test('release while Up deploys directly with services enabled and never seeds', 
   assert.deepEqual(fixture.calls.filter(call => call.variables).map(call => call.variables.services_enabled), [true]);
   assert.ok(!fixture.calls.some(call => call.operation === 'run-task'));
   assert.equal(fixture.state().releaseSha, 'b'.repeat(40));
-  assert.equal(fixture.state().expiresAt, now + 2 * HOUR);
+  assert.equal(fixture.state().expiresAt, now + 10 * HOUR);
 });
 
 test('failed functional rollout redeploys previous compatible images without changing latest', async () => {
@@ -532,8 +755,8 @@ test('periodic cleanup is a no-op before expiry and destroys after expiry with A
   assert.ok(!unexpired.calls.some(call => call.operation === 'put-item' || call.binary === 'terraform'));
   const expired = harness({ state: ready() });
   expired.dependencies.env = { CODEBUILD_BUILD_ID: buildId };
-  expired.advance(2 * HOUR);
-  expired.controller.workerDeadline = now + 3 * HOUR;
+  expired.advance(10 * HOUR);
+  expired.controller.workerDeadline = now + 11 * HOUR;
   await expired.controller.execute('cleanup');
   assert.equal(expired.state().status, 'down');
 });
@@ -653,12 +876,12 @@ test('independent cleanup configured for another state is rejected before provis
   assert.ok(!fixture.calls.some(call => call.binary === 'terraform'));
 });
 
-test('preflight elapsed time counts against the two-hour presentation lease', async () => {
+test('preflight elapsed time counts against the ten-hour presentation lease', async () => {
   const fixture = harness();
   fixture.advance(10 * 60_000);
   await fixture.controller.execute('up');
   assert.equal(fixture.state().requestedAt, now);
-  assert.equal(fixture.state().expiresAt, now + 2 * HOUR);
+  assert.equal(fixture.state().expiresAt, now + 10 * HOUR);
 });
 
 test('first Up accepts empty database metadata then requires current versions before enabling services', async () => {
@@ -668,8 +891,8 @@ test('first Up accepts empty database metadata then requires current versions be
   const enable = fixture.calls.findIndex(call => call.variables?.services_enabled);
   const metadata = fixture.calls.map((call, index) => ({ ...call, index }))
     .filter(call => call.service === 'secretsmanager');
-  assert.equal(metadata.filter(call => call.index < seed).length, 9);
-  assert.equal(metadata.filter(call => call.index > seed && call.index < enable).length, 9);
+  assert.equal(metadata.filter(call => call.index < seed).length, 10);
+  assert.equal(metadata.filter(call => call.index > seed && call.index < enable).length, 10);
   assert.equal(fixture.state().status, 'ready');
 });
 

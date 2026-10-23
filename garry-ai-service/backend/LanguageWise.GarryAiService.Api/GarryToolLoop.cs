@@ -7,6 +7,8 @@ namespace LanguageWise.GarryAiService.Api;
 
 public sealed record ToolEvent(string Name, JsonElement Arguments, bool IsError, JsonElement Result);
 
+public sealed record WorkerCompletion(string Content, IReadOnlyList<ChatMessage> Evidence, DocsCitations Citations);
+
 public sealed class GarryToolLoop(
 	IMcpToolHost mcp,
 	IHttpClientFactory clients,
@@ -33,8 +35,9 @@ public sealed class GarryToolLoop(
 
 	public bool IsAvailable => mcp.Enabled && !string.IsNullOrWhiteSpace(configuration["OpenRouter:ApiKey"]);
 
-	public async Task<string?> RunAsync(
+	public async Task<WorkerCompletion?> RunAsync(
 		CompletionRequest request,
+		IReadOnlyList<ChatMessage> workerMessages,
 		string? userToken,
 		Func<ToolEvent, Task> onTool,
 		CancellationToken cancellationToken)
@@ -63,7 +66,7 @@ public sealed class GarryToolLoop(
 		}).ToArray());
 
 		var messages = new JsonArray();
-		var built = request.BuildMessages();
+		var built = workerMessages;
 		messages.Add(ToNode(built[0]));
 		messages.Add(new JsonObject { ["role"] = "system", ["content"] = ToolInstructions });
 		foreach (var message in built.Skip(1))
@@ -75,13 +78,14 @@ public sealed class GarryToolLoop(
 		var callsOverLimit = 0;
 		var completedCalls = new Dictionary<string, ToolEvent>(StringComparer.Ordinal);
 		var citations = new DocsCitations();
+		var evidence = new List<ChatMessage>();
 		for (var round = 0; round < MaxRounds; round++)
 		{
-			var reply = await CompleteAsync(messages, toolSchema, allowTools: true, cancellationToken);
+			var reply = await CompleteAsync(messages, toolSchema, allowTools: true, request, cancellationToken);
 			if (reply.ToolCalls.Count == 0)
 			{
 				LogLimitReached(request.ToolScope, callsOverLimit, roundsExhausted: false);
-				return citations.AppendTo(reply.Content);
+				return CompleteWorker(reply.Content, evidence, citations);
 			}
 
 			messages.Add(reply.AssistantMessage);
@@ -123,13 +127,24 @@ public sealed class GarryToolLoop(
 				{
 					await onTool(toolEvent);
 				}
-				messages.Add(ToolMessage(call, toolEvent));
+				var toolMessage = ToolMessage(call, toolEvent);
+				messages.Add(toolMessage);
+				evidence.Add(new ChatMessage("user", toolMessage["content"]!.GetValue<string>()));
 			}
 		}
 
 		LogLimitReached(request.ToolScope, callsOverLimit, roundsExhausted: true);
-		var final = await CompleteAsync(messages, toolSchema, allowTools: false, cancellationToken);
-		return citations.AppendTo(final.Content);
+		var final = await CompleteAsync(messages, toolSchema, allowTools: false, request, cancellationToken);
+		return CompleteWorker(final.Content, evidence, citations);
+	}
+
+	private static WorkerCompletion CompleteWorker(string? content, IReadOnlyList<ChatMessage> evidence, DocsCitations citations)
+	{
+		if (string.IsNullOrWhiteSpace(content))
+		{
+			throw new InvalidDataException("Worker returned an empty response.");
+		}
+		return new WorkerCompletion(content, evidence, citations);
 	}
 
 	private void LogLimitReached(string scope, int callsOverLimit, bool roundsExhausted)
@@ -180,8 +195,10 @@ public sealed class GarryToolLoop(
 	private static JsonObject ToNode(ChatMessage message) => new() { ["role"] = message.Role, ["content"] = message.Content };
 
 	private async Task<ProviderReply> CompleteAsync(
-		JsonArray messages, JsonArray tools, bool allowTools, CancellationToken cancellationToken)
+		JsonArray messages, JsonArray tools, bool allowTools, CompletionRequest completionRequest, CancellationToken cancellationToken)
 	{
+		var maxTokens = configuration.GetValue("OpenRouter:MaxOutputTokens", 1024);
+		maxTokens = Math.Min(completionRequest.MaxTokens ?? maxTokens, maxTokens);
 		var payload = new JsonObject
 		{
 			["model"] = configuration["OpenRouter:ToolModel"] ?? configuration["OpenRouter:Model"] ?? "google/gemma-4-26b-a4b-it",
@@ -189,7 +206,8 @@ public sealed class GarryToolLoop(
 			["tools"] = tools.DeepClone(),
 			["tool_choice"] = allowTools ? "auto" : "none",
 			["stream"] = false,
-			["max_tokens"] = configuration.GetValue("OpenRouter:MaxOutputTokens", 1024)
+			["max_tokens"] = maxTokens,
+			["temperature"] = completionRequest.Temperature
 		};
 
 		using var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions") { Content = JsonContent.Create(payload) };

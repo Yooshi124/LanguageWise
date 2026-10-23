@@ -16,7 +16,6 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.Extensions.Options;
 
 const string ServiceName = "mini-games-service-backend";
 const string AssistantToolNamePattern = "^games_[a-z_]{1,58}$";
@@ -50,25 +49,11 @@ builder.Services.AddHttpClient<AchievementEventsClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(20);
 });
 
-// OpenRouter vocabulary generation (AI game mode), modelled on the quizzes-courses assistant setup.
-builder.Services
-    .AddOptions<OpenRouterOptions>()
-    .Bind(builder.Configuration.GetSection(OpenRouterOptions.SectionName))
-    .Validate(
-        options => Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out _),
-        "OpenRouter:BaseUrl must be an absolute URL.")
-    .Validate(
-        options => !string.IsNullOrWhiteSpace(options.Model),
-        "OpenRouter:Model is required.")
-    .Validate(
-        options => options.MaxOutputTokens is > 0 and <= 8192,
-        "OpenRouter:MaxOutputTokens must be between 1 and 8192.")
-    .ValidateOnStart();
-builder.Services.AddHttpClient<IVocabularyCompletionClient, OpenRouterVocabularyClient>(
-    (services, client) =>
+// Vocabulary generation uses Garry's provider configuration and central AI switch.
+builder.Services.AddHttpClient<IVocabularyCompletionClient, GarryVocabularyClient>(
+    client =>
     {
-        var options = services.GetRequiredService<IOptions<OpenRouterOptions>>().Value;
-        client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
+        client.BaseAddress = new Uri((builder.Configuration["Services:Garry"] ?? "http://localhost:5010").TrimEnd('/') + "/");
         client.Timeout = TimeSpan.FromSeconds(60);
     });
 builder.Services.AddSingleton<IAiVocabularyProvider, OpenRouterVocabularyProvider>();
@@ -341,16 +326,16 @@ app.MapGet("/api/game-languages", async (HttpContext context, CourseVocabularyCl
 });
 
 // Which vocabulary modes are usable right now: content focus needs the courses service and
-// unlocked vocabulary; AI generation needs a configured OpenRouter key. The frontend uses this
+// unlocked vocabulary; AI generation needs Garry to report AI availability. The frontend uses this
 // to lock the toggle onto AI generation when the service runs standalone.
-app.MapGet("/api/game-modes", async (HttpContext context, CourseVocabularyClient courseClient, IOptions<OpenRouterOptions> openRouter, CancellationToken cancellationToken) =>
+app.MapGet("/api/game-modes", async (HttpContext context, CourseVocabularyClient courseClient, IVocabularyCompletionClient vocabularyClient, CancellationToken cancellationToken) =>
 {
     var vocabulary = await courseClient.GetUserVocabularyAsync(GetAccessToken(context), cancellationToken);
     var contentLanguages = vocabulary?.Courses
         .Select(course => new { code = course.Code, title = course.Title })
         .ToArray() ?? [];
     var contentAvailable = contentLanguages.Length > 0;
-    var aiAvailable = !string.IsNullOrWhiteSpace(openRouter.Value.ApiKey);
+    var aiAvailable = await vocabularyClient.IsAvailableAsync(cancellationToken);
 
     return Results.Ok(new
     {

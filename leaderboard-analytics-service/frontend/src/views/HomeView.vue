@@ -51,6 +51,8 @@ const {
                 <h2 class="lw-card__title">Your Rankings</h2>
                 <p class="lw-card__hint">Your position across every language you are studying</p>
 
+                <img v-if="myRankings?.some((r) => r.rank === 1)" class="garry-mood" :src="'/garry/LordGarry.png'" alt="" aria-hidden="true" />
+                <img v-if="!isMyLoading && !isMyError && !myRankings?.length" class="garry-mood" :src="'/garry/ConfusedGarry.png'" alt="" aria-hidden="true" />
                 <p v-if="isMyLoading" class="lw-table__empty">Loading your rankings…</p>
                 <p v-else-if="isMyError" class="lw-table__error">Failed to load your rankings.</p>
                 <p v-else-if="!myRankings?.length" class="lw-table__empty">

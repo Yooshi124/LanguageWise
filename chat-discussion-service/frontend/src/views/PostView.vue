@@ -173,6 +173,7 @@ watch(postId, load, { immediate: true });
         v-else-if="error && error.isNotFound"
         title="That post no longer exists"
         message="It may have been deleted by its author."
+        image="/garry/ConfusedGarry.png"
         tone="error"
     >
         <p><RouterLink :to="{ name: 'forums' }">Back to all forums</RouterLink></p>

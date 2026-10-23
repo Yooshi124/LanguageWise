@@ -208,7 +208,7 @@ Please don't commit API keys and `.env` files...thx 🙂
 
 ## Pre-commit security checks
 
-Every commit runs these scans against the staged files only. A hook runs only when a file it cares about is staged, so a commit that touches no dependency manifests skips the audits. Each commit's output is also saved to `reports/pre-commit/<timestamp>.log`; the `reports/` folder is gitignored. The `Security Check` workflow (`security-check.yml`) runs every hook on the whole repo (`--all-files`) on each push to `master` and on pull requests, and writes a hook table to the job summary.
+Every commit runs these scans against the staged files only. A hook runs only when a file it cares about is staged, so a commit that touches no dependency manifests skips the audits. Each commit's output is also saved to `reports/pre-commit/<timestamp>.log`; the `reports/` folder is gitignored. Every log starts with a run-context block (branch, HEAD commit, time, and the files checked). The `Security Check` workflow (`security-check.yml`) runs every hook on the whole repo (`--all-files`) on each push to `master` and on pull requests. It writes the same report (run details, files checked, hook table, full log) to the job summary and prints it in the job log under "Security check report".
 
 | Hook | Checks | Runs when staged |
 | --- | --- | --- |
@@ -262,6 +262,27 @@ the reply. Garry uses OpenRouter as its only model provider; if OpenRouter is
 unavailable, it does not try another model provider. The feature backends do not choose a provider. The
 browser keeps its existing assistant URLs and stores bounded transcripts in
 `sessionStorage`; chats are not written to the database.
+
+Every valid completion runs a **planner -> worker -> reviewer** pipeline, including
+requests without tools and requests made while MCP is unavailable. Each stage is
+a fresh agent instance with its own role-specific system prompt and private
+message context. All three receive the authorized domain rules, canonical context,
+conversation history and current message. The worker receives the planner's task
+plan and retains Garry's scoped MCP tool access; the reviewer receives the plan,
+draft and bounded tool evidence to independently check and correct the answer.
+Only explicit handoffs cross agent contexts, and no agent state is reused between
+requests or users.
+
+Only the reviewed answer is sent to the learner. The SSE contract remains
+`tool`, `delta`, `done`, and `error`; tool events can arrive during worker execution,
+but answer text is buffered until review completes. Documentation sources and
+confidence are appended by the server after review. This adds at least three
+model calls and additional response latency per message. All agents use the
+configured OpenRouter model and output-token limit (tool rounds continue to use
+`OpenRouter:ToolModel` when configured). Cancellation stops the pipeline; an agent
+failure returns an unavailable/error response rather than exposing an unreviewed
+draft. If tool execution fails, the worker can continue without tools and its
+answer still goes through the reviewer.
 
 Copy the root example environment file and add an OpenRouter API key:
 

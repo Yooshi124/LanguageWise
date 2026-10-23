@@ -12,6 +12,9 @@ export const LEGACY_IMAGE_KEYS = Object.freeze(IMAGE_KEYS.filter(name => !['mcp-
 export const HOUR = 3_600_000;
 export const LOCK_WINDOW = 150 * 60_000;
 export const WORKER_WINDOW = 90 * 60_000;
+export const MONTHLY_START_LIMIT = 20;
+export const RESERVATION_HOURS = 12;
+export const MONTHLY_HOUR_LIMIT = MONTHLY_START_LIMIT * RESERVATION_HOURS;
 
 export function requireThat(condition, message) {
   if (!condition) throw new Error(message);
@@ -76,7 +79,16 @@ export function validateRelease(release, foundation, { allowLegacy = false } = {
     requireThat(typeof image === 'string' && image.startsWith(`${foundation.repository_url}@sha256:`)
       && /^[a-f0-9]{64}$/.test(image.slice(`${foundation.repository_url}@sha256:`.length)), 'Images must be exact repository@sha256 digests');
   }
-  return { ...(legacy ? {} : { schemaVersion: 2 }), sha: release.sha, images: { ...release.images }, sequence: release.sequence };
+  for (const field of ['imageSourceSha', 'reusedFromSha']) {
+    requireThat(release[field] === undefined || !legacy && typeof release[field] === 'string' && /^[a-f0-9]{40}$/.test(release[field]), 'Invalid image source provenance');
+  }
+  requireThat(release.reusedFromSha === undefined || release.imageSourceSha !== undefined && release.reusedFromSha !== release.sha,
+    'Reused images require source provenance and a different approved release');
+  requireThat(release.imageSourceSha === undefined || release.reusedFromSha !== undefined || release.imageSourceSha === release.sha,
+    'Built images must originate from the current release');
+  return { ...(legacy ? {} : { schemaVersion: 2 }), sha: release.sha, images: { ...release.images }, sequence: release.sequence,
+    ...(release.imageSourceSha === undefined ? {} : { imageSourceSha: release.imageSourceSha }),
+    ...(release.reusedFromSha === undefined ? {} : { reusedFromSha: release.reusedFromSha }) };
 }
 
 export function releaseOrder(candidate, previous) {
@@ -103,12 +115,12 @@ export function beginUp(state, quota, release, now) {
     return { state, quota, repeated: true };
   }
   requireThat(!state || state.status === 'down', 'Previous runtime must be fully removed before Up');
-  requireThat((quota?.cycles ?? 0) < 10 && (quota?.hours ?? 0) + 4 <= 40, 'Monthly demo reservation exhausted');
+  requireThat((quota?.cycles ?? 0) < MONTHLY_START_LIMIT && (quota?.hours ?? 0) + RESERVATION_HOURS <= MONTHLY_HOUR_LIMIT, 'Monthly demo reservation exhausted');
   return {
     state: { desiredMode: 'up', status: 'starting', requestedAt: now, startupDeadline: now + HOUR,
-      expiresAt: now + 2 * HOUR, reservedUntil: now + 4 * HOUR, releaseSha: release.sha, release,
+      expiresAt: now + 10 * HOUR, reservedUntil: now + RESERVATION_HOURS * HOUR, releaseSha: release.sha, release,
       revision: (state?.revision ?? 0) + 1 },
-    quota: { cycles: (quota?.cycles ?? 0) + 1, hours: (quota?.hours ?? 0) + 4 }, repeated: false,
+    quota: { cycles: (quota?.cycles ?? 0) + 1, hours: (quota?.hours ?? 0) + RESERVATION_HOURS }, repeated: false,
   };
 }
 

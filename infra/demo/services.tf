@@ -12,10 +12,11 @@ locals {
     chat-discussion-service-db                   = "db-chat-discussion"
     quests-achievements-notifications-service-db = "db-quests"
   }
-  legacy_names = setunion(local.frontends, local.backends, toset(keys(local.database_secrets)))
-  all_names    = setunion(local.legacy_names, toset(["mcp-server", "rag-server"]))
-  names        = var.release.schema_version == 2 ? local.all_names : local.legacy_names
-  mcp_callers  = setsubtract(local.backends, toset(["shared-backend"]))
+  legacy_names  = setunion(local.frontends, local.backends, toset(keys(local.database_secrets)))
+  all_names     = setunion(local.legacy_names, toset(["mcp-server", "rag-server"]))
+  names         = var.release.schema_version == 2 ? local.all_names : local.legacy_names
+  startup_names = toset([for name in local.names : name if endswith(name, "-db") || contains(["shared-db-api", "rag-server"], name)])
+  mcp_callers   = setsubtract(local.backends, toset(["shared-backend"]))
   ports = { for name in local.all_names : name => (
     contains(local.frontends, name) ? 80 : name == "rag-server" ? 8100 : name == "quests-achievements-notifications-service-db" ? 3000 : 8080
   ) }
@@ -118,6 +119,10 @@ locals {
     contains(keys(local.database_secrets), name) ? {
       (name == "quests-achievements-notifications-service-db" ? "PGRST_DB_URI" : "Database__ConnectionString") = "${var.foundation.secret_arns[local.database_secrets[name]]}:${name == "quests-achievements-notifications-service-db" ? "uri" : "connection"}::"
     } : {},
+    name == "quests-achievements-notifications-service-backend" ? {
+      Smtp__Username = "${var.foundation.secret_arns["smtp-credentials"]}:username::"
+      Smtp__Password = "${var.foundation.secret_arns["smtp-credentials"]}:password::"
+    } : {},
     contains(local.openrouter_consumers, name) ? { OpenRouter__ApiKey = var.foundation.secret_arns["openrouter-api-key"] } : {},
     name == "shared-backend" ? { Auth__SigningKeyPem = var.foundation.secret_arns["signing-private-key"] } : {},
     contains(setunion(local.mcp_callers, toset(["mcp-server"])), name) ? {
@@ -192,14 +197,14 @@ resource "aws_ecs_task_definition" "app" {
 }
 
 resource "aws_ecs_service" "app" {
-  for_each                           = var.services_enabled ? local.names : toset([])
+  for_each                           = var.services_enabled ? (var.startup_phase == "dependencies" ? local.startup_names : local.names) : toset([])
   name                               = "languagewise-demo-${each.key}"
   cluster                            = var.foundation.cluster_arn
   task_definition                    = aws_ecs_task_definition.app[each.key].arn
   desired_count                      = 1
   launch_type                        = "FARGATE"
   platform_version                   = "1.4.0"
-  wait_for_steady_state              = true
+  wait_for_steady_state              = !var.cold_start
   deployment_minimum_healthy_percent = 100
   deployment_maximum_percent         = 200
   health_check_grace_period_seconds  = each.key == "shared-frontend" ? 60 : null

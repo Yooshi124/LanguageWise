@@ -2,6 +2,17 @@
 exclude: '(^|/)(node_modules|dist|bin|obj|\.venv|venv|TestResults)/'
 
 repos:
+  - repo: local
+    hooks:
+      # Runs first so the report header lists the run context before any hook result.
+      - id: run-context
+        name: Run context
+        entry: python tools/security/precommit_context.py
+        language: python
+        always_run: true
+        pass_filenames: true
+        verbose: true
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.17.0
     hooks:
@@ -44,4 +55,5 @@ repos:
         name: dotnet vulnerable packages (backends)
         entry: python tools/security/audit_deps.py dotnet
         language: python
+        require_serial: true
         files: \.(slnx|csproj|props|targets)$|(^|/)nuget\.config$

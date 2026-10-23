@@ -7,7 +7,8 @@ namespace LanguageWise.GarryAiService.Api;
 
 public sealed class CompletionProviders(IHttpClientFactory clients, IConfiguration configuration)
 {
-    public async Task<ProviderStream> StartAsync(IReadOnlyList<ChatMessage> messages, CancellationToken cancellationToken)
+    public async Task<ProviderStream> StartAsync(IReadOnlyList<ChatMessage> messages, CancellationToken cancellationToken,
+        int? outputTokens = null, double? temperature = null)
     {
         var apiKey = configuration["OpenRouter:ApiKey"];
         if (string.IsNullOrWhiteSpace(apiKey))
@@ -16,12 +17,20 @@ public sealed class CompletionProviders(IHttpClientFactory clients, IConfigurati
         }
         var model = configuration["OpenRouter:Model"] ?? "google/gemma-4-26b-a4b-it";
         var maxTokens = configuration.GetValue("OpenRouter:MaxOutputTokens", 1024);
+        maxTokens = Math.Min(outputTokens ?? maxTokens, maxTokens);
         return await StartProviderAsync("openrouter", "chat/completions", new
         {
             model,
-            messages,
+            messages = messages.Append(new ChatMessage("system", """
+                No tools are available for this response. Do not call tools, emit tool-call syntax, or claim
+                to have searched documentation or fetched live data. Earlier tool calls in the conversation
+                do not grant tool access. If asked to use a tool, explain that tools are unavailable and
+                answer only from the supplied context when possible.
+                """)),
             stream = true,
-            max_tokens = maxTokens
+            tool_choice = "none",
+            max_tokens = maxTokens,
+            temperature
         }, apiKey, cancellationToken);
     }
 
@@ -70,6 +79,7 @@ public sealed class ProviderStream(HttpResponseMessage response, Stream body) : 
     {
         using var reader = new StreamReader(body);
         var data = new List<string>();
+        var toolSyntax = new ToolSyntaxGuard();
         var done = false;
         while (await reader.ReadLineAsync(cancellationToken) is { } line)
         {
@@ -86,6 +96,8 @@ public sealed class ProviderStream(HttpResponseMessage response, Stream body) : 
 
             if (line == "[DONE]")
             {
+                if (toolSyntax.Push(string.Empty, final: true) is { Length: > 0 } remaining)
+                    yield return ("delta", remaining);
                 done = true;
                 yield return ("done", "stop");
                 break;
@@ -103,17 +115,29 @@ public sealed class ProviderStream(HttpResponseMessage response, Stream body) : 
                 throw new InvalidDataException("Invalid OpenRouter response");
             }
             var choice = choices[0];
-            if (choice.TryGetProperty("delta", out var delta)
-                && delta.TryGetProperty("content", out var content)
-                && content.ValueKind == JsonValueKind.String && content.GetString() is { Length: > 0 } text)
+            if (choice.TryGetProperty("delta", out var delta) && delta.ValueKind == JsonValueKind.Object)
             {
-                yield return ("delta", text);
+                if (delta.TryGetProperty("tool_calls", out var calls) && calls.ValueKind == JsonValueKind.Array && calls.GetArrayLength() > 0
+                    || delta.TryGetProperty("function_call", out var function) && function.ValueKind == JsonValueKind.Object)
+                {
+                    if (toolSyntax.Block() is { Length: > 0 } unavailable) yield return ("delta", unavailable);
+                }
+                if (delta.TryGetProperty("content", out var content)
+                    && content.ValueKind == JsonValueKind.String && content.GetString() is { Length: > 0 } text
+                    && toolSyntax.Push(text) is { Length: > 0 } safeText)
+                {
+                    yield return ("delta", safeText);
+                }
             }
             if (choice.TryGetProperty("finish_reason", out var finish)
                 && finish.ValueKind == JsonValueKind.String)
             {
                 done = true;
-                yield return ("done", finish.GetString() ?? "stop");
+                if (finish.GetString() is "tool_calls" or "function_call"
+                    && toolSyntax.Block() is { Length: > 0 } unavailable) yield return ("delta", unavailable);
+                if (toolSyntax.Push(string.Empty, final: true) is { Length: > 0 } remaining)
+                    yield return ("delta", remaining);
+                yield return ("done", toolSyntax.Blocked ? "stop" : finish.GetString() ?? "stop");
                 break;
             }
         }
@@ -129,5 +153,48 @@ public sealed class ProviderStream(HttpResponseMessage response, Stream body) : 
         body.Dispose();
         response.Dispose();
         return ValueTask.CompletedTask;
+    }
+
+    private sealed class ToolSyntaxGuard
+    {
+        private static readonly string[] Markers = ["<|tool_call>", "<|tool_call|>", "<tool_call|>", "<tool_call>", "[TOOL_CALLS]", "<function=", "<|python_tag|>"];
+        private string pending = string.Empty;
+        public bool Blocked { get; private set; }
+
+        public string Block()
+        {
+            if (Blocked) return string.Empty;
+            Blocked = true;
+            pending = string.Empty;
+            return "\n\nTools are unavailable for this response, so I cannot run that search or call a tool.";
+        }
+
+        public string Push(string text, bool final = false)
+        {
+            if (Blocked) return string.Empty;
+            pending += text;
+            var markerIndex = Markers.Select(marker => pending.IndexOf(marker, StringComparison.OrdinalIgnoreCase))
+                .Where(index => index >= 0).DefaultIfEmpty(-1).Min();
+            if (markerIndex >= 0)
+            {
+                var prefix = pending[..markerIndex];
+                return prefix + Block();
+            }
+            var retained = 0;
+            if (!final)
+            {
+                for (var length = Math.Min(pending.Length, Markers.Max(marker => marker.Length) - 1); length > 0; length--)
+                {
+                    if (Markers.Any(marker => marker.StartsWith(pending[^length..], StringComparison.OrdinalIgnoreCase)))
+                    {
+                        retained = length;
+                        break;
+                    }
+                }
+            }
+            var output = pending[..(pending.Length - retained)];
+            pending = pending[(pending.Length - retained)..];
+            return output;
+        }
     }
 }

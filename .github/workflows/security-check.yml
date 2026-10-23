@@ -66,9 +66,14 @@ jobs:
 
       - name: Write security check summary
         if: always()
+        shell: bash
         run: |
+          set -o pipefail
+          # Write the report to the job summary and echo it to the job log so it is visible in the run's logs.
+          echo "::group::Security check report"
           if [ -f reports/pre-commit/ci.log ]; then
-            python3 tools/security/summarize_precommit.py reports/pre-commit/ci.log >> "$GITHUB_STEP_SUMMARY"
+            python3 tools/security/summarize_precommit.py reports/pre-commit/ci.log | tee -a "$GITHUB_STEP_SUMMARY"
           else
-            printf '## Security Check\n\nThe hooks did not produce a log.\n' >> "$GITHUB_STEP_SUMMARY"
+            printf '## Security Check\n\nThe hooks did not produce a log.\n' | tee -a "$GITHUB_STEP_SUMMARY"
           fi
+          echo "::endgroup::"

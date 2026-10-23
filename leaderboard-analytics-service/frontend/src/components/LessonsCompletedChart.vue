@@ -117,6 +117,7 @@ onBeforeUnmount(() => {
         <h2 class="lw-card__title">Lessons Completed Over Time</h2>
         <p class="lw-card__hint">Your last 30 days of lesson progress, per course</p>
 
+        <img v-if="!isLoading && !isError && !hasSeries" class="garry-mood" :src="'/garry/SleepyGarry.png'" alt="" aria-hidden="true" />
         <p v-if="isLoading" class="lw-table__empty">Loading chart…</p>
         <p v-else-if="isError" class="lw-table__error">Failed to load chart data.</p>
         <p v-else-if="!hasSeries" class="lw-table__empty">No lesson activity yet.</p>
