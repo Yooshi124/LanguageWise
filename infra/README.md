@@ -14,6 +14,58 @@ The $160 planning budget is unchanged; AWS budget alerts are not
 modified by this code change. Historical cost estimates below are not a fresh
 quote for a 240-hour month. Publishing this change does not itself launch Up.
 
+## SMTP Setup: Cutover Complete
+
+On 2026-10-23, the owner populated `languagewise/demo/smtp-credentials` directly
+in `ap-southeast-2`; its `AWSCURRENT` metadata was verified without retrieving
+credential values. Only the notifications backend's ECS execution role can read
+this secret. The approved Down and scoped foundation cutover are complete;
+application publication and end-to-end email verification remain pending.
+
+For future rotation, enter the values directly in AWS Secrets Manager as JSON:
+
+```json
+{
+   "username": "<sender Gmail address>",
+   "password": "<rotated Gmail app password>"
+}
+```
+
+Use a Gmail app password, not the Google account password. Do not post either
+value in chat or place them in Terraform, source, GitHub variables or logs.
+`Smtp__Host` and `Smtp__Port` are not secrets; the application defaults to
+`smtp.gmail.com:587` with STARTTLS. ECS injects only `Smtp__Username` and
+`Smtp__Password` from the corresponding JSON fields.
+
+Approved Down
+[39894774435](https://github.com/Yooshi124/LanguageWise/actions/runs/39894774435)
+succeeded. Local implementation commit `b6f0c3156e388180795584534a64512c921a8fa0`
+was packaged into immutable cleanup source:
+
+- Key: `cleanup/a29f7c16cfa691f90efedc6a3ba5bf8facecf968118996ec7141a2545b5931ab.zip`
+- Version: `jVSV1sZGOE8ec_2xeF_tIzZbFbyaTZ0t`
+- Native verification build: `languagewise-demo-cleanup:f34cc56f-8115-4c1b-8508-33521a3de8a1`, all phases succeeded.
+
+The four routine/cleanup inline policies now reference the exact new source
+version and include SMTP metadata access, not credential-value access. CodeBuild
+source/version and both embedded foundation contracts were updated together;
+GitHub's `AWS_FOUNDATION_CONFIG` and refreshed Terraform outputs match the same
+ten-secret contract. State reconciliation used a refresh-only plan with zero AWS
+resource mutations. A final non-applied preview has no IAM/CodeBuild changes;
+unrelated ECS cluster drift was not applied. All 18 final resource-specific IAM
+checks passed; the earlier 159 Node tests and nine mock Terraform tests passed.
+
+Fresh independent checks verified Down/Down, no writer lock or disposable runtime
+residuals, cleanup readiness, and all four alarms OK with actions enabled. The
+native build exercised the already-Down path, not a nonempty teardown or email
+delivery. No credential values were retrieved, push, merge or new Up performed.
+
+**Publication is next:** publish the local implementation and runbook changes
+through the normal reviewed process while Down. Require fresh successful CI and
+the exact merged-SHA AWS Release before a separately approved new Up. SMTP
+injection and actual delivery must then be verified; secret population and this
+foundation cutover alone do not deploy the application.
+
 ## Earlier Cold-Start Follow-up: 2026-10-22
 
 Timed Up [39695904779](https://github.com/Yooshi124/LanguageWise/actions/runs/39695904779)
@@ -379,8 +431,10 @@ and access key remain outside Terraform; no replacement key is required.
    `languagewise/demo/signing-private-key`, and
    `languagewise/demo/signing-public-key`. Do not use workflow inputs, Terraform
    variables, GitHub Secrets, source, or chat for these values. Set OpenRouter's
-   separate $10 spending limit. Leave email delivery unconfigured/disabled unless
-   separately costed and approved. The initializer populates the five database
+   separate $10 spending limit. SMTP credentials and their foundation cutover are
+   complete; follow [SMTP publication status](#smtp-setup-cutover-complete)
+   before activating and verifying delivery.
+   The initializer populates the five database
    secrets; do not copy local development database passwords into them.
 6. **Completed, owner-confirmed.** After foundation output changes, export the
    **nonsecret** flat output contract and set the `aws-demo`

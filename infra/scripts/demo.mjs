@@ -443,6 +443,7 @@ export class DemoController {
   }
 
   verifySecrets(initial = false) {
+    requireThat(Object.hasOwn(this.config.secret_arns, 'smtp-credentials'), 'SMTP secret metadata is required before provisioning');
     for (const [name, arn] of Object.entries(this.config.secret_arns)) {
       const secret = this.aws('secretsmanager', 'describe-secret', { SecretId: arn });
       requireThat(secret.ARN === arn && !secret.DeletedDate && (initial && name.startsWith('db-')

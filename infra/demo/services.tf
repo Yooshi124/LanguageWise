@@ -119,6 +119,10 @@ locals {
     contains(keys(local.database_secrets), name) ? {
       (name == "quests-achievements-notifications-service-db" ? "PGRST_DB_URI" : "Database__ConnectionString") = "${var.foundation.secret_arns[local.database_secrets[name]]}:${name == "quests-achievements-notifications-service-db" ? "uri" : "connection"}::"
     } : {},
+    name == "quests-achievements-notifications-service-backend" ? {
+      Smtp__Username = "${var.foundation.secret_arns["smtp-credentials"]}:username::"
+      Smtp__Password = "${var.foundation.secret_arns["smtp-credentials"]}:password::"
+    } : {},
     contains(local.openrouter_consumers, name) ? { OpenRouter__ApiKey = var.foundation.secret_arns["openrouter-api-key"] } : {},
     name == "shared-backend" ? { Auth__SigningKeyPem = var.foundation.secret_arns["signing-private-key"] } : {},
     contains(setunion(local.mcp_callers, toset(["mcp-server"])), name) ? {

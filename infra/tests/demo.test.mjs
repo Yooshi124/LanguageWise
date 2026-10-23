@@ -27,7 +27,7 @@ const foundation = {
   service_execution_role_arns: Object.fromEntries(IMAGE_KEYS.map(name => [name, role(`${name}-execution`)])),
   service_task_role_arns: Object.fromEntries(IMAGE_KEYS.map(name => [name, role(`${name}-task`)])),
   secret_arns: Object.fromEntries(['db-shared', 'db-mini-games', 'db-quizzes-courses', 'db-chat-discussion', 'db-quests',
-    'signing-private-key', 'signing-public-key', 'openrouter-api-key', 'mcp-api-key'].map(name =>
+    'signing-private-key', 'signing-public-key', 'openrouter-api-key', 'mcp-api-key', 'smtp-credentials'].map(name =>
     [name, `arn:aws:secretsmanager:${region}:${account}:secret:languagewise/demo/${name}-123456`])),
 };
 const release = (sequence = 1, character = 'a') => ({ schemaVersion: 2, sha: character.repeat(40), sequence,
@@ -217,7 +217,7 @@ function harness(options = {}) {
       else if (service === 'secretsmanager') {
         const database = input.SecretId.includes('/db-');
         response = { ARN: input.SecretId, ...(options.deletedDatabase && database ? { DeletedDate: '2026-10-19' } : {}),
-          VersionIdsToStages: options.missingSecret || database && (options.dbNeverInitialized || options.firstUp && !initialized)
+          VersionIdsToStages: options.missingSecret === true || options.missingSecret === input.SecretId || database && (options.dbNeverInitialized || options.firstUp && !initialized)
             ? {} : { version: ['AWSCURRENT'] } };
       }
       else if (service === 'ecs') {
@@ -658,7 +658,18 @@ test('repeated Up never provisions, initializes, charges or extends the lease', 
   assert.ok(!fixture.rows.has('quota#2026-10'));
 });
 
-for (const [name, settings] of [['disabled scheduler', { scheduleDisabled: true }], ['provenance mismatch', { badHash: true }], ['unpopulated secret', { missingSecret: true }]]) {
+test('SMTP metadata is required before preflight can authorize paid provisioning', () => {
+  const fixture = harness();
+  fixture.controller.config = { ...foundation, secret_arns: { ...foundation.secret_arns } };
+  delete fixture.controller.config.secret_arns['smtp-credentials'];
+  try {
+    assert.throws(() => fixture.controller.verifySecrets(true), /SMTP secret metadata is required/);
+    assert.ok(!fixture.rows.has('quota#2026-10'));
+    assert.ok(!fixture.calls.some(call => call.binary === 'terraform' || call.service === 'secretsmanager'));
+  } finally { fixture.dispose(); }
+});
+
+for (const [name, settings] of [['disabled scheduler', { scheduleDisabled: true }], ['provenance mismatch', { badHash: true }], ['unpopulated secret', { missingSecret: true }], ['unpopulated SMTP secret', { missingSecret: foundation.secret_arns['smtp-credentials'] }]]) {
   test(`Up fails before reservation or Terraform for ${name}`, async () => {
     const fixture = harness(settings);
     await assert.rejects(fixture.controller.execute('up'));
@@ -880,8 +891,8 @@ test('first Up accepts empty database metadata then requires current versions be
   const enable = fixture.calls.findIndex(call => call.variables?.services_enabled);
   const metadata = fixture.calls.map((call, index) => ({ ...call, index }))
     .filter(call => call.service === 'secretsmanager');
-  assert.equal(metadata.filter(call => call.index < seed).length, 9);
-  assert.equal(metadata.filter(call => call.index > seed && call.index < enable).length, 9);
+  assert.equal(metadata.filter(call => call.index < seed).length, 10);
+  assert.equal(metadata.filter(call => call.index > seed && call.index < enable).length, 10);
   assert.equal(fixture.state().status, 'ready');
 });
 

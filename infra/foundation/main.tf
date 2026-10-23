@@ -26,12 +26,12 @@ locals {
     mini-games-service-backend                        = ["signing-public-key", "mcp-api-key"]
     quizzes-courses-service-backend                   = ["signing-public-key", "mcp-api-key"]
     chat-discussion-service-backend                   = ["signing-public-key", "mcp-api-key"]
-    quests-achievements-notifications-service-backend = ["signing-public-key", "openrouter-api-key", "mcp-api-key"]
+    quests-achievements-notifications-service-backend = ["signing-public-key", "openrouter-api-key", "mcp-api-key", "smtp-credentials"]
     leaderboard-analytics-service-backend             = ["signing-public-key", "openrouter-api-key", "mcp-api-key"]
     mcp-server                                        = ["signing-public-key", "mcp-api-key"]
   }
   database_secrets = toset(["db-shared", "db-mini-games", "db-quizzes-courses", "db-chat-discussion", "db-quests"])
-  secret_names     = setunion(local.database_secrets, toset(["openrouter-api-key", "signing-private-key", "signing-public-key", "mcp-api-key"]))
+  secret_names     = setunion(local.database_secrets, toset(["openrouter-api-key", "signing-private-key", "signing-public-key", "mcp-api-key", "smtp-credentials"]))
 }
 
 import {
